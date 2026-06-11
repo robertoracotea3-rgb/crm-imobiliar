@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { Mail, Lock, Building2 } from 'lucide-react';
+import { Mail, Lock, Building2, KeyRound } from 'lucide-react';
+
+const ACCESS_CODE = 'FORTIS2024';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -13,6 +15,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [agencyName, setAgencyName] = useState('');
+  const [accessCode, setAccessCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -21,6 +24,11 @@ export default function RegisterPage() {
     try {
       setLoading(true);
       setError('');
+
+      if (accessCode.toUpperCase() !== ACCESS_CODE) {
+        setError('Cod de acces incorect. Contacteaza administratorul.');
+        return;
+      }
 
       if (password !== passwordConfirm) {
         setError('Parolele nu se potrivesc');
@@ -46,7 +54,6 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#F6F5F1' }}>
       <div className="w-full max-w-md">
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-2" style={{ color: '#0E6B54' }}>
             CRM Imobiliar
@@ -54,7 +61,6 @@ export default function RegisterPage() {
           <p className="text-gray-600">Creeaza contul tau de agentie</p>
         </div>
 
-        {/* Form */}
         <div className="bg-white rounded-lg p-8 shadow-sm">
           <h2 className="text-2xl font-bold mb-6" style={{ color: '#0E6B54' }}>
             Inregistrare
@@ -69,19 +75,33 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
+                Cod de acces *
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-3 text-gray-500" size={20} />
+                <input
+                  type="text"
+                  value={accessCode}
+                  onChange={(e) => setAccessCode(e.target.value)}
+                  placeholder="Cod primit de la administrator"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Numele agentiei *
               </label>
               <div className="relative">
-                <Building2
-                  className="absolute left-3 top-3 text-gray-400"
-                  size={20}
-                />
+                <Building2 className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="text"
                   value={agencyName}
                   onChange={(e) => setAgencyName(e.target.value)}
                   placeholder="ex: Agentia Imobiliara XYZ"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
@@ -92,16 +112,13 @@ export default function RegisterPage() {
                 Email *
               </label>
               <div className="relative">
-                <Mail
-                  className="absolute left-3 top-3 text-gray-400"
-                  size={20}
-                />
+                <Mail className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
@@ -112,16 +129,13 @@ export default function RegisterPage() {
                 Parola *
               </label>
               <div className="relative">
-                <Lock
-                  className="absolute left-3 top-3 text-gray-400"
-                  size={20}
-                />
+                <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Minim 6 caractere"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
@@ -132,16 +146,13 @@ export default function RegisterPage() {
                 Confirma parola *
               </label>
               <div className="relative">
-                <Lock
-                  className="absolute left-3 top-3 text-gray-400"
-                  size={20}
-                />
+                <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="password"
                   value={passwordConfirm}
                   onChange={(e) => setPasswordConfirm(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Repeta parola"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
@@ -157,7 +168,6 @@ export default function RegisterPage() {
             </button>
           </form>
 
-          {/* Login link */}
           <div className="mt-6 text-center text-sm text-gray-600">
             Ai deja cont?{' '}
             <Link href="/login" className="font-medium hover:underline" style={{ color: '#0E6B54' }}>
