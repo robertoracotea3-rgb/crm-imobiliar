@@ -1,0 +1,13 @@
+[build]
+command = "npm run build"
+functions = "netlify/functions"
+publish = ".next"
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
+
+[env]
+NEXT_PUBLIC_SUPABASE_URL = "https://idpjifivdaqhsysvjmye.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_AnsRZjbCFV16hhH-gaff0A_shCdX8ju"
