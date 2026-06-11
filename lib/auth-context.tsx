@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (data?.agencies) {
-        setAgency(data.agencies);
+        setAgency(data.agencies as Agency);
       }
     } catch (err) {
       console.error('Error fetching agency:', err);
