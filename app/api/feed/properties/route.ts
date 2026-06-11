@@ -7,11 +7,9 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export async function GET(request: Request) {
   try {
-    // Get query params
     const { searchParams } = new URL(request.url);
     const agencyId = searchParams.get('agency_id');
 
-    // Fetch properties
     let query = supabase.from('properties').select('*');
 
     if (agencyId) {
@@ -22,7 +20,6 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    // Generate XML
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
