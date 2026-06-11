@@ -42,9 +42,11 @@ export async function POST(request: Request) {
     }
 
     // Creeaza agentia
+    const slug = agencyName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') + '-' + Date.now();
+
     const { data: agencyData, error: agencyError } = await supabaseAdmin
       .from('agencies')
-      .insert([{ name: agencyName }])
+      .insert([{ name: agencyName, slug }])
       .select()
       .single();
 
