@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
     if (profileError) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      return Response.json({ error: 'Eroare la creare profil' }, { status: 500 });
+      return Response.json({ error: `Eroare profil: ${profileError.message}` }, { status: 500 });
     }
 
     // Template-uri default
