@@ -5,4 +5,5 @@ publish = ".next"
 [build.environment]
 NEXT_PUBLIC_SUPABASE_URL = "https://idpjifivdaqhsysvjmye.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY = "sb_publishable_AnsRZjbCFV16hhH-gaff0A_shCdX8ju"
+SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkcGppZml2ZGFxaHN5c3ZqbXllIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTE4NjE1NSwiZXhwIjoyMDk2NzYyMTU1fQ.JmkA4-91MO-KxOfQg8R2oNYMm_DIMavliZTDT1OoyHo"
 NODE_VERSION = "20"

@@ -6,11 +6,9 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { User, Lock, Building2, KeyRound } from 'lucide-react';
 
-const ACCESS_CODE = 'FORTIS2024';
-
 export default function RegisterPage() {
   const router = useRouter();
-  const { signUp } = useAuth();
+  const { signIn } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
@@ -25,16 +23,6 @@ export default function RegisterPage() {
       setLoading(true);
       setError('');
 
-      if (accessCode.toUpperCase() !== ACCESS_CODE) {
-        setError('Cod de acces incorect. Contacteaza administratorul.');
-        return;
-      }
-
-      if (!username.trim()) {
-        setError('Introdu un nume de utilizator');
-        return;
-      }
-
       if (password !== passwordConfirm) {
         setError('Parolele nu se potrivesc');
         return;
@@ -45,14 +33,25 @@ export default function RegisterPage() {
         return;
       }
 
-      // Convertim username la email intern
+      // Creeaza contul via API server-side (fara email, fara rate limit)
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, agencyName, accessCode }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Eroare la inregistrare');
+        return;
+      }
+
+      // Login automat dupa inregistrare
       const email = `${username.trim().toLowerCase().replace(/\s+/g, '.')}@fortis.crm`;
-      await signUp(email, password, agencyName);
+      await signIn(email, password);
       router.push('/dashboard');
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Eroare la inregistrare'
-      );
+      setError(err instanceof Error ? err.message : 'Eroare la inregistrare');
     } finally {
       setLoading(false);
     }
@@ -81,9 +80,7 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cod de acces *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cod de acces *</label>
               <div className="relative">
                 <KeyRound className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
@@ -98,9 +95,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Numele agentiei *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Numele agentiei *</label>
               <div className="relative">
                 <Building2 className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
@@ -115,16 +110,14 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nume utilizator *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nume utilizator *</label>
               <div className="relative">
                 <User className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="ex: robert"
+                  placeholder="ex: roberto"
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
@@ -132,9 +125,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Parola *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Parola *</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
@@ -149,9 +140,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Confirma parola *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirma parola *</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
