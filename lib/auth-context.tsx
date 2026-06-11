@@ -71,7 +71,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('user_id', userId)
         .single();
 
-      if (data?.agencies) {
+      if (data?.agencies && Array.isArray(data.agencies) && data.agencies.length > 0) {
+        setAgency(data.agencies[0] as Agency);
+      } else if (data?.agencies && !Array.isArray(data.agencies)) {
         setAgency(data.agencies as Agency);
       }
     } catch (err) {
