@@ -1,7 +1,9 @@
+export const dynamic = 'force-dynamic';
+
 import { Anthropic } from '@anthropic-ai/sdk';
 
 const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY || '',
 });
 
 export async function POST(request: Request) {
@@ -9,15 +11,11 @@ export async function POST(request: Request) {
     const { text } = await request.json();
 
     if (!text || text.trim().length === 0) {
-      return Response.json(
-        { error: 'Text gol' },
-        { status: 400 }
-      );
+      return Response.json({ error: 'Text gol' }, { status: 400 });
     }
 
-    // Analizeaza textul cu Claude
     const analysisResponse = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       messages: [
         {
@@ -27,28 +25,26 @@ export async function POST(request: Request) {
   "title": "titlu scurt si atractiv",
   "location": "locație (exemplu: Bucuresti, Sector 1)",
   "category": "apartament|casa_vila|spatiu_comercial|spatiu_industrial|teren|pensiune_hotel|birou|garaj",
-  "price": "preț (doar numărul, fără simbol)",
-  "bedrooms": "numărul de camere (sau null)",
-  "bathrooms": "numărul de băi (sau null)",
-  "area": "suprafață în m2 (sau null)",
+  "price": 0,
+  "bedrooms": null,
+  "bathrooms": null,
+  "area": null,
   "features": ["lista de caracteristici principale"]
 }
 
 Descrierea proprietății:
 ${text}
 
-Extrage doar informații care sunt explicit menționate în text.`,
+Returneaza DOAR JSON, fara text suplimentar.`,
         },
       ],
     });
 
-    // Parse response
     const analysisText =
       analysisResponse.content[0].type === 'text'
         ? analysisResponse.content[0].text
         : '';
 
-    // Extract JSON from response
     const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error('Nu am putut extrage structura JSON din răspuns');
@@ -56,24 +52,19 @@ Extrage doar informații care sunt explicit menționate în text.`,
 
     const analysisData = JSON.parse(jsonMatch[0]);
 
-    // Genereaza descriere RO
     const roDescResponse = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       messages: [
         {
           role: 'user',
-          content: `Scrie o descriere atractiva și profesională în limba română pentru această proprietate. Lungime: 100-150 cuvinte.
-
-Informații:
+          content: `Scrie o descriere atractivă în română pentru această proprietate imobiliară (100-150 cuvinte):
 - Titlu: ${analysisData.title}
 - Locație: ${analysisData.location}
 - Camere: ${analysisData.bedrooms || 'nespecificat'}
-- Băi: ${analysisData.bathrooms || 'nespecificat'}
 - Suprafață: ${analysisData.area || 'nespecificat'} m²
 - Caracteristici: ${analysisData.features?.join(', ') || 'nespecificat'}
-
-Doar descrierea, fără alte text.`,
+Doar descrierea.`,
         },
       ],
     });
@@ -83,24 +74,19 @@ Doar descrierea, fără alte text.`,
         ? roDescResponse.content[0].text.trim()
         : '';
 
-    // Genereaza descriere EN
     const enDescResponse = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       messages: [
         {
           role: 'user',
-          content: `Write an attractive and professional property description in English. Length: 100-150 words.
-
-Information:
+          content: `Write an attractive property description in English (100-150 words):
 - Title: ${analysisData.title}
 - Location: ${analysisData.location}
 - Rooms: ${analysisData.bedrooms || 'not specified'}
-- Bathrooms: ${analysisData.bathrooms || 'not specified'}
 - Area: ${analysisData.area || 'not specified'} m²
 - Features: ${analysisData.features?.join(', ') || 'not specified'}
-
-Just the description, no other text.`,
+Just the description.`,
         },
       ],
     });
@@ -119,7 +105,6 @@ Just the description, no other text.`,
       },
     });
   } catch (error) {
-    console.error('AI Analyzer Error:', error);
     return Response.json(
       {
         error:

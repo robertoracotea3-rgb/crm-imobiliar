@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: Request) {
   try {
     const { property, demand } = await request.json();
@@ -9,20 +11,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Calculeaza scoring 0-100
     let score = 0;
 
-    // 1. Categoria (40 puncte max)
+    // Categoria (40 puncte)
     if (property.category === demand.category) {
       score += 40;
     } else {
-      score += 10; // partial match
+      score += 10;
     }
 
-    // 2. Locatie (30 puncte max)
-    // Simple match: daca location-ul cererii e in location-ul proprietatii (substring)
-    const propLocationLower = property.location.toLowerCase();
-    const demandLocationLower = demand.location.toLowerCase();
+    // Locatie (30 puncte)
+    const propLocationLower = (property.location || '').toLowerCase();
+    const demandLocationLower = (demand.location || '').toLowerCase();
 
     if (
       propLocationLower.includes(demandLocationLower) ||
@@ -30,7 +30,6 @@ export async function POST(request: Request) {
     ) {
       score += 30;
     } else {
-      // Partial credit pentru regiune (ex: Bucuresti vs Sector 1)
       const propCity = propLocationLower.split(',')[0].trim();
       const demandCity = demandLocationLower.split(',')[0].trim();
       if (propCity === demandCity) {
@@ -38,33 +37,23 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Pret (30 puncte max)
-    const propPrice = property.price;
+    // Pret (30 puncte)
+    const propPrice = property.price || 0;
     if (demand.min_price || demand.max_price) {
       const minPrice = demand.min_price || 0;
       const maxPrice = demand.max_price || Infinity;
 
       if (propPrice >= minPrice && propPrice <= maxPrice) {
         score += 30;
-      } else if (
-        propPrice >= minPrice * 0.9 &&
-        propPrice <= maxPrice * 1.1
-      ) {
-        // 10% tolerance
+      } else if (propPrice >= minPrice * 0.9 && propPrice <= maxPrice * 1.1) {
         score += 20;
-      } else if (
-        propPrice >= minPrice * 0.8 &&
-        propPrice <= maxPrice * 1.2
-      ) {
-        // 20% tolerance
+      } else if (propPrice >= minPrice * 0.8 && propPrice <= maxPrice * 1.2) {
         score += 10;
       }
     } else {
-      // Nu e specificat pret in cerere - nu penalizam
       score += 15;
     }
 
-    // Clamp score la 0-100
     score = Math.min(100, Math.max(0, score));
 
     return Response.json({
@@ -83,13 +72,10 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    console.error('Matching Error:', error);
     return Response.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : 'Eroare la calculare score',
+          error instanceof Error ? error.message : 'Eroare la calculare score',
       },
       { status: 500 }
     );
