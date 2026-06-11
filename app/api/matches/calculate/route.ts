@@ -39,8 +39,8 @@ export async function POST(request: Request) {
     }
 
     // 3. Pret (30 puncte max)
+    const propPrice = property.price;
     if (demand.min_price || demand.max_price) {
-      const propPrice = property.price;
       const minPrice = demand.min_price || 0;
       const maxPrice = demand.max_price || Infinity;
 
