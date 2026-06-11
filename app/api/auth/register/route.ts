@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
     if (agencyError) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      return Response.json({ error: 'Eroare la creare agentie' }, { status: 500 });
+      return Response.json({ error: `Eroare agentie: ${agencyError.message}` }, { status: 500 });
     }
 
     // Creeaza profilul
