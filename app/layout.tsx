@@ -17,7 +17,6 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "CRM Imobiliar",
   description: "Platforma de management imobiliar pentru agentiile romanesti",
-  lang: "ro",
 };
 
 export default function RootLayout({
