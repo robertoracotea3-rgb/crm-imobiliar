@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { Mail, Lock } from 'lucide-react';
+import { User, Lock } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
   const { signIn } = useAuth();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -19,14 +19,11 @@ export default function LoginPage() {
     try {
       setLoading(true);
       setError('');
+      const email = `${username.trim().toLowerCase().replace(/\s+/g, '.')}@fortis.crm`;
       await signIn(email, password);
       router.push('/dashboard');
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Eroare la login. Verifica email si parola.'
-      );
+      setError('Nume utilizator sau parola incorecta.');
     } finally {
       setLoading(false);
     }
@@ -35,7 +32,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#F6F5F1' }}>
       <div className="w-full max-w-md">
-        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-2" style={{ color: '#0E6B54' }}>
             CRM Imobiliar
@@ -43,7 +39,6 @@ export default function LoginPage() {
           <p className="text-gray-600">Platforma pentru agentiile imobiliare</p>
         </div>
 
-        {/* Form */}
         <div className="bg-white rounded-lg p-8 shadow-sm">
           <h2 className="text-2xl font-bold mb-6" style={{ color: '#0E6B54' }}>
             Logare
@@ -58,19 +53,16 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
+                Nume utilizator
               </label>
               <div className="relative">
-                <Mail
-                  className="absolute left-3 top-3 text-gray-400"
-                  size={20}
-                />
+                <User className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="ex: robert"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
@@ -81,16 +73,13 @@ export default function LoginPage() {
                 Parola
               </label>
               <div className="relative">
-                <Lock
-                  className="absolute left-3 top-3 text-gray-400"
-                  size={20}
-                />
+                <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  placeholder="Parola ta"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
@@ -106,20 +95,12 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Register link */}
           <div className="mt-6 text-center text-sm text-gray-600">
             Nu ai cont?{' '}
             <Link href="/register" className="font-medium hover:underline" style={{ color: '#0E6B54' }}>
               Inregistreaza-te
             </Link>
           </div>
-        </div>
-
-        {/* Test credentials */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-          <p className="font-medium mb-2">Test credentials:</p>
-          <p>Email: test@example.com</p>
-          <p>Password: password123</p>
         </div>
       </div>
     </div>

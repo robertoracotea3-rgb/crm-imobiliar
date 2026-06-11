@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { Mail, Lock, Building2, KeyRound } from 'lucide-react';
+import { User, Lock, Building2, KeyRound } from 'lucide-react';
 
 const ACCESS_CODE = 'FORTIS2024';
 
 export default function RegisterPage() {
   const router = useRouter();
   const { signUp } = useAuth();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [agencyName, setAgencyName] = useState('');
@@ -30,6 +30,11 @@ export default function RegisterPage() {
         return;
       }
 
+      if (!username.trim()) {
+        setError('Introdu un nume de utilizator');
+        return;
+      }
+
       if (password !== passwordConfirm) {
         setError('Parolele nu se potrivesc');
         return;
@@ -40,6 +45,8 @@ export default function RegisterPage() {
         return;
       }
 
+      // Convertim username la email intern
+      const email = `${username.trim().toLowerCase().replace(/\s+/g, '.')}@fortis.crm`;
       await signUp(email, password, agencyName);
       router.push('/dashboard');
     } catch (err) {
@@ -109,15 +116,15 @@ export default function RegisterPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email *
+                Nume utilizator *
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 text-gray-500" size={20} />
+                <User className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="ex: robert"
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
