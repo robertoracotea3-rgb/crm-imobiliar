@@ -11,15 +11,19 @@ import {
   Globe,
   Users,
   LogOut,
+  BookUser,
+  Settings,
 } from 'lucide-react';
 
 const menuItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/properties', label: 'Proprietati', icon: Building2 },
+  { href: '/contacts', label: 'Contacte', icon: BookUser },
   { href: '/matches', label: 'Cereri & potriviri', icon: Search },
   { href: '/leads', label: 'Lead-uri', icon: MessageSquare },
   { href: '/portals', label: 'Portaluri', icon: Globe },
   { href: '/team', label: 'Echipa', icon: Users },
+  { href: '/setup', label: 'Setup DB', icon: Settings },
 ];
 
 export function Sidebar() {

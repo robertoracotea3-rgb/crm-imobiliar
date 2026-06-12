@@ -9,12 +9,17 @@ interface Property {
   id: string;
   internal_code: string;
   title: string;
-  location: string;
-  price: number;
+  city?: string;
+  county?: string;
+  street?: string;
+  street_number?: string;
+  currency?: string;
+  price: number | null;
   description: string;
   category: string;
   created_at: string;
   updated_at: string;
+  attributes?: Record<string, any>;
   [key: string]: any;
 }
 
@@ -32,14 +37,19 @@ export default function PropertyDetailPage() {
   const fetchProperty = async () => {
     try {
       setLoading(true);
-      const { data, error: fetchError } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('id', params.id)
-        .single();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError('Nu esti autentificat');
+        return;
+      }
 
-      if (fetchError) throw fetchError;
-      setProperty(data);
+      const res = await fetch(`/api/properties/get?id=${params.id}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+
+      setProperty(d.property);
     } catch (err) {
       console.error('Eroare:', err);
       setError('Nu am putut incarca proprietatea');
@@ -89,9 +99,18 @@ export default function PropertyDetailPage() {
           Inapoi
         </button>
         <div className="flex gap-2">
-          <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
+          <button
+            onClick={() => router.push(`/properties/${params.id}/edit`)}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 text-gray-700">
             <Edit size={18} />
-            Editeaza
+            Editare rapida
+          </button>
+          <button
+            onClick={() => router.push(`/properties/${params.id}/edit/complete`)}
+            className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90"
+            style={{ backgroundColor: '#0E6B54' }}>
+            <Edit size={18} />
+            Editare completa
           </button>
           <button className="px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 flex items-center gap-2">
             <Trash2 size={18} />
@@ -116,7 +135,7 @@ export default function PropertyDetailPage() {
               <label className="text-sm font-medium text-gray-600">Locatie</label>
               <div className="flex items-center gap-2 text-lg mt-2">
                 <MapPin size={20} className="text-emerald-700" />
-                {property.location}
+                {[property.street, property.street_number, property.city, property.county].filter(Boolean).join(', ') || property.attributes?.location_text || '-'}
               </div>
             </div>
 
@@ -124,7 +143,7 @@ export default function PropertyDetailPage() {
               <label className="text-sm font-medium text-gray-600">Pret</label>
               <div className="flex items-center gap-2 text-2xl font-bold mt-2">
                 <DollarSign size={20} className="text-emerald-700" />
-                {property.price.toLocaleString('ro-RO')} RON
+                {(property.price ?? 0).toLocaleString('ro-RO')} {property.currency || 'EUR'}
               </div>
             </div>
 
@@ -151,6 +170,20 @@ export default function PropertyDetailPage() {
           </div>
         </div>
 
+        {/* Poze */}
+        {(property.attributes?.photos as string[])?.length > 0 && (
+          <div className="mb-8 border-t border-gray-200 pt-8">
+            <label className="text-sm font-medium text-gray-600 block mb-4">Poze</label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {(property.attributes?.photos as string[]).map((url, i) => (
+                <div key={i} className="rounded-lg overflow-hidden bg-gray-100">
+                  <img src={url} alt={`Poza ${i + 1}`} className="w-full h-48 object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Descriere */}
         {property.description && (
           <div className="mb-8">
@@ -158,11 +191,6 @@ export default function PropertyDetailPage() {
             <p className="text-gray-700 mt-2 whitespace-pre-wrap">{property.description}</p>
           </div>
         )}
-
-        {/* TODO: Poze, publicari, atribute */}
-        <div className="text-gray-500 text-sm border-t border-gray-200 pt-8">
-          <p>📸 Poze, 🌍 Publicari, ⚙️ Atribute - vor fi completate in faza urmatoare</p>
-        </div>
       </div>
     </div>
   );

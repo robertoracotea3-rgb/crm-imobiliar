@@ -34,22 +34,20 @@ export default function PropertiesPage() {
   const fetchProperties = async () => {
     try {
       setLoading(true);
-      const { data, error: fetchError } = await supabase
-        .from('properties')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fetchError) throw fetchError;
-
-      // Mock data daca nu sunt proprietati
-      if (!data || data.length === 0) {
-        setProperties([]);
-        setFilteredProperties([]);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError('Nu esti autentificat');
         return;
       }
 
-      setProperties(data);
-      setFilteredProperties(data);
+      const res = await fetch('/api/properties/list', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+
+      setProperties(d.properties || []);
+      setFilteredProperties(d.properties || []);
     } catch (err) {
       console.error('Eroare la fetch proprietati:', err);
       setError('Nu am putut incarca proprietatile');

@@ -9,10 +9,13 @@ interface Property {
   id: string;
   internal_code: string;
   title: string;
-  location: string;
-  price: number;
+  city?: string;
+  county?: string;
+  zone?: string;
+  price: number | null;
   category: string;
   created_at: string;
+  attributes?: { location_text?: string };
   days_since_update?: number;
   publications?: Array<{
     portal: string;
@@ -77,7 +80,7 @@ export function PropertiesList({
             <div className="md:col-span-2 text-sm text-gray-600">
               <div className="flex items-center gap-1">
                 <MapPin size={16} />
-                {property.location}
+                {[property.city, property.county].filter(Boolean).join(', ') || property.attributes?.location_text || '-'}
               </div>
             </div>
 
@@ -85,7 +88,7 @@ export function PropertiesList({
             <div className="md:col-span-2 text-sm font-semibold">
               <div className="flex items-center gap-1 text-gray-900">
                 <DollarSign size={16} />
-                {property.price.toLocaleString('ro-RO')}
+                {(property.price ?? 0).toLocaleString('ro-RO')}
               </div>
             </div>
 
