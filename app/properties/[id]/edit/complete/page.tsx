@@ -87,7 +87,10 @@ const CODE_PREFIX: Record<string, string> = {
 interface FD {
   title: string; internal_code: string; tip_oferta: string;
   tip_proprietate: string; price: string; currency: string;
-  comision: string; tva_inclus: boolean; negociabil: boolean;
+  comision: string;
+  comision_prop_pct: string; comision_prop_val: string;
+  comision_chir_pct: string; comision_chir_val: string;
+  tva_inclus: boolean; negociabil: boolean;
   exclusivitate: boolean; stare_oferta: string;
   judet: string; localitate: string; cartier: string; zona: string;
   strada: string; numar: string; bloc: string; apartament_nr: string;
@@ -109,6 +112,7 @@ interface FD {
   util_curent: boolean; util_apa: boolean; util_canal: boolean;
   util_gaz: boolean; util_internet: boolean; util_cablu: boolean;
   util_fosa: boolean; util_put: boolean;
+  util_fotovoltaice: boolean; util_trifazic: boolean;
   inc_centrala_proprie: boolean; inc_centrala_bloc: boolean;
   inc_termoficare: boolean; inc_pardoseala: boolean;
   inc_semineu: boolean; aer_conditionat: boolean; nr_ac: string;
@@ -120,7 +124,7 @@ interface FD {
   dot_alarma: boolean; dot_supraveghere: boolean; dot_curte: boolean;
   dot_gradina: boolean; dot_piscina: boolean; dot_foisor: boolean;
   dot_garaj: boolean; dot_boxa: boolean; dot_dressing: boolean;
-  dot_debara: boolean; dot_jacuzzi: boolean; dot_sauna: boolean;
+  dot_debara: boolean; dot_jacuzzi: boolean; dot_sauna: boolean; dot_terasa: boolean;
   intravilan: string; pot: string; cut: string; dest_teren: string;
   nr_fronturi: string; deschidere: string; lungime: string;
   latime: string; forma_teren: string;
@@ -137,7 +141,8 @@ interface FD {
 const EMPTY: FD = {
   title: '', internal_code: '', tip_oferta: 'Vânzare',
   tip_proprietate: 'Apartament', price: '', currency: 'EUR',
-  comision: '', tva_inclus: false, negociabil: true,
+  comision: '', comision_prop_pct: '', comision_prop_val: '', comision_chir_pct: '', comision_chir_val: '',
+  tva_inclus: false, negociabil: true,
   exclusivitate: false, stare_oferta: 'Activă',
   judet: '', localitate: '', cartier: '', zona: '',
   strada: '', numar: '', bloc: '', apartament_nr: '',
@@ -159,6 +164,7 @@ const EMPTY: FD = {
   util_curent: false, util_apa: false, util_canal: false,
   util_gaz: false, util_internet: false, util_cablu: false,
   util_fosa: false, util_put: false,
+  util_fotovoltaice: false, util_trifazic: false,
   inc_centrala_proprie: false, inc_centrala_bloc: false,
   inc_termoficare: false, inc_pardoseala: false,
   inc_semineu: false, aer_conditionat: false, nr_ac: '',
@@ -170,7 +176,7 @@ const EMPTY: FD = {
   dot_alarma: false, dot_supraveghere: false, dot_curte: false,
   dot_gradina: false, dot_piscina: false, dot_foisor: false,
   dot_garaj: false, dot_boxa: false, dot_dressing: false,
-  dot_debara: false, dot_jacuzzi: false, dot_sauna: false,
+  dot_debara: false, dot_jacuzzi: false, dot_sauna: false, dot_terasa: false,
   intravilan: '', pot: '', cut: '', dest_teren: '',
   nr_fronturi: '', deschidere: '', lungime: '', latime: '', forma_teren: '',
   vitrina: '', inaltime_spatiu: '', grupuri_sanitare: '',
@@ -234,6 +240,10 @@ export default function EditPropertyPage() {
         price: String(p.price || ''),
         currency: p.currency || 'EUR',
         comision: attrs.comision || '',
+        comision_prop_pct: attrs.comision_prop_pct ? String(attrs.comision_prop_pct) : '',
+        comision_prop_val: attrs.comision_prop_val ? String(attrs.comision_prop_val) : '',
+        comision_chir_pct: attrs.comision_chir_pct ? String(attrs.comision_chir_pct) : '',
+        comision_chir_val: attrs.comision_chir_val ? String(attrs.comision_chir_val) : '',
         tva_inclus: attrs.tva_inclus || false,
         negociabil: attrs.negociabil !== false,
         exclusivitate: attrs.exclusivitate || false,
@@ -298,6 +308,8 @@ export default function EditPropertyPage() {
         util_cablu: attrs.utilitati?.cablu || false,
         util_fosa: attrs.utilitati?.fosa || false,
         util_put: attrs.utilitati?.put || false,
+        util_fotovoltaice: attrs.utilitati?.fotovoltaice || false,
+        util_trifazic: attrs.utilitati?.trifazic || false,
         inc_centrala_proprie: attrs.incalzire?.centrala_proprie || false,
         inc_centrala_bloc: attrs.incalzire?.centrala_bloc || false,
         inc_termoficare: attrs.incalzire?.termoficare || false,
@@ -330,6 +342,7 @@ export default function EditPropertyPage() {
         dot_debara: attrs.dotari?.debara || false,
         dot_jacuzzi: attrs.dotari?.jacuzzi || false,
         dot_sauna: attrs.dotari?.sauna || false,
+        dot_terasa: attrs.dotari?.terasa || false,
         intravilan: attrs.teren?.intravilan || '',
         pot: attrs.teren?.pot || '',
         cut: attrs.teren?.cut || '',
@@ -451,7 +464,13 @@ export default function EditPropertyPage() {
 
       const attributes = {
         tip_oferta: fd.tip_oferta, tip_proprietate: fd.tip_proprietate,
-        currency: fd.currency, comision: fd.comision, tva_inclus: fd.tva_inclus,
+        currency: fd.currency,
+        comision: fd.comision,
+        comision_prop_pct: fd.comision_prop_pct ? +fd.comision_prop_pct : null,
+        comision_prop_val: fd.comision_prop_val ? +fd.comision_prop_val : null,
+        comision_chir_pct: fd.comision_chir_pct ? +fd.comision_chir_pct : null,
+        comision_chir_val: fd.comision_chir_val ? +fd.comision_chir_val : null,
+        tva_inclus: fd.tva_inclus,
         negociabil: fd.negociabil, exclusivitate: fd.exclusivitate,
         judet: fd.judet, localitate: fd.localitate, cartier: fd.cartier,
         zona: fd.zona, strada: fd.strada, numar: fd.numar,
@@ -492,6 +511,7 @@ export default function EditPropertyPage() {
           curent: fd.util_curent, apa: fd.util_apa, canalizare: fd.util_canal,
           gaz: fd.util_gaz, internet: fd.util_internet, cablu: fd.util_cablu,
           fosa: fd.util_fosa, put: fd.util_put,
+          fotovoltaice: fd.util_fotovoltaice, trifazic: fd.util_trifazic,
         },
         incalzire: {
           centrala_proprie: fd.inc_centrala_proprie, centrala_bloc: fd.inc_centrala_bloc,
@@ -511,7 +531,7 @@ export default function EditPropertyPage() {
           curte: fd.dot_curte, gradina: fd.dot_gradina, piscina: fd.dot_piscina,
           foisor: fd.dot_foisor, garaj: fd.dot_garaj, boxa: fd.dot_boxa,
           dressing: fd.dot_dressing, debara: fd.dot_debara,
-          jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna,
+          jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna, terasa: fd.dot_terasa,
         },
         teren: isTeren ? {
           intravilan: fd.intravilan, pot: fd.pot, cut: fd.cut,
@@ -681,12 +701,51 @@ export default function EditPropertyPage() {
               </F>
             </div>
 
+            <SH title="Comisioane" />
             <div className="grid grid-cols-2 gap-3">
-              <F label="Comision (%)">
-                <input type="text" value={fd.comision} onChange={e => set('comision', e.target.value)}
-                  placeholder="ex: 3% sau 1500 EUR" className={ic} />
+              <F label="Comision proprietar (%)">
+                <input type="number" value={fd.comision_prop_pct}
+                  onChange={e => {
+                    const pct = e.target.value;
+                    const val = fd.price && pct ? (parseFloat(fd.price) * parseFloat(pct) / 100).toFixed(0) : '';
+                    setFd(prev => ({ ...prev, comision_prop_pct: pct, comision_prop_val: val }));
+                  }}
+                  placeholder="ex: 3" min="0" max="100" step="0.5" className={ic} />
+              </F>
+              <F label="Valoare comision proprietar">
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-gray-500 text-sm">{fd.currency === 'EUR' ? '€' : 'RON'}</span>
+                  <input type="number" value={fd.comision_prop_val}
+                    onChange={e => setFd(prev => ({ ...prev, comision_prop_val: e.target.value }))}
+                    placeholder="auto-calculat" className={ic + ' pl-8'} />
+                </div>
               </F>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <F label={fd.tip_oferta === 'Închiriere' ? 'Comision chiriaș (%)' : 'Comision cumpărător (%)'}>
+                <input type="number" value={fd.comision_chir_pct}
+                  onChange={e => {
+                    const pct = e.target.value;
+                    const val = fd.price && pct ? (parseFloat(fd.price) * parseFloat(pct) / 100).toFixed(0) : '';
+                    setFd(prev => ({ ...prev, comision_chir_pct: pct, comision_chir_val: val }));
+                  }}
+                  placeholder="ex: 3" min="0" max="100" step="0.5" className={ic} />
+              </F>
+              <F label={fd.tip_oferta === 'Închiriere' ? 'Valoare comision chiriaș' : 'Valoare comision cumpărător'}>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-gray-500 text-sm">{fd.currency === 'EUR' ? '€' : 'RON'}</span>
+                  <input type="number" value={fd.comision_chir_val}
+                    onChange={e => setFd(prev => ({ ...prev, comision_chir_val: e.target.value }))}
+                    placeholder="auto-calculat" className={ic + ' pl-8'} />
+                </div>
+              </F>
+            </div>
+            {(fd.comision_prop_val || fd.comision_chir_val) && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-800 font-medium">
+                Profit estimat: {fd.currency === 'EUR' ? '€' : 'RON'}{' '}
+                {((parseFloat(fd.comision_prop_val || '0') || 0) + (parseFloat(fd.comision_chir_val || '0') || 0)).toLocaleString()}
+              </div>
+            )}
 
             <div className="flex gap-6 pt-1">
               <Chk label="Negociabil" checked={fd.negociabil} onChange={v => set('negociabil', v)} />
@@ -1008,6 +1067,8 @@ export default function EditPropertyPage() {
               <Chk label="Cablu TV" checked={fd.util_cablu} onChange={v => set('util_cablu', v)} />
               <Chk label="Fosă septică" checked={fd.util_fosa} onChange={v => set('util_fosa', v)} />
               <Chk label="Puț" checked={fd.util_put} onChange={v => set('util_put', v)} />
+              <Chk label="Panouri fotovoltaice" checked={fd.util_fotovoltaice} onChange={v => set('util_fotovoltaice', v)} />
+              <Chk label="Curent trifazic" checked={fd.util_trifazic} onChange={v => set('util_trifazic', v)} />
             </div>
 
             <SH title="Încălzire" />
@@ -1084,6 +1145,7 @@ export default function EditPropertyPage() {
               <Chk label="Debara" checked={fd.dot_debara} onChange={v => set('dot_debara', v)} />
               <Chk label="Jacuzzi" checked={fd.dot_jacuzzi} onChange={v => set('dot_jacuzzi', v)} />
               <Chk label="Saună" checked={fd.dot_sauna} onChange={v => set('dot_sauna', v)} />
+              <Chk label="Terasă" checked={fd.dot_terasa} onChange={v => set('dot_terasa', v)} />
             </div>
           </div>
         )}
