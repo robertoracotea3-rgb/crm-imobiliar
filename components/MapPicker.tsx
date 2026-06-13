@@ -114,13 +114,13 @@ export function MapPicker({ lat, lon, onCoords }: MapPickerProps) {
         </div>
       )}
       {/* Container is always visible so Leaflet gets real dimensions on init */}
-      <div className="relative rounded-lg border border-gray-200" style={{ height: 220 }}>
+      <div className="relative rounded-lg border border-gray-200 overflow-hidden" style={{ height: 220 }}>
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-100 rounded-lg">
+          <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-gray-100">
             <Loader2 size={20} className="animate-spin text-gray-400" />
           </div>
         )}
-        <div ref={mapRef} className="w-full h-full rounded-lg" />
+        <div ref={mapRef} className="w-full h-full" />
       </div>
       {lat && lon && (
         <p className="text-xs text-gray-400 font-mono">
