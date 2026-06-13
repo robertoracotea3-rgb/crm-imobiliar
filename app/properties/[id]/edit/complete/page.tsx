@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
+import { JUDETE, getCities, filterOptions } from '@/lib/romania-locations';
 import { MapPicker } from '@/components/MapPicker';
 
 interface Contact {
@@ -42,9 +42,7 @@ function AutoComplete({ value, onChange, options, placeholder, disabled }: {
   value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const filtered = value.length > 0
-    ? options.filter(o => o.toLowerCase().includes(value.toLowerCase())).slice(0, 8)
-    : options.slice(0, 8);
+  const filtered = filterOptions(options, value);
 
   return (
     <div className="relative">
@@ -417,7 +415,7 @@ export default function EditPropertyPage() {
   const isTeren = ['Teren', 'Fermă'].includes(fd.tip_proprietate);
   const isComercial = ['Spațiu comercial', 'Hală', 'Industrial', 'Birou'].includes(fd.tip_proprietate);
   const hasEtaje = isAp || fd.tip_proprietate === 'Birou' || isComercial;
-  const cities = ORASE_BY_JUDET[fd.judet] || [];
+  const cities = getCities(fd.judet);
 
   const validate = (s: number) => {
     if (s === 1) {

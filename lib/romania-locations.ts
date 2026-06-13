@@ -488,3 +488,22 @@ export const ORASE_BY_JUDET: Record<string, string[]> = {
     'Vidra', 'Vintileasca', 'Vizantea Livezi', 'Vrâncioaia', 'Vulturu',
   ],
 };
+
+const norm = (s: string) =>
+  s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/** Returns cities for a county, matching with or without diacritics */
+export function getCities(judet: string): string[] {
+  if (!judet) return [];
+  if (ORASE_BY_JUDET[judet]) return ORASE_BY_JUDET[judet];
+  const n = norm(judet);
+  const key = Object.keys(ORASE_BY_JUDET).find(k => norm(k) === n);
+  return key ? ORASE_BY_JUDET[key] : [];
+}
+
+/** Filters a list of options insensitive to case and diacritics */
+export function filterOptions(options: string[], query: string): string[] {
+  if (!query) return options.slice(0, 10);
+  const q = norm(query);
+  return options.filter(o => norm(o).includes(q)).slice(0, 10);
+}
