@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Trash2, MapPin, DollarSign } from 'lucide-react';
+import { Trash2, MapPin, DollarSign, Home } from 'lucide-react';
 import { ActivityStatus } from './ActivityStatus';
 import { PublicationBadges } from './PublicationBadges';
 
@@ -13,9 +13,14 @@ interface Property {
   county?: string;
   zone?: string;
   price: number | null;
+  currency?: string;
   category: string;
+  status?: string;
   created_at: string;
-  attributes?: { location_text?: string };
+  attributes?: {
+    location_text?: string;
+    photos?: string[];
+  };
   days_since_update?: number;
   publications?: Array<{
     portal: string;
@@ -28,13 +33,22 @@ interface PropertiesListProps {
   properties: Property[];
   onDelete?: (id: string) => void;
   canDelete?: boolean;
+  statusColorMap?: Record<string, string>;
+  statusLabelMap?: Record<string, string>;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }
 
 export function PropertiesList({
   properties,
   onDelete,
   canDelete = false,
+  statusColorMap = {},
+  statusLabelMap = {},
+  selectedIds,
+  onToggleSelect,
 }: PropertiesListProps) {
+  const selectable = !!onToggleSelect;
   const getDaysAgo = (dateStr: string) => {
     const createdDate = new Date(dateStr);
     const now = new Date();
@@ -58,75 +72,107 @@ export function PropertiesList({
 
   return (
     <div className="space-y-3">
-      {properties.map((property) => (
-        <div
-          key={property.id}
-          className="bg-white rounded-lg p-4 border border-gray-200 hover:border-emerald-300 transition-colors"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-            {/* Titlu si cod */}
-            <div className="md:col-span-3">
-              <Link href={`/properties/${property.id}`}>
-                <h3 className="font-semibold text-gray-900 hover:text-emerald-700 cursor-pointer">
-                  {property.title}
-                </h3>
-              </Link>
-              <p className="text-xs text-gray-500 mt-1">
-                Cod: {property.internal_code}
-              </p>
-            </div>
-
-            {/* Locatie */}
-            <div className="md:col-span-2 text-sm text-gray-600">
-              <div className="flex items-center gap-1">
-                <MapPin size={16} />
-                {[property.city, property.county].filter(Boolean).join(', ') || property.attributes?.location_text || '-'}
-              </div>
-            </div>
-
-            {/* Pret */}
-            <div className="md:col-span-2 text-sm font-semibold">
-              <div className="flex items-center gap-1 text-gray-900">
-                <DollarSign size={16} />
-                {(property.price ?? 0).toLocaleString('ro-RO')}
-              </div>
-            </div>
-
-            {/* Semafor */}
-            <div className="md:col-span-1">
-              <ActivityStatus daysAgo={getDaysAgo(property.created_at)} />
-            </div>
-
-            {/* Badge-uri publicare */}
-            <div className="md:col-span-2">
-              {property.publications && property.publications.length > 0 ? (
-                <PublicationBadges publications={property.publications} />
-              ) : (
-                <span className="text-xs text-gray-400">Nepublicata</span>
+      {properties.map((property) => {
+        const firstPhoto = property.attributes?.photos?.[0];
+        return (
+          <div
+            key={property.id}
+            className={`bg-white rounded-xl border hover:shadow-md transition-all overflow-hidden ${selectedIds?.has(property.id) ? 'border-emerald-400 bg-emerald-50/30' : 'border-gray-200 hover:border-emerald-300'}`}
+          >
+            <div className="flex items-stretch">
+              {/* Checkbox selectie bulk */}
+              {selectable && (
+                <div className="flex items-center px-3 flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds?.has(property.id) ?? false}
+                    onChange={() => onToggleSelect?.(property.id)}
+                    className="w-4 h-4 rounded accent-emerald-600 cursor-pointer"
+                    onClick={e => e.stopPropagation()}
+                  />
+                </div>
               )}
-            </div>
+              {/* Foto */}
+              <div className="w-28 md:w-36 flex-shrink-0">
+                {firstPhoto ? (
+                  <img
+                    src={firstPhoto}
+                    alt={property.title}
+                    className="w-full h-full object-cover"
+                    style={{ minHeight: '90px' }}
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-100 flex items-center justify-center" style={{ minHeight: '90px' }}>
+                    <Home size={28} className="text-gray-300" />
+                  </div>
+                )}
+              </div>
 
-            {/* Butoane actiuni */}
-            <div className="md:col-span-2 flex justify-end gap-2">
-              <Link
-                href={`/properties/${property.id}`}
-                className="px-3 py-1.5 text-sm rounded border border-gray-300 hover:bg-gray-50 transition-colors"
-              >
-                Detalii
-              </Link>
-              {canDelete && (
-                <button
-                  onClick={() => onDelete?.(property.id)}
-                  className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors"
-                  title="Sterge"
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
+              {/* Continut */}
+              <div className="flex-1 p-3 md:p-4 flex flex-col justify-between gap-2">
+                {/* Rand 1: titlu + pret */}
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <Link href={`/properties/${property.id}`}>
+                      <h3 className="font-bold text-gray-900 hover:text-emerald-700 cursor-pointer text-sm md:text-base leading-tight">
+                        {property.title}
+                      </h3>
+                    </Link>
+                    <p className="text-xs text-gray-500 mt-0.5 font-mono">
+                      {property.internal_code}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-bold text-gray-900 text-sm md:text-base">
+                      {(property.price ?? 0).toLocaleString('ro-RO')} {property.currency || 'EUR'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Rand 2: locatie + status + buton */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="flex items-center gap-1 text-xs text-gray-600">
+                      <MapPin size={13} className="text-emerald-600" />
+                      {[property.city, property.county].filter(Boolean).join(', ') || property.attributes?.location_text || '-'}
+                    </span>
+                    {property.status && property.status !== 'activa' && statusLabelMap[property.status] && (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColorMap[property.status] || 'bg-gray-100 text-gray-600'}`}>
+                        {statusLabelMap[property.status]}
+                      </span>
+                    )}
+                    <ActivityStatus daysAgo={getDaysAgo(property.created_at)} />
+                    {property.publications && property.publications.length > 0 ? (
+                      <PublicationBadges publications={property.publications} />
+                    ) : (
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Nepublicata</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/properties/${property.id}`}
+                      className="px-4 py-1.5 text-sm font-semibold rounded-lg text-white transition-all hover:opacity-90"
+                      style={{ backgroundColor: '#0E6B54' }}
+                    >
+                      Detalii
+                    </Link>
+                    {canDelete && (
+                      <button
+                        onClick={() => onDelete?.(property.id)}
+                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Sterge"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

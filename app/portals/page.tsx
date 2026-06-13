@@ -1,137 +1,126 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { PortalsList } from '@/components/PortalsList';
-import { Globe, Zap } from 'lucide-react';
+import { Globe, Zap, Copy, CheckCircle, Info } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 interface Portal {
   id: string;
   name: string;
   description: string;
   url: string;
-  status: 'active' | 'inactive' | 'error';
-  last_sync?: string;
+  status: 'active' | 'inactive' | 'error' | 'coming_soon';
   properties_published?: number;
 }
 
-export default function PortalsPage() {
-  const [portals, setPortals] = useState<Portal[]>([
-    {
-      id: '1',
-      name: 'Site Propriu',
-      description: 'Website oficial al agentiei',
-      url: 'https://example.com/properties',
-      status: 'active',
-      properties_published: 24,
-      last_sync: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      name: 'Imobiliare.ro',
-      description: 'Cel mai mare portal imobiliar din Romania',
-      url: 'https://imobiliare.ro',
-      status: 'inactive',
-      properties_published: 0,
-    },
-    {
-      id: '3',
-      name: 'OLX',
-      description: 'Marketplace generalist cu sectiune imobiliara',
-      url: 'https://olx.ro',
-      status: 'error',
-      last_sync: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: '4',
-      name: 'Storia',
-      description: 'Platforma de inchirieri si vanzari',
-      url: 'https://storia.ro',
-      status: 'inactive',
-      properties_published: 0,
-    },
-  ]);
+const PORTALS: Portal[] = [
+  { id: '0', name: 'Site Propriu Fortis', description: 'fortisfagaras.ro — site-ul propriu al agenției', url: 'https://fortisfagaras.ro', status: 'active' },
+  { id: '1', name: 'Imobiliare.ro', description: 'Cel mai mare portal imobiliar din România', url: 'https://imobiliare.ro', status: 'coming_soon' },
+  { id: '2', name: 'OLX Imobiliare', description: 'Marketplace generalist cu secțiune imobiliară', url: 'https://olx.ro', status: 'coming_soon' },
+  { id: '3', name: 'Storia', description: 'Platformă de închirieri și vânzări', url: 'https://storia.ro', status: 'coming_soon' },
+  { id: '4', name: 'Anuntul.ro', description: 'Portal de anunțuri imobiliare', url: 'https://anuntul.ro', status: 'coming_soon' },
+];
 
-  const handleConfigure = (portal: Portal) => {
-    alert(`Configure ${portal.name}:\n\n- Credentiale API\n- Setari sincronizare\n- Categorii incluse`);
+export default function PortalsPage() {
+  const portals = PORTALS;
+  const [agencyId, setAgencyId] = useState('');
+  const [copied, setCopied] = useState(false);
+  const activeCount = PORTALS.filter(p => p.status === 'active').length;
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      fetch('/api/settings', { headers: { Authorization: `Bearer ${session.access_token}` } })
+        .then(r => r.json())
+        .then(d => { if (d.agency?.id) setAgencyId(d.agency.id); });
+    });
+  }, []);
+
+  const feedUrl = agencyId ? `${window.location.origin}/api/feed/properties.xml?agency_id=${agencyId}` : '';
+
+  const copyFeed = () => {
+    if (!feedUrl) return;
+    navigator.clipboard.writeText(feedUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleConfigure = (_portal: Portal) => {
+    // No-op: portals integration coming soon
   };
 
   return (
     <ProtectedLayout>
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-8" style={{ color: '#0E6B54' }}>
-          Portaluri
-        </h1>
+      <div className="p-6 max-w-4xl mx-auto">
+        <div className="flex items-center gap-3 mb-6">
+          <Globe size={26} style={{ color: '#0E6B54' }} />
+          <h1 className="text-2xl font-bold" style={{ color: '#0E6B54' }}>Portaluri</h1>
+        </div>
 
-        {/* Info Box */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8">
-          <div className="flex gap-4">
-            <Zap size={24} className="text-blue-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-blue-900">Publicare Automata</p>
-              <p className="text-blue-800 text-sm mt-2">
-                Activeaza portalurile pentru a sincroniza automat proprietatile tale.
-                Odata configurat, noile proprietati se vor publica instant pe portalurile selectate.
-              </p>
-            </div>
+        {/* Coming soon banner */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 flex gap-3">
+          <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-blue-900 text-sm">Integrare portale — în curând</p>
+            <p className="text-blue-700 text-sm mt-1">
+              Publicarea automată pe Imobiliare.ro, OLX, Storia va fi disponibilă în versiunea 2.0.
+              Folosește feed-ul XML pentru integrări manuale sau prin conectori terți.
+            </p>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-lg p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold" style={{ color: '#0E6B54' }}>
-              {portals.filter((p) => p.status === 'active').length}
-            </p>
-            <p className="text-sm text-gray-600">Conectate</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <p className="text-2xl font-bold" style={{ color: '#0E6B54' }}>{activeCount}</p>
+            <p className="text-xs text-gray-500 mt-1">Conectate</p>
           </div>
-          <div className="bg-white rounded-lg p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-orange-600">
-              {portals.filter((p) => p.status === 'inactive').length}
-            </p>
-            <p className="text-sm text-gray-600">De configurat</p>
+          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <p className="text-2xl font-bold text-amber-600">{portals.length}</p>
+            <p className="text-xs text-gray-500 mt-1">Disponibile</p>
           </div>
-          <div className="bg-white rounded-lg p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold text-red-600">
-              {portals.filter((p) => p.status === 'error').length}
-            </p>
-            <p className="text-sm text-gray-600">Cu probleme</p>
+          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">0</p>
+            <p className="text-xs text-gray-500 mt-1">Publicate</p>
           </div>
-          <div className="bg-white rounded-lg p-4 shadow-sm text-center">
-            <p className="text-2xl font-bold" style={{ color: '#0E6B54' }}>
-              {portals.reduce((sum, p) => sum + (p.properties_published || 0), 0)}
-            </p>
-            <p className="text-sm text-gray-600">Proprietati publicate</p>
+          <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <p className="text-2xl font-bold text-purple-600">XML</p>
+            <p className="text-xs text-gray-500 mt-1">Feed activ</p>
           </div>
         </div>
 
         {/* Portals Grid */}
-        <div className="mb-8">
-          <h2 className="text-lg font-bold mb-4" style={{ color: '#0E6B54' }}>
-            Portaluri Disponibile
-          </h2>
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Portale disponibile</h2>
           <PortalsList portals={portals} onConfigure={handleConfigure} />
         </div>
 
         {/* XML Feed */}
-        <div className="bg-white rounded-lg p-6 shadow-sm border-l-4" style={{ borderColor: '#B57514' }}>
-          <div className="flex items-start justify-between">
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-start gap-3 mb-3">
+            <Zap size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-bold text-gray-900 mb-2">Feed XML</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                Exporta proprietatile in format XML pentru integrari externe.
-              </p>
-              <code className="text-xs bg-gray-100 px-3 py-2 rounded block max-w-2xl overflow-auto">
-                /api/feed/properties.xml
-              </code>
+              <h3 className="font-semibold text-gray-900 text-sm">Feed XML proprietăți active</h3>
+              <p className="text-xs text-gray-500 mt-0.5">Exportă toate proprietățile active în format XML standard.</p>
             </div>
-            <button
-              onClick={() => window.open('/api/feed/properties.xml', '_blank')}
-              className="px-4 py-2 text-white rounded-lg font-medium transition-colors hover:opacity-90"
-              style={{ backgroundColor: '#B57514' }}
-            >
-              Descarca Feed
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs bg-gray-100 px-3 py-2 rounded-lg overflow-auto">
+              {feedUrl || 'Se încarcă...'}
+            </code>
+            <button onClick={copyFeed} disabled={!feedUrl}
+              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0 disabled:opacity-40">
+              {copied ? <><CheckCircle size={14} className="text-emerald-600" /> Copiat</> : <><Copy size={14} /> Copiază</>}
             </button>
+            {feedUrl && (
+              <button onClick={() => window.open(feedUrl, '_blank')}
+                className="px-3 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 flex-shrink-0"
+                style={{ backgroundColor: '#0E6B54' }}>
+                Deschide
+              </button>
+            )}
           </div>
         </div>
       </div>

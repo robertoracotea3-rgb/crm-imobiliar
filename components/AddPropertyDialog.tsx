@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { X, ChevronRight, ChevronLeft, Upload, ImageIcon, UserPlus, Search } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Upload, ImageIcon, UserPlus, Search, Wand2, Loader2, Copy, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 import { SetupAlert } from './SetupAlert';
+import { MapPicker } from './MapPicker';
 
 interface Contact {
   id: string; name: string; phone?: string; phone2?: string;
@@ -102,7 +103,7 @@ const TRANSACTION_MAP: Record<string, string> = {
   'Vânzare': 'vanzare', 'Închiriere': 'inchiriere',
 };
 
-const genCode = (tip: string) => `${CODE_PREFIX[tip] || 'PR'}-${Math.floor(Math.random() * 9000) + 1000}`;
+const genCode = (tip: string) => `${CODE_PREFIX[tip] || 'PR'}-0001`;
 
 // ─── form state ──────────────────────────────────────────────────────────────
 
@@ -110,7 +111,9 @@ interface FD {
   // 1 - Date generale
   title: string; internal_code: string; tip_oferta: string;
   tip_proprietate: string; price: string; currency: string;
-  comision: string; tva_inclus: boolean; negociabil: boolean;
+  comision: string; comision_prop_pct: string; comision_prop_val: string;
+  comision_chir_pct: string; comision_chir_val: string;
+  tva_inclus: boolean; negociabil: boolean;
   exclusivitate: boolean; stare_oferta: string;
   // 2 - Localizare
   judet: string; localitate: string; cartier: string; zona: string;
@@ -136,6 +139,7 @@ interface FD {
   util_curent: boolean; util_apa: boolean; util_canal: boolean;
   util_gaz: boolean; util_internet: boolean; util_cablu: boolean;
   util_fosa: boolean; util_put: boolean;
+  util_fotovoltaice: boolean; util_trifazic: boolean;
   inc_centrala_proprie: boolean; inc_centrala_bloc: boolean;
   inc_termoficare: boolean; inc_pardoseala: boolean;
   inc_semineu: boolean; aer_conditionat: boolean; nr_ac: string;
@@ -149,6 +153,9 @@ interface FD {
   dot_gradina: boolean; dot_piscina: boolean; dot_foisor: boolean;
   dot_garaj: boolean; dot_boxa: boolean; dot_dressing: boolean;
   dot_debara: boolean; dot_jacuzzi: boolean; dot_sauna: boolean;
+  dot_terasa: boolean;
+  // 8 - Agent
+  agent_id: string;
   // 7 - Teren specific
   intravilan: string; pot: string; cut: string; dest_teren: string;
   nr_fronturi: string; deschidere: string; lungime: string;
@@ -169,7 +176,8 @@ interface FD {
 const EMPTY: FD = {
   title: '', internal_code: genCode('Apartament'), tip_oferta: 'Vânzare',
   tip_proprietate: 'Apartament', price: '', currency: 'EUR',
-  comision: '', tva_inclus: false, negociabil: true,
+  comision: '', comision_prop_pct: '', comision_prop_val: '', comision_chir_pct: '', comision_chir_val: '',
+  tva_inclus: false, negociabil: true,
   exclusivitate: false, stare_oferta: 'Activă',
   judet: '', localitate: '', cartier: '', zona: '',
   strada: '', numar: '', bloc: '', apartament_nr: '',
@@ -191,6 +199,7 @@ const EMPTY: FD = {
   util_curent: false, util_apa: false, util_canal: false,
   util_gaz: false, util_internet: false, util_cablu: false,
   util_fosa: false, util_put: false,
+  util_fotovoltaice: false, util_trifazic: false,
   inc_centrala_proprie: false, inc_centrala_bloc: false,
   inc_termoficare: false, inc_pardoseala: false,
   inc_semineu: false, aer_conditionat: false, nr_ac: '',
@@ -203,6 +212,8 @@ const EMPTY: FD = {
   dot_gradina: false, dot_piscina: false, dot_foisor: false,
   dot_garaj: false, dot_boxa: false, dot_dressing: false,
   dot_debara: false, dot_jacuzzi: false, dot_sauna: false,
+  dot_terasa: false,
+  agent_id: '',
   intravilan: '', pot: '', cut: '', dest_teren: '',
   nr_fronturi: '', deschidere: '', lungime: '', latime: '', forma_teren: '',
   vitrina: '', inaltime_spatiu: '', grupuri_sanitare: '',
@@ -239,16 +250,42 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const [newCSaving, setNewCSaving] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
+  // Agents
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+
+  // AI description
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDescriptions, setAiDescriptions] = useState<Record<string, string> | null>(null);
+  const [aiError, setAiError] = useState('');
+  const [copiedKey, setCopiedKey] = useState('');
+
+  const fetchNextCode = async (tip: string, token: string) => {
+    const prefix = CODE_PREFIX[tip] || 'PR';
+    const res = await fetch(`/api/properties/next-code?prefix=${prefix}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const d = await res.json();
+    return d.code || genCode(tip);
+  };
+
   useEffect(() => {
     if (!isOpen) return;
-    // auto-fill agent from logged-in username
-    const agentName = user?.email?.replace('@fortis.crm', '') || '';
-    setFd(prev => ({ ...prev, agent: agentName }));
-    // load contacts
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return;
+      // load contacts
       fetch('/api/contacts', { headers: { Authorization: `Bearer ${session.access_token}` } })
         .then(r => r.json()).then(d => setContacts(d.contacts || []));
+      // load agents
+      fetch('/api/agents/list', { headers: { Authorization: `Bearer ${session.access_token}` } })
+        .then(r => r.json()).then(d => {
+          const list = (d.agents || []).map((a: { id: string; email: string }) => ({ id: a.id, name: a.email }));
+          setAgents(list);
+          // pre-select current user
+          if (user?.id) setFd(prev => ({ ...prev, agent_id: user.id }));
+        });
+      // fetch next sequential code
+      fetchNextCode(fd.tip_proprietate, session.access_token)
+        .then(code => setFd(prev => ({ ...prev, internal_code: code })));
     });
   }, [isOpen, user]);
 
@@ -299,10 +336,16 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const set = useCallback((name: keyof FD, value: string | boolean) => {
     setFd(prev => {
       const next = { ...prev, [name]: value };
-      if (name === 'tip_proprietate') next.internal_code = genCode(value as string);
       if (name === 'title') next.title = (value as string).slice(0, 70);
       return next;
     });
+    if (name === 'tip_proprietate') {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session) return;
+        fetchNextCode(value as string, session.access_token)
+          .then(code => setFd(prev => ({ ...prev, internal_code: code })));
+      });
+    }
     setError('');
   }, []);
 
@@ -336,7 +379,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
     return true;
   };
 
-  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 7)); };
+  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 8)); };
   const prev = () => setStep(s => Math.max(s - 1, 1));
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -365,7 +408,16 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
       const attributes = {
         tip_oferta: fd.tip_oferta, tip_proprietate: fd.tip_proprietate,
-        currency: fd.currency, comision: fd.comision, tva_inclus: fd.tva_inclus,
+        currency: fd.currency,
+        comision: fd.comision,
+        comision_prop_pct: fd.comision_prop_pct ? +fd.comision_prop_pct : null,
+        comision_prop_val: fd.comision_prop_val ? +fd.comision_prop_val : null,
+        comision_chir_pct: fd.comision_chir_pct ? +fd.comision_chir_pct : null,
+        comision_chir_val: fd.comision_chir_val ? +fd.comision_chir_val : null,
+        profit_estimat: fd.comision_prop_val || fd.comision_chir_val
+          ? (parseFloat(fd.comision_prop_val || '0') || 0) + (parseFloat(fd.comision_chir_val || '0') || 0)
+          : null,
+        tva_inclus: fd.tva_inclus,
         negociabil: fd.negociabil, exclusivitate: fd.exclusivitate,
         judet: fd.judet, localitate: fd.localitate, cartier: fd.cartier,
         zona: fd.zona, strada: fd.strada, numar: fd.numar,
@@ -406,6 +458,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
           curent: fd.util_curent, apa: fd.util_apa, canalizare: fd.util_canal,
           gaz: fd.util_gaz, internet: fd.util_internet, cablu: fd.util_cablu,
           fosa: fd.util_fosa, put: fd.util_put,
+          fotovoltaice: fd.util_fotovoltaice, trifazic: fd.util_trifazic,
         },
         incalzire: {
           centrala_proprie: fd.inc_centrala_proprie, centrala_bloc: fd.inc_centrala_bloc,
@@ -425,7 +478,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
           curte: fd.dot_curte, gradina: fd.dot_gradina, piscina: fd.dot_piscina,
           foisor: fd.dot_foisor, garaj: fd.dot_garaj, boxa: fd.dot_boxa,
           dressing: fd.dot_dressing, debara: fd.dot_debara,
-          jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna,
+          jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna, terasa: fd.dot_terasa,
         },
         teren: isTeren ? {
           intravilan: fd.intravilan, pot: fd.pot, cut: fd.cut,
@@ -463,6 +516,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             transaction: TRANSACTION_MAP[fd.tip_oferta] || 'vanzare',
             description: fd.descriere,
             status: STATUS_MAP[fd.stare_oferta] || 'activa',
+            agent_id: fd.agent_id || null,
             owner_contact_id: selectedContactId,
             attributes: { ...attributes, location_text: buildLocation() },
           },
@@ -490,6 +544,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
       setPreviews([]);
       setSelectedContactId(null);
       setContactSearch('');
+      setAiDescriptions(null);
+      setAiError('');
       setStep(1);
       onClose();
       onSuccess?.();
@@ -503,7 +559,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
   if (!isOpen) return null;
 
-  const STEPS = ['Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media'];
+  const STEPS = ['Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media', 'Promovare'];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -521,12 +577,16 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             const s = i + 1;
             return (
               <div key={s} className="flex items-center">
-                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${s === step ? 'text-white' : s < step ? 'text-emerald-700 bg-emerald-50' : 'text-gray-400 bg-gray-100'}`}
-                  style={s === step ? { backgroundColor: '#0E6B54' } : {}}>
+                <button
+                  type="button"
+                  onClick={() => setStep(s)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${s === step ? 'text-white' : s < step ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'}`}
+                  style={s === step ? { backgroundColor: '#0E6B54' } : {}}
+                >
                   <span className="font-bold">{s}</span>
                   <span className="hidden sm:inline">{label}</span>
-                </div>
-                {s < 7 && <div className={`w-4 h-px mx-0.5 ${s < step ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
+                </button>
+                {s < 8 && <div className={`w-4 h-px mx-0.5 ${s < step ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
               </div>
             );
           })}
@@ -597,12 +657,51 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 </F>
               </div>
 
+              <SH title="Comisioane" />
               <div className="grid grid-cols-2 gap-3">
-                <F label="Comision (%)">
-                  <input type="text" value={fd.comision} onChange={e => set('comision', e.target.value)}
-                    placeholder="ex: 3% sau 1500 EUR" className={ic} />
+                <F label="Comision proprietar (%)">
+                  <input type="number" value={fd.comision_prop_pct}
+                    onChange={e => {
+                      const pct = e.target.value;
+                      const val = fd.price && pct ? (parseFloat(fd.price) * parseFloat(pct) / 100).toFixed(0) : '';
+                      setFd(prev => ({ ...prev, comision_prop_pct: pct, comision_prop_val: val }));
+                    }}
+                    placeholder="ex: 3" min="0" max="100" step="0.5" className={ic} />
+                </F>
+                <F label="Valoare comision proprietar">
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-gray-500 text-sm">{fd.currency === 'EUR' ? '€' : 'RON'}</span>
+                    <input type="number" value={fd.comision_prop_val}
+                      onChange={e => setFd(prev => ({ ...prev, comision_prop_val: e.target.value }))}
+                      placeholder="auto-calculat" className={ic + ' pl-8'} />
+                  </div>
                 </F>
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <F label={fd.tip_oferta === 'Închiriere' ? 'Comision chiriaș (%)' : 'Comision cumpărător (%)'}>
+                  <input type="number" value={fd.comision_chir_pct}
+                    onChange={e => {
+                      const pct = e.target.value;
+                      const val = fd.price && pct ? (parseFloat(fd.price) * parseFloat(pct) / 100).toFixed(0) : '';
+                      setFd(prev => ({ ...prev, comision_chir_pct: pct, comision_chir_val: val }));
+                    }}
+                    placeholder="ex: 3" min="0" max="100" step="0.5" className={ic} />
+                </F>
+                <F label={fd.tip_oferta === 'Închiriere' ? 'Valoare comision chiriaș' : 'Valoare comision cumpărător'}>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-gray-500 text-sm">{fd.currency === 'EUR' ? '€' : 'RON'}</span>
+                    <input type="number" value={fd.comision_chir_val}
+                      onChange={e => setFd(prev => ({ ...prev, comision_chir_val: e.target.value }))}
+                      placeholder="auto-calculat" className={ic + ' pl-8'} />
+                  </div>
+                </F>
+              </div>
+              {(fd.comision_prop_val || fd.comision_chir_val) && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-800 font-medium">
+                  Profit estimat: {fd.currency === 'EUR' ? '€' : 'RON'}{' '}
+                  {((parseFloat(fd.comision_prop_val || '0') || 0) + (parseFloat(fd.comision_chir_val || '0') || 0)).toLocaleString()}
+                </div>
+              )}
 
               <div className="flex gap-6 pt-1">
                 <Chk label="Negociabil" checked={fd.negociabil} onChange={v => set('negociabil', v)} />
@@ -615,30 +714,40 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
           {/* ── Step 2: Localizare ── */}
           {step === 2 && (
             <div className="space-y-3">
+              {/* Județ + Localitate — sus */}
               <div className="grid grid-cols-2 gap-3">
                 <F label="Județ *">
                   <AutoComplete value={fd.judet} onChange={v => { set('judet', v); set('localitate', ''); }}
-                    options={JUDETE} placeholder="ex: Cluj" />
+                    options={JUDETE} placeholder="ex: Brașov" />
                 </F>
                 <F label="Localitate *">
                   <AutoComplete value={fd.localitate} onChange={v => set('localitate', v)}
                     options={cities.length > 0 ? cities : JUDETE}
-                    placeholder={fd.judet ? 'ex: Cluj-Napoca' : 'Selectați județul mai întâi'}
+                    placeholder={fd.judet ? 'ex: Făgăraș' : 'Selectați județul mai întâi'}
                     disabled={false} />
                 </F>
               </div>
 
+              {/* Hartă — imediat vizibilă, click pentru a seta locația */}
+              <MapPicker
+                lat={fd.lat}
+                lon={fd.lon}
+                onCoords={(lat, lon) => { set('lat', lat); set('lon', lon); }}
+              />
+
+              {/* Coordonate auto-completate de hartă */}
               <div className="grid grid-cols-2 gap-3">
-                <F label="Cartier">
-                  <input type="text" value={fd.cartier} onChange={e => set('cartier', e.target.value)}
-                    placeholder="ex: Mănăștur" className={ic} />
+                <F label="Latitudine">
+                  <input type="text" value={fd.lat} onChange={e => set('lat', e.target.value)}
+                    placeholder="45.8416" className={ic} />
                 </F>
-                <F label="Zonă">
-                  <input type="text" value={fd.zona} onChange={e => set('zona', e.target.value)}
-                    placeholder="ex: Centru" className={ic} />
+                <F label="Longitudine">
+                  <input type="text" value={fd.lon} onChange={e => set('lon', e.target.value)}
+                    placeholder="24.9731" className={ic} />
                 </F>
               </div>
 
+              {/* Adresă detaliată */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <F label="Stradă">
@@ -649,6 +758,17 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <F label="Număr">
                   <input type="text" value={fd.numar} onChange={e => set('numar', e.target.value)}
                     placeholder="12" className={ic} />
+                </F>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <F label="Cartier">
+                  <input type="text" value={fd.cartier} onChange={e => set('cartier', e.target.value)}
+                    placeholder="ex: Centru" className={ic} />
+                </F>
+                <F label="Zonă">
+                  <input type="text" value={fd.zona} onChange={e => set('zona', e.target.value)}
+                    placeholder="ex: Central" className={ic} />
                 </F>
               </div>
 
@@ -665,22 +785,15 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 </div>
               )}
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <F label="Cod Poștal">
                   <input type="text" value={fd.cod_postal} onChange={e => set('cod_postal', e.target.value)}
-                    placeholder="ex: 400001" className={ic} />
+                    placeholder="ex: 505200" className={ic} />
                 </F>
-                <F label="Latitudine">
-                  <input type="text" value={fd.lat} onChange={e => set('lat', e.target.value)}
-                    placeholder="46.7712" className={ic} />
-                </F>
-                <F label="Longitudine">
-                  <input type="text" value={fd.lon} onChange={e => set('lon', e.target.value)}
-                    placeholder="23.5236" className={ic} />
-                </F>
+                <div className="flex items-end">
+                  <Chk label="Ascunde adresa exactă pe anunț" checked={fd.ascunde_adresa} onChange={v => set('ascunde_adresa', v)} />
+                </div>
               </div>
-
-              <Chk label="Ascunde adresa exactă pe anunț" checked={fd.ascunde_adresa} onChange={v => set('ascunde_adresa', v)} />
             </div>
           )}
 
@@ -965,6 +1078,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <Chk label="Cablu TV" checked={fd.util_cablu} onChange={v => set('util_cablu', v)} />
                 <Chk label="Fosă septică" checked={fd.util_fosa} onChange={v => set('util_fosa', v)} />
                 <Chk label="Puț" checked={fd.util_put} onChange={v => set('util_put', v)} />
+                <Chk label="Panouri fotovoltaice" checked={fd.util_fotovoltaice} onChange={v => set('util_fotovoltaice', v)} />
+                <Chk label="Curent trifazic" checked={fd.util_trifazic} onChange={v => set('util_trifazic', v)} />
               </div>
 
               <SH title="Încălzire" />
@@ -1041,6 +1156,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <Chk label="Debara" checked={fd.dot_debara} onChange={v => set('dot_debara', v)} />
                 <Chk label="Jacuzzi" checked={fd.dot_jacuzzi} onChange={v => set('dot_jacuzzi', v)} />
                 <Chk label="Saună" checked={fd.dot_sauna} onChange={v => set('dot_sauna', v)} />
+                <Chk label="Terasă" checked={fd.dot_terasa} onChange={v => set('dot_terasa', v)} />
               </div>
             </div>
           )}
@@ -1080,6 +1196,119 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <textarea value={fd.descriere} onChange={e => set('descriere', e.target.value)}
                   placeholder="Descriere detaliată în română..." rows={4} className={ic} />
               </F>
+
+              {/* AI Description Generator */}
+              <div className="border border-dashed border-emerald-300 rounded-lg p-3 space-y-2 bg-emerald-50/40">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-emerald-800">Generare automată cu AI</p>
+                  <button
+                    type="button"
+                    disabled={aiLoading}
+                    onClick={async () => {
+                      setAiLoading(true);
+                      setAiError('');
+                      setAiDescriptions(null);
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session) throw new Error('Nu ești autentificat');
+                        const dotari = [
+                          fd.dot_lift && 'lift', fd.dot_interfon && 'interfon',
+                          fd.dot_videointerfon && 'videointerfon', fd.dot_alarma && 'alarmă',
+                          fd.dot_supraveghere && 'supraveghere', fd.dot_garaj && 'garaj',
+                          fd.dot_piscina && 'piscină', fd.dot_gradina && 'grădină',
+                          fd.dot_terasa && 'terasă', fd.dot_dressing && 'dressing',
+                          fd.dot_boxa && 'boxă',
+                        ].filter(Boolean) as string[];
+                        const utilitati = [
+                          fd.util_curent && 'curent', fd.util_apa && 'apă',
+                          fd.util_canal && 'canalizare', fd.util_gaz && 'gaz',
+                          fd.util_internet && 'internet', fd.util_fotovoltaice && 'panouri fotovoltaice',
+                          fd.util_trifazic && 'curent trifazic',
+                        ].filter(Boolean) as string[];
+                        const incalzire = [
+                          fd.inc_centrala_proprie && 'centrală proprie',
+                          fd.inc_pardoseala && 'încălzire pardoseală',
+                          fd.aer_conditionat && 'aer condiționat',
+                        ].filter(Boolean) as string[];
+                        const res = await fetch('/api/properties/generate-description', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                          body: JSON.stringify({
+                            tip_proprietate: fd.tip_proprietate,
+                            tip_oferta: fd.tip_oferta,
+                            price: parseFloat(fd.price) || 0,
+                            currency: fd.currency,
+                            nr_camere: fd.nr_camere ? +fd.nr_camere : null,
+                            sup_utila: fd.sup_utila ? +fd.sup_utila : null,
+                            judet: fd.judet,
+                            localitate: fd.localitate,
+                            cartier: fd.cartier,
+                            etaj: fd.etaj ? +fd.etaj : null,
+                            nr_etaje: fd.nr_etaje ? +fd.nr_etaje : null,
+                            an_constructie: fd.an_constructie ? +fd.an_constructie : null,
+                            stare: fd.stare,
+                            dotari: dotari,
+                            utilitati: utilitati,
+                            incalzire: incalzire,
+                          }),
+                        });
+                        const d = await res.json();
+                        if (!res.ok) throw new Error(d.error || 'Eroare server');
+                        setAiDescriptions(d);
+                      } catch (err) {
+                        setAiError(err instanceof Error ? err.message : 'Eroare la generare');
+                      } finally {
+                        setAiLoading(false);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs rounded-lg disabled:opacity-50 hover:opacity-90 transition-colors"
+                    style={{ backgroundColor: '#B57514' }}
+                  >
+                    {aiLoading ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+                    {aiLoading ? 'Se generează...' : 'Generează descriere AI'}
+                  </button>
+                </div>
+
+                {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+
+                {aiDescriptions && (
+                  <div className="space-y-2 mt-1">
+                    {[
+                      { key: 'completa', label: 'Descriere completă' },
+                      { key: 'scurta', label: 'Scurtă' },
+                      { key: 'facebook', label: 'Facebook' },
+                      { key: 'olx', label: 'OLX' },
+                      { key: 'imobiliare', label: 'Imobiliare.ro' },
+                      { key: 'storia', label: 'Storia' },
+                    ].map(({ key, label }) => (
+                      <div key={key} className="bg-white border border-gray-200 rounded-lg p-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-gray-600">{label}</span>
+                          <div className="flex gap-1">
+                            <button type="button"
+                              onClick={() => { set('descriere', aiDescriptions[key] || ''); }}
+                              className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
+                              Folosește
+                            </button>
+                            <button type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(aiDescriptions[key] || '');
+                                setCopiedKey(key);
+                                setTimeout(() => setCopiedKey(''), 2000);
+                              }}
+                              className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                              {copiedKey === key ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                              {copiedKey === key ? 'Copiat!' : 'Copiază'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-700 line-clamp-3 whitespace-pre-line">{aiDescriptions[key]}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <F label="Descriere (EN)">
                 <textarea value={fd.descriere_en} onChange={e => set('descriere_en', e.target.value)}
                   placeholder="English description..." rows={3} className={ic} />
@@ -1096,13 +1325,19 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <input type="text" value={fd.meta_desc} onChange={e => set('meta_desc', e.target.value)} placeholder="Descriere scurtă pentru Google" className={ic} />
               </F>
 
+            </div>
+          )}
+
+          {/* ── Step 8: Promovare & Date Interne ── */}
+          {step === 8 && (
+            <div className="space-y-3">
               <SH title="Publicare (opțional)" />
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 mb-2">
                 Proprietatea se salvează indiferent. Poți publica oricând ulterior.
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { key: 'pub_site', label: 'Site Propriu' },
+                  { key: 'pub_site', label: 'Site Propriu Fortis' },
                   { key: 'pub_imobiliare', label: 'Imobiliare.ro' },
                   { key: 'pub_olx', label: 'OLX' },
                   { key: 'pub_storia', label: 'Storia' },
@@ -1114,9 +1349,13 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
               <SH title="Date interne agenție" />
               <div className="grid grid-cols-2 gap-3">
-                <F label="Agent responsabil (auto)">
-                  <input type="text" value={fd.agent} readOnly
-                    className={ic + ' bg-gray-50 text-gray-600 font-medium'} />
+                <F label="Agent responsabil">
+                  <select value={fd.agent_id} onChange={e => setFd(prev => ({ ...prev, agent_id: e.target.value }))} className={sc}>
+                    <option value="">— Neasignat —</option>
+                    {agents.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
                 </F>
                 <F label="Sursă lead">
                   <input type="text" value={fd.sursa_lead} onChange={e => set('sursa_lead', e.target.value)} placeholder="ex: Imobiliare.ro, Recomandare" className={ic} />
@@ -1147,13 +1386,19 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </button>
           )}
           <div className="flex-1" />
-          {step < 7 ? (
+          {/* Salvează — mereu vizibil */}
+          <button onClick={handleSave} disabled={loading}
+            className="px-5 py-2 border border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-40 text-sm font-medium transition-colors">
+            {loading ? (status || 'Se salvează...') : 'Salvează'}
+          </button>
+          {step < 8 && (
             <button onClick={next}
               className="px-5 py-2 text-white rounded-lg hover:opacity-90 flex items-center gap-1 text-sm font-medium transition-colors"
               style={{ backgroundColor: '#0E6B54' }}>
               Înainte <ChevronRight size={16} />
             </button>
-          ) : (
+          )}
+          {step === 8 && (
             <button onClick={handleSave} disabled={loading}
               className="px-6 py-2 text-white rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium transition-colors"
               style={{ backgroundColor: '#0E6B54' }}>
