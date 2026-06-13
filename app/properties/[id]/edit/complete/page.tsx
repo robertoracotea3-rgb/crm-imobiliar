@@ -6,6 +6,7 @@ import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2 } from 'lu
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
+import { MapPicker } from '@/components/MapPicker';
 
 interface Contact {
   id: string; name: string; phone?: string; phone2?: string;
@@ -417,7 +418,7 @@ export default function EditPropertyPage() {
     return true;
   };
 
-  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 7)); };
+  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 8)); };
   const prev = () => setStep(s => Math.max(s - 1, 1));
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -593,7 +594,7 @@ export default function EditPropertyPage() {
     );
   }
 
-  const STEPS = ['Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media'];
+  const STEPS = ['Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media', 'Promovare'];
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -607,12 +608,13 @@ export default function EditPropertyPage() {
           const s = i + 1;
           return (
             <div key={s} className="flex items-center">
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${s === step ? 'text-white' : s < step ? 'text-emerald-700 bg-emerald-50' : 'text-gray-400 bg-gray-100'}`}
+              <button type="button" onClick={() => setStep(s)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${s === step ? 'text-white' : s < step ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100' : 'text-gray-400 bg-gray-100 hover:bg-gray-200'}`}
                 style={s === step ? { backgroundColor: '#0E6B54' } : {}}>
                 <span className="font-bold">{s}</span>
                 <span className="hidden sm:inline">{label}</span>
-              </div>
-              {s < 7 && <div className={`w-4 h-px mx-0.5 ${s < step ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
+              </button>
+              {s < 8 && <div className={`w-4 h-px mx-0.5 ${s < step ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
             </div>
           );
         })}
@@ -707,6 +709,11 @@ export default function EditPropertyPage() {
                   options={cities.length > 0 ? cities : JUDETE}
                   placeholder={fd.judet ? 'ex: Cluj-Napoca' : 'Selectați județului mai întâi'} />
               </F>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-gray-600 mb-1">Plasează pin pe hartă (completează automat coordonatele)</p>
+              <MapPicker lat={fd.lat} lon={fd.lon} onCoords={(lat, lon) => { set('lat', lat); set('lon', lon); }} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1153,6 +1160,12 @@ export default function EditPropertyPage() {
               <input type="text" value={fd.meta_desc} onChange={e => set('meta_desc', e.target.value)} placeholder="Descriere scurtă pentru Google" className={ic} />
             </F>
 
+          </div>
+        )}
+
+        {/* ── Step 8: Promovare ── */}
+        {step === 8 && (
+          <div className="space-y-3 bg-white rounded-lg p-6">
             <SH title="Publicare (opțional)" />
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 mb-2">
               Proprietatea se salvează indiferent. Poți publica oricând ulterior.
@@ -1203,7 +1216,11 @@ export default function EditPropertyPage() {
           </button>
         )}
         <div className="flex-1" />
-        {step < 7 ? (
+        <button onClick={handleSave} disabled={loading}
+          className="px-5 py-2 border border-emerald-700 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-50 text-sm font-medium transition-colors">
+          {loading ? (status || 'Se salvează...') : 'Salvează'}
+        </button>
+        {step < 8 ? (
           <button onClick={next}
             className="px-5 py-2 text-white rounded-lg hover:opacity-90 flex items-center gap-1 text-sm font-medium transition-colors"
             style={{ backgroundColor: '#0E6B54' }}>
