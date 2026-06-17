@@ -120,8 +120,8 @@ export function missingAdvertFields(
   if (!isTestMode() && desc.trim().length < 50) missing.push('Descriere (minim 50 caractere)');
   if (!property.price || Number(property.price) <= 0) missing.push('Preț');
 
-  const lat = property.latitude  != null ? Number(property.latitude)  : NaN;
-  const lon = property.longitude != null ? Number(property.longitude) : NaN;
+  const lat = property.latitude  != null ? Number(property.latitude)  : a.lat != null ? Number(a.lat) : NaN;
+  const lon = property.longitude != null ? Number(property.longitude) : a.lon != null ? Number(a.lon) : NaN;
   if (isNaN(lat) || isNaN(lon)) missing.push('Localizare pe hartă (coordonate)');
 
   // OLX requires at least one image (stored in attributes.photos as URL strings).
@@ -175,8 +175,8 @@ export function propertyToAdvert(
     advert.price = { value: Number(property.price), currency: (property.currency as string) || 'EUR' };
   }
 
-  const lat = property.latitude ? Number(property.latitude) : undefined;
-  const lon = property.longitude ? Number(property.longitude) : undefined;
+  const lat = property.latitude != null ? Number(property.latitude) : a.lat != null ? Number(a.lat) : undefined;
+  const lon = property.longitude != null ? Number(property.longitude) : a.lon != null ? Number(a.lon) : undefined;
   if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
     advert.location = { lat, lon, exact: !a.ascunde_adresa };
   }
