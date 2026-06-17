@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@supabase/supabase-js';
+import { logActivity, getUserName } from '@/lib/activity-log';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -97,6 +98,12 @@ export async function POST(request: Request) {
       .from('properties').insert([payload]).select('id').single();
 
     if (insertError) return Response.json({ error: `Insert: ${errMsg(insertError)}` }, { status: 500 });
+
+    const userName = await getUserName(user.id);
+    await logActivity({
+      agency_id: profile.agency_id, entity_type: 'property', entity_id: property!.id,
+      user_id: user.id, user_name: userName, action: 'create', new_value: payload.title,
+    });
 
     return Response.json({ property_id: property!.id, agency_id: profile.agency_id });
   } catch (err) {

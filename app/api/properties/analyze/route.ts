@@ -2,11 +2,17 @@ export const dynamic = 'force-dynamic';
 
 import { Anthropic } from '@anthropic-ai/sdk';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
+const apiKey = process.env.ANTHROPIC_API_KEY;
+const client = apiKey ? new Anthropic({ apiKey }) : null;
 
 export async function POST(request: Request) {
+  if (!client) {
+    return Response.json(
+      { error: 'Asistentul AI nu este configurat. Adaugă ANTHROPIC_API_KEY în .env.local' },
+      { status: 503 }
+    );
+  }
+
   try {
     const { text } = await request.json();
 
@@ -14,7 +20,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Text gol' }, { status: 400 });
     }
 
-    const analysisResponse = await client.messages.create({
+    const analysisResponse = await client!.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       messages: [
@@ -52,7 +58,7 @@ Returneaza DOAR JSON, fara text suplimentar.`,
 
     const analysisData = JSON.parse(jsonMatch[0]);
 
-    const roDescResponse = await client.messages.create({
+    const roDescResponse = await client!.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       messages: [
@@ -74,7 +80,7 @@ Doar descrierea.`,
         ? roDescResponse.content[0].text.trim()
         : '';
 
-    const enDescResponse = await client.messages.create({
+    const enDescResponse = await client!.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 512,
       messages: [

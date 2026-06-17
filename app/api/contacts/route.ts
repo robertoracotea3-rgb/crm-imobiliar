@@ -64,7 +64,8 @@ export async function GET(request: Request) {
       .from('contacts')
       .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, created_at')
       .eq('agency_id', agency_id)
-      .order('full_name');
+      .order('full_name')
+      .limit(500);
     if (error) return Response.json({ error: errMsg(error), contacts: [] });
     return Response.json({ contacts: (data as DbContact[]).map(toUi) });
   } catch (err) {
@@ -97,6 +98,61 @@ export async function POST(request: Request) {
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
     return Response.json({ contact: toUi(contact as DbContact) });
+  } catch (err) {
+    return Response.json({ error: errMsg(err) }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+    const { user, agency_id } = await getAgencyId(token);
+    void user;
+    const body = await request.json();
+    const { id, name, phone, phone2, email, cnp, address, type, notes } = body;
+    if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
+    if (!name?.trim()) return Response.json({ error: 'Numele este obligatoriu' }, { status: 400 });
+
+    const { data: contact, error } = await admin.from('contacts').update({
+      full_name: name.trim(),
+      phone: phone?.trim() || null,
+      phone_secondary: phone2?.trim() || null,
+      email: email?.trim() || null,
+      cnp: cnp?.trim() || null,
+      address: address?.trim() || null,
+      type: [type || 'proprietar'],
+      notes: notes?.trim() || null,
+    })
+      .eq('id', id)
+      .eq('agency_id', agency_id)
+      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, created_at')
+      .single();
+
+    if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
+    return Response.json({ contact: toUi(contact as DbContact) });
+  } catch (err) {
+    return Response.json({ error: errMsg(err) }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+    const { user, agency_id } = await getAgencyId(token);
+    void user;
+    const url = new URL(request.url);
+    const id = url.searchParams.get('id');
+    if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
+
+    const { error } = await admin.from('contacts')
+      .delete()
+      .eq('id', id)
+      .eq('agency_id', agency_id);
+
+    if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
+    return Response.json({ success: true });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }

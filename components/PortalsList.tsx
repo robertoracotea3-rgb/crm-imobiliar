@@ -7,7 +7,7 @@ interface Portal {
   name: string;
   description: string;
   url: string;
-  status: 'active' | 'inactive' | 'error';
+  status: 'active' | 'inactive' | 'error' | 'coming_soon';
   last_sync?: string;
   properties_published?: number;
 }

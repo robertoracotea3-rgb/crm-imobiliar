@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { ChevronLeft, Loader2, Upload, X } from 'lucide-react';
+import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm bg-white';
@@ -27,6 +28,7 @@ interface EditForm {
   sup_construita: string;
   nr_camere: string;
   an_constructie: string;
+  agent_id: string;
   [key: string]: any;
 }
 
@@ -43,14 +45,24 @@ export default function EditPropertyPage() {
     title: '', price: '', currency: 'EUR', description: '',
     judet: '', localitate: '', cartier: '', strada: '', numar: '', bloc: '', apartament_nr: '',
     lat: '', lon: '', sup_utila: '', sup_construita: '', nr_camere: '', an_constructie: '',
+    agent_id: '',
   });
   const [photos, setPhotos] = useState<File[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [agents, setAgents] = useState<{ id: string; email: string }[]>([]);
 
   useEffect(() => {
     fetchProperty();
+    loadAgents();
   }, [params.id]);
+
+  const loadAgents = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await fetch('/api/agents/list', { headers: { Authorization: `Bearer ${session.access_token}` } });
+    if (res.ok) { const d = await res.json(); setAgents(d.agents || []); }
+  };
 
   const fetchProperty = async () => {
     try {
@@ -85,6 +97,7 @@ export default function EditPropertyPage() {
         sup_construita: attrs.sup_construita || '',
         nr_camere: attrs.nr_camere || '',
         an_constructie: attrs.an_constructie || '',
+        agent_id: p.agent_id || '',
       });
       setExistingPhotos(attrs.photos || []);
     } catch (err) {
@@ -140,6 +153,7 @@ export default function EditPropertyPage() {
         street_number: form.numar,
         latitude: form.lat ? parseFloat(form.lat) : null,
         longitude: form.lon ? parseFloat(form.lon) : null,
+        agent_id: form.agent_id || null,
         attributes,
       };
 
@@ -180,6 +194,7 @@ export default function EditPropertyPage() {
   const cities = ORASE_BY_JUDET[form.judet] || [];
 
   return (
+    <ProtectedLayout>
     <div className="p-8 max-w-3xl mx-auto pb-20">
       <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-700 mb-6 hover:text-gray-900">
         <ChevronLeft size={20} /> Inapoi
@@ -345,6 +360,15 @@ export default function EditPropertyPage() {
           <input ref={fileRef} type="file" multiple accept="image/*" onChange={handlePhotos} className="hidden" />
         </div>
 
+        {/* AGENT */}
+        <div>
+          <p className={sh}>👤 Agent responsabil</p>
+          <select value={form.agent_id} onChange={e => set('agent_id', e.target.value)} className={ic}>
+            <option value="">— Neasignat —</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.email}</option>)}
+          </select>
+        </div>
+
         {/* BUTOANE */}
         <div className="flex gap-3 pt-6 border-t border-gray-200">
           <button
@@ -363,5 +387,6 @@ export default function EditPropertyPage() {
         </div>
       </div>
     </div>
+    </ProtectedLayout>
   );
 }

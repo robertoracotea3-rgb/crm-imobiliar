@@ -64,20 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const fetchUserAgency = async (userId: string) => {
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('agency_id, agencies(id, name)')
-        .eq('user_id', userId)
-        .single();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('agency_id, agencies(id, name)')
+      .eq('user_id', userId)
+      .single();
 
-      if (data?.agencies && Array.isArray(data.agencies) && data.agencies.length > 0) {
-        setAgency(data.agencies[0] as Agency);
-      } else if (data?.agencies && !Array.isArray(data.agencies)) {
-        setAgency(data.agencies as Agency);
-      }
-    } catch (err) {
-      console.error('Error fetching agency:', err);
+    if (error) {
+      console.error('fetchUserAgency error:', error.message);
+      return;
+    }
+
+    if (data?.agencies && Array.isArray(data.agencies) && data.agencies.length > 0) {
+      setAgency(data.agencies[0] as Agency);
+    } else if (data?.agencies && !Array.isArray(data.agencies)) {
+      setAgency(data.agencies as Agency);
     }
   };
 

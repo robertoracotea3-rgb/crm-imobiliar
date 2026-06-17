@@ -7,18 +7,37 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const ACCESS_CODE = 'FORTIS2024';
+// Access code stored in env; fallback keeps existing registrations working
+const ACCESS_CODE = (process.env.REGISTRATION_ACCESS_CODE || 'FORTIS2024').toUpperCase();
+
+// Username: only letters, numbers, dots, underscores (3-30 chars)
+const USERNAME_RE = /^[a-zA-Z0-9._]{3,30}$/;
 
 export async function POST(request: Request) {
   try {
-    const { username, password, agencyName, accessCode } = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body) return Response.json({ error: 'Date invalide' }, { status: 400 });
 
-    if (accessCode?.toUpperCase() !== ACCESS_CODE) {
+    const { username, password, agencyName, accessCode } = body;
+
+    if (!accessCode || (accessCode as string).toUpperCase() !== ACCESS_CODE) {
       return Response.json({ error: 'Cod de acces incorect' }, { status: 403 });
     }
 
     if (!username || !password || !agencyName) {
       return Response.json({ error: 'Toate campurile sunt obligatorii' }, { status: 400 });
+    }
+
+    if (!USERNAME_RE.test(username)) {
+      return Response.json({ error: 'Numele de utilizator poate conține doar litere, cifre, punct și underscore (3-30 caractere)' }, { status: 400 });
+    }
+
+    if (typeof password !== 'string' || password.length < 8) {
+      return Response.json({ error: 'Parola trebuie să aibă cel puțin 8 caractere' }, { status: 400 });
+    }
+
+    if (typeof agencyName !== 'string' || agencyName.trim().length < 2) {
+      return Response.json({ error: 'Numele agenției este prea scurt' }, { status: 400 });
     }
 
     const email = `${username.trim().toLowerCase().replace(/\s+/g, '.')}@fortis.crm`;
@@ -52,7 +71,8 @@ export async function POST(request: Request) {
 
     if (agencyError) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      return Response.json({ error: `Eroare agentie: ${agencyError.message}` }, { status: 500 });
+      console.error('Agency creation error:', agencyError);
+      return Response.json({ error: 'Eroare la crearea agenției' }, { status: 500 });
     }
 
     // Creeaza profilul
@@ -66,7 +86,8 @@ export async function POST(request: Request) {
 
     if (profileError) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-      return Response.json({ error: `Eroare profil: ${profileError.message}` }, { status: 500 });
+      console.error('Profile creation error:', profileError);
+      return Response.json({ error: 'Eroare la crearea profilului' }, { status: 500 });
     }
 
     // Template-uri default

@@ -22,6 +22,15 @@ async function reloadSchema() {
 }
 
 export async function POST(request: Request) {
+  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+  if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+  const { data: { user }, error: userError } = await admin.auth.getUser(token);
+  if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
+  const { data: profile } = await admin.from('profiles').select('role').eq('user_id', user.id).single();
+  if (!profile || !['owner', 'admin'].includes(profile.role)) {
+    return Response.json({ error: 'Acces interzis — doar owner/admin' }, { status: 403 });
+  }
+
   const results: Record<string, string> = {};
 
   // 1. Reload schema cache

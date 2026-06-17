@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { usernameToEmail } from '@/lib/username';
 import { User, Lock } from 'lucide-react';
 
 export default function LoginPage() {
@@ -19,7 +20,7 @@ export default function LoginPage() {
     try {
       setLoading(true);
       setError('');
-      const email = `${username.trim().toLowerCase().replace(/\s+/g, '.')}@fortis.crm`;
+      const email = usernameToEmail(username);
       await signIn(email, password);
       router.push('/dashboard');
     } catch (err) {

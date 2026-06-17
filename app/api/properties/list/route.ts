@@ -30,9 +30,10 @@ export async function GET(request: Request) {
 
     const { data, error } = await admin
       .from('properties')
-      .select('id, internal_code, title, city, county, zone, street, street_number, price, currency, category, created_at, updated_at, attributes, status, transaction, agent_id, owner_contact_id')
+      .select('id, internal_code, title, city, county, zone, street, street_number, price, currency, category, created_at, updated_at, attributes, status, transaction, agent_id, owner_contact_id, latitude, longitude')
       .eq('agency_id', profile.agency_id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(500);
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
     return Response.json({ properties: data || [] });

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@supabase/supabase-js';
+import { logActivity, diffFields, getUserName } from '@/lib/activity-log';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -55,6 +56,14 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     };
 
+    // Snapshot current values for the activity log
+    const { data: old } = await admin
+      .from('properties')
+      .select('title, price, currency, description, county, city, zone, street, street_number')
+      .eq('id', id)
+      .eq('agency_id', profile.agency_id)
+      .single();
+
     const { error } = await admin
       .from('properties')
       .update(updateData)
@@ -62,6 +71,31 @@ export async function POST(request: Request) {
       .eq('agency_id', profile.agency_id);
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
+
+    // Log field-level changes (best-effort; never blocks the response)
+    if (old) {
+      const changes = diffFields(
+        old as Record<string, unknown>,
+        {
+          title, price: num(price), currency: currency || 'EUR',
+          description: description || null, county: county || null, city: city || null,
+          zone: zone || null, street: street || null, street_number: street_number || null,
+        },
+        {
+          title: 'Titlu', price: 'Preț', currency: 'Monedă', description: 'Descriere',
+          county: 'Județ', city: 'Localitate', zone: 'Zonă/Cartier', street: 'Stradă', street_number: 'Număr',
+        }
+      );
+      if (changes.length > 0) {
+        const userName = await getUserName(user.id);
+        await logActivity(changes.map(c => ({
+          agency_id: profile.agency_id, entity_type: 'property', entity_id: id,
+          user_id: user.id, user_name: userName, action: 'update',
+          field: c.field, old_value: c.old_value, new_value: c.new_value,
+        })));
+      }
+    }
+
     return Response.json({ success: true });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });

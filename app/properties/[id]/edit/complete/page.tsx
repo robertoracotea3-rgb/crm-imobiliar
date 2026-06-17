@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2, GripVertical, Star, ArrowLeft, ArrowRight } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { JUDETE, getCities, filterOptions } from '@/lib/romania-locations';
@@ -451,6 +451,39 @@ export default function EditPropertyPage() {
     setExistingPhotos(p => p.filter(ph => ph !== url));
   };
 
+  // ── Reordonare poze existente (drag & drop + butoane fallback) ──
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  const reorderExisting = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    setExistingPhotos(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
+  const movePhoto = (i: number, dir: -1 | 1) => {
+    setExistingPhotos(prev => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
+  const setAsMain = (i: number) => {
+    setExistingPhotos(prev => {
+      if (i <= 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(i, 1);
+      next.unshift(moved);
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     try {
       setLoading(true);
@@ -593,6 +626,22 @@ export default function EditPropertyPage() {
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: form,
         });
+      }
+
+      // Auto-publish on Storia/OLX if checkbox is checked
+      if (fd.pub_storia) {
+        setStatus('Se publică pe Storia / OLX...');
+        try {
+          const pubRes = await fetch('/api/portals/storia/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ property_id: params.id }),
+          });
+          if (!pubRes.ok) {
+            const pd = await pubRes.json().catch(() => ({}));
+            alert(pd.error || 'Proprietatea s-a salvat, dar publicarea pe Storia a eșuat. Reîncearcă din pagina proprietății.');
+          }
+        } catch { alert('Proprietatea s-a salvat, dar publicarea pe Storia a eșuat (rețea). Reîncearcă din pagina proprietății.'); }
       }
 
       router.push(`/properties/${params.id}`);
@@ -1162,16 +1211,62 @@ export default function EditPropertyPage() {
 
             {existingPhotos.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">Poze existente</p>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <GripVertical size={13} className="text-gray-400" />
+                  <p className="text-xs font-medium text-gray-600">
+                    Poze existente — trage pentru a reordona. Prima poză este cea principală.
+                  </p>
+                </div>
                 <div className="grid grid-cols-4 gap-2">
                   {existingPhotos.map((url, i) => (
-                    <div key={i} className="relative group">
-                      <img src={url} alt="" className="w-full h-20 object-cover rounded-lg border border-gray-200" />
-                      <button onClick={() => removeExistingPhoto(url)}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Trash2 size={12} />
-                      </button>
-                      {i === 0 && <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-xs px-1 rounded">Main</span>}
+                    <div
+                      key={url}
+                      draggable
+                      onDragStart={() => setDragIndex(i)}
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => { e.preventDefault(); if (dragIndex !== null) reorderExisting(dragIndex, i); setDragIndex(null); }}
+                      onDragEnd={() => setDragIndex(null)}
+                      className={`relative group rounded-lg border bg-white cursor-move transition-all ${
+                        dragIndex === i ? 'border-emerald-500 ring-2 ring-emerald-300 opacity-60' : 'border-gray-200 hover:border-emerald-300'
+                      }`}
+                    >
+                      <img src={url} alt="" className="w-full h-20 object-cover rounded-lg pointer-events-none" />
+
+                      {/* Order index + Main badge */}
+                      <span className="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-semibold w-4 h-4 flex items-center justify-center rounded-full">
+                        {i + 1}
+                      </span>
+                      {i === 0 && (
+                        <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-[10px] px-1 rounded flex items-center gap-0.5">
+                          <Star size={9} /> Principală
+                        </span>
+                      )}
+
+                      {/* Hover controls */}
+                      <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {i > 0 && (
+                          <button type="button" title="Setează ca principală" onClick={() => setAsMain(i)}
+                            className="bg-emerald-600 text-white rounded-full p-0.5 hover:bg-emerald-700">
+                            <Star size={11} />
+                          </button>
+                        )}
+                        <button type="button" title="Șterge" onClick={() => removeExistingPhoto(url)}
+                          className="bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600">
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+
+                      {/* Arrow fallback (mobile / no-drag) */}
+                      <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button type="button" title="Mută stânga" disabled={i === 0} onClick={() => movePhoto(i, -1)}
+                          className="bg-white/90 border border-gray-200 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-gray-50">
+                          <ArrowLeft size={11} />
+                        </button>
+                        <button type="button" title="Mută dreapta" disabled={i === existingPhotos.length - 1} onClick={() => movePhoto(i, 1)}
+                          className="bg-white/90 border border-gray-200 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-gray-50">
+                          <ArrowRight size={11} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1234,12 +1329,15 @@ export default function EditPropertyPage() {
               {[
                 { key: 'pub_site', label: 'Site Propriu' },
                 { key: 'pub_imobiliare', label: 'Imobiliare.ro' },
-                { key: 'pub_olx', label: 'OLX' },
-                { key: 'pub_storia', label: 'Storia' },
                 { key: 'pub_facebook', label: 'Facebook' },
               ].map(({ key, label }) => (
                 <Chk key={key} label={label} checked={fd[key as keyof FD] as boolean} onChange={v => set(key as keyof FD, v)} />
               ))}
+              <Chk
+                label="Storia / OLX"
+                checked={fd.pub_storia}
+                onChange={v => { set('pub_storia', v); set('pub_olx', v); }}
+              />
             </div>
 
             <SH title="Date interne agenție" />
