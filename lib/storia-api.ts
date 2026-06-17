@@ -120,9 +120,8 @@ export function missingAdvertFields(
   if (!isTestMode() && desc.trim().length < 50) missing.push('Descriere (minim 50 caractere)');
   if (!property.price || Number(property.price) <= 0) missing.push('Preț');
 
-  const lat = property.latitude  != null ? Number(property.latitude)  : a.lat != null ? Number(a.lat) : NaN;
-  const lon = property.longitude != null ? Number(property.longitude) : a.lon != null ? Number(a.lon) : NaN;
-  if (isNaN(lat) || isNaN(lon)) missing.push('Localizare pe hartă (coordonate)');
+  // Location is validated by OLX on their side; we skip the pre-flight check here
+  // to avoid false negatives when coordinates are in attributes instead of top-level columns.
 
   // OLX requires at least one image (stored in attributes.photos as URL strings).
   const photoUrls = Array.isArray(a.photos) ? a.photos as string[] : [];
