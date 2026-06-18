@@ -75,10 +75,10 @@ function roomsUrn(nrCamere: unknown): string | null {
 export function buildAdvertAttributes(
   property: Record<string, unknown>,
   a: Record<string, unknown>
-): Array<{ code: string; value: string }> {
+): Array<{ urn: string; value: string }> {
   const fam   = categoryFamily(property.category as string);
   const isSale = (String(property.transaction || 'vanzare').toLowerCase()) === 'vanzare';
-  const attrs: Array<{ code: string; value: string }> = [];
+  const attrs: Array<{ urn: string; value: string }> = [];
 
   const netArea  = toNum(a.sup_utila)  ?? toNum(property.surface_useful);
   const landArea = toNum(a.sup_teren)  ?? toNum(property.surface_land);
@@ -86,19 +86,19 @@ export function buildAdvertAttributes(
 
   if (fam === 'apartment') {
     const rooms = roomsUrn(a.nr_camere);
-    if (rooms)          attrs.push({ code: 'urn:concept:number-of-rooms', value: rooms });
-    if (netArea != null) attrs.push({ code: 'urn:concept:net-area-m2',     value: String(netArea) });
-    if (isSale)         attrs.push({ code: 'urn:concept:market',          value: market });
+    if (rooms)           attrs.push({ urn: 'urn:concept:number-of-rooms', value: rooms });
+    if (netArea != null)  attrs.push({ urn: 'urn:concept:net-area-m2',     value: String(netArea) });
+    if (isSale)           attrs.push({ urn: 'urn:concept:market',          value: market });
   } else if (fam === 'house') {
-    if (netArea != null)  attrs.push({ code: 'urn:concept:net-area-m2',     value: String(netArea) });
-    if (landArea != null) attrs.push({ code: 'urn:concept:terrain-area-m2', value: String(landArea) });
-    if (isSale)           attrs.push({ code: 'urn:concept:market',          value: market });
+    if (netArea != null)  attrs.push({ urn: 'urn:concept:net-area-m2',     value: String(netArea) });
+    if (landArea != null) attrs.push({ urn: 'urn:concept:terrain-area-m2', value: String(landArea) });
+    if (isSale)           attrs.push({ urn: 'urn:concept:market',          value: market });
   } else if (fam === 'land') {
     const area = landArea ?? netArea;
-    if (area != null) attrs.push({ code: 'urn:concept:net-area-m2', value: String(area) });
+    if (area != null) attrs.push({ urn: 'urn:concept:net-area-m2', value: String(area) });
   } else { // store | warehouse
-    if (netArea != null) attrs.push({ code: 'urn:concept:net-area-m2', value: String(netArea) });
-    if (isSale)          attrs.push({ code: 'urn:concept:market',      value: market });
+    if (netArea != null) attrs.push({ urn: 'urn:concept:net-area-m2', value: String(netArea) });
+    if (isSale)          attrs.push({ urn: 'urn:concept:market',      value: market });
   }
   return attrs;
 }
