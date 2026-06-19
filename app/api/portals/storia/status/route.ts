@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getValidToken } from '@/lib/storia-api';
+import { getValidToken, fetchAdvertStatus } from '@/lib/storia-api';
+
+// Statuses that are still in OLX's processing pipeline — worth re-syncing from OLX.
+const NON_TERMINAL = new Set(['pending', 'not_posted', 'to_post', 'processing']);
 
 // GET /api/portals/storia/status?property_id=<optional>
 // Returns: connection status + listings for a specific property (or all listings).
@@ -44,6 +47,29 @@ export async function GET(request: Request) {
       .eq('portal', 'storia')
       .single();
     listing = data;
+
+    // Recover from missed webhooks: if the listing is still in OLX's pipeline,
+    // pull the live status straight from OLX and persist it.
+    if (token && listing?.external_id && NON_TERMINAL.has(String(listing.status))) {
+      try {
+        const live = await fetchAdvertStatus(listing.external_id, token);
+        if (live && live.status !== listing.status) {
+          const patch = {
+            status:        live.status,
+            error_message: live.reason || null,
+            raw_response:  live.raw as Record<string, unknown>,
+            last_sync_at:  new Date().toISOString(),
+            updated_at:    new Date().toISOString(),
+          };
+          await supabase.from('portal_listings')
+            .update(patch)
+            .eq('id', listing.id);
+          listing = { ...listing, ...patch };
+        }
+      } catch (e) {
+        console.error('[Storia status] live sync failed', e);
+      }
+    }
   } else {
     const { data } = await supabase
       .from('portal_listings')
@@ -52,6 +78,30 @@ export async function GET(request: Request) {
       .eq('portal', 'storia')
       .order('updated_at', { ascending: false });
     listings = data || [];
+
+    // Refresh button (Portaluri page): re-sync any listing still in OLX's pipeline.
+    if (token) {
+      listings = await Promise.all((listings as Record<string, unknown>[]).map(async (l) => {
+        if (!l.external_id || !NON_TERMINAL.has(String(l.status))) return l;
+        try {
+          const live = await fetchAdvertStatus(l.external_id as string, token);
+          if (live && live.status !== l.status) {
+            const patch = {
+              status:        live.status,
+              error_message: live.reason || null,
+              raw_response:  live.raw as Record<string, unknown>,
+              last_sync_at:  new Date().toISOString(),
+              updated_at:    new Date().toISOString(),
+            };
+            await supabase.from('portal_listings').update(patch).eq('id', l.id as string);
+            return { ...l, ...patch };
+          }
+        } catch (e) {
+          console.error('[Storia status] live sync failed', e);
+        }
+        return l;
+      }));
+    }
   }
 
   return NextResponse.json({

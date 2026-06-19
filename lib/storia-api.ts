@@ -280,3 +280,35 @@ export async function olxFetch(path: string, accessToken: string, options: Reque
     }),
   });
 }
+
+// Map an OLX advert status (POSTED / TO_POST / NOT_POSTED / REJECTED / TO_DELETE)
+// to our canonical portal_listings status. Shared by publish, webhook and sync.
+export function mapOlxStatus(raw: unknown): string {
+  const up = String(raw || '').toUpperCase();
+  if (up === 'POSTED')       return 'active';
+  if (up === 'TO_POST')      return 'pending';
+  if (up === 'NOT_POSTED')   return 'error';
+  if (up === 'REJECTED')     return 'rejected';
+  if (up.includes('DELETE')) return 'deleted';
+  return String(raw || 'pending').toLowerCase();
+}
+
+// Pull the live advert state straight from OLX — GET /advert/v1/{uuid}.
+// Used to recover from missed webhooks (status stuck at pending). Returns the
+// mapped status + an optional error reason, or null if the advert is gone (404).
+export async function fetchAdvertStatus(
+  externalId: string,
+  accessToken: string
+): Promise<{ status: string; reason: string | null; raw: unknown } | null> {
+  const res = await olxFetch(`/advert/v1/${externalId}`, accessToken, { method: 'GET' });
+  if (res.status === 404) return null; // advert no longer exists on OLX
+  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+  if (!res.ok) {
+    return { status: 'error', reason: JSON.stringify(body).slice(0, 500), raw: body };
+  }
+  const data = (body.data || body) as Record<string, unknown>;
+  const rawStatus = data.last_action_status || data.status;
+  // OLX surfaces validation/rejection reasons under various keys.
+  const reason = (data.rejection_reason || data.error_message || data.reason || null) as string | null;
+  return { status: mapOlxStatus(rawStatus), reason, raw: body };
+}
