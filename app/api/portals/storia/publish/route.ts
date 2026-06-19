@@ -63,13 +63,28 @@ export async function POST(request: Request) {
   let storiaResponse: Response;
   let method: string;
 
-  if (existing?.external_id && existing.status !== 'deleted') {
-    // Update existing advert — PUT /advert/v1/{uuid}
+  const canUpdate = existing?.external_id &&
+                    existing.status !== 'deleted' &&
+                    existing.status !== 'error';
+
+  if (canUpdate) {
+    // Attempt to update the existing advert — PUT /advert/v1/{uuid}.
     method = 'PUT';
-    storiaResponse = await olxFetch(`/advert/v1/${existing.external_id}`, token, {
+    const putRes = await olxFetch(`/advert/v1/${existing.external_id}`, token, {
       method: 'PUT',
       body: JSON.stringify(advertPayload),
     });
+
+    if (putRes.status === 404) {
+      // OLX no longer has this advert (was rejected/expired). Create a fresh one.
+      method = 'POST';
+      storiaResponse = await olxFetch('/advert/v1', token, {
+        method: 'POST',
+        body: JSON.stringify(advertPayload),
+      });
+    } else {
+      storiaResponse = putRes;
+    }
   } else {
     // Create new advert — POST /advert/v1
     method = 'POST';

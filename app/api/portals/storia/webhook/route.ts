@@ -38,8 +38,16 @@ export async function POST(request: Request) {
 
   if (trusted) {
     const { event, data } = payload;
-    const externalId = data!.id || data!.advert_id;
-    const newStatus  = data!.status;
+    // OLX sends `id`/`advert_id` for normal events, `object_id` for error events.
+    const externalId = data!.id || data!.advert_id || (data as Record<string, unknown>)?.object_id as string | undefined;
+    const eventType  = (data as Record<string, unknown>)?.event_type as string | undefined;
+    const isError    = eventType?.endsWith('_error') || false;
+    // For error events OLX sends `error_message` instead of `status`.
+    const newStatus  = isError ? 'error' : (data!.status || null);
+    const errMsg     = isError
+      ? ((data as Record<string, unknown>)?.error_message as string || eventType || null)
+      : (data!.reason || null);
+
     if (externalId && newStatus) {
       try {
         const supabase = createClient(
@@ -50,7 +58,7 @@ export async function POST(request: Request) {
           .update({
             status:        newStatus,
             last_sync_at:  new Date().toISOString(),
-            error_message: data!.reason || null,
+            error_message: errMsg,
             updated_at:    new Date().toISOString(),
           })
           .eq('external_id', externalId)
@@ -59,7 +67,7 @@ export async function POST(request: Request) {
         console.error('[Storia webhook] db update failed', e);
       }
     }
-    console.log('[Storia webhook]', event, externalId, newStatus);
+    console.log('[Storia webhook]', event || eventType, externalId, newStatus);
   } else {
     console.warn('[Storia webhook] untrusted signature — ignored event');
   }
