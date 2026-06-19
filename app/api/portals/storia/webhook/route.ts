@@ -38,15 +38,35 @@ export async function POST(request: Request) {
 
   if (trusted) {
     const { event, data } = payload;
-    // OLX sends `id`/`advert_id` for normal events, `object_id` for error events.
-    const externalId = data!.id || data!.advert_id || (data as Record<string, unknown>)?.object_id as string | undefined;
-    const eventType  = (data as Record<string, unknown>)?.event_type as string | undefined;
+    const d = (data || {}) as Record<string, unknown>;
+    // OLX sends `id`/`advert_id` on some events, `object_id` on error/flow events.
+    const externalId = (d.id || d.advert_id || d.object_id) as string | undefined;
+    const eventType  = d.event_type as string | undefined;
     const isError    = eventType?.endsWith('_error') || false;
-    // For error events OLX sends `error_message` instead of `status`.
-    const newStatus  = isError ? 'error' : (data!.status || null);
-    const errMsg     = isError
-      ? ((data as Record<string, unknown>)?.error_message as string || eventType || null)
-      : (data!.reason || null);
+    // OLX may carry the new state as `status` or `last_action_status`
+    // (POSTED / TO_POST / NOT_POSTED / REJECTED), or convey it only via event_type
+    // (e.g. advert_posted, advert_put_error). Derive a canonical status from all of them.
+    const rawStatus = (d.status || d.last_action_status) as string | undefined;
+    let newStatus: string | null = null;
+    if (isError) {
+      newStatus = 'error';
+    } else if (rawStatus) {
+      const up = String(rawStatus).toUpperCase();
+      newStatus = up === 'POSTED'      ? 'active'
+                : up === 'TO_POST'     ? 'pending'
+                : up === 'NOT_POSTED'  ? 'error'
+                : up === 'REJECTED'    ? 'rejected'
+                : up.includes('DELETE') ? 'deleted'
+                : String(rawStatus).toLowerCase();
+    } else if (eventType) {
+      // No explicit status field — infer from the event name.
+      newStatus = /post|updat|activ/i.test(eventType) ? 'active'
+                : /delet/i.test(eventType)            ? 'deleted'
+                : null;
+    }
+    const errMsg = isError
+      ? ((d.error_message as string) || eventType || 'OLX error')
+      : ((d.reason as string) || null);
 
     if (externalId && newStatus) {
       try {
