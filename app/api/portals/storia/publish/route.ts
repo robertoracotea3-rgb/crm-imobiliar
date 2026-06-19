@@ -63,20 +63,23 @@ export async function POST(request: Request) {
   let storiaResponse: Response;
   let method: string;
 
-  const canUpdate = existing?.external_id &&
-                    existing.status !== 'deleted' &&
-                    existing.status !== 'error';
+  // OLX rule (per developer-support): PUT may only be used to update an advert
+  // that is actually POSTED on the portal. For any other state — pending/TO_POST,
+  // error, rejected, not_posted — the advert isn't live yet, so a PUT is rejected
+  // ASYNCHRONOUSLY with `advert_put_error` even though it returns "Data is valid"
+  // synchronously. We must POST to (re)create it. Only `active` (POSTED) → PUT.
+  const isLiveOnPortal = !!existing?.external_id && existing.status === 'active';
 
-  if (canUpdate) {
-    // Attempt to update the existing advert — PUT /advert/v1/{uuid}.
+  if (isLiveOnPortal) {
+    // Update the live advert — PUT /advert/v1/{uuid}.
     method = 'PUT';
-    const putRes = await olxFetch(`/advert/v1/${existing.external_id}`, token, {
+    const putRes = await olxFetch(`/advert/v1/${existing!.external_id}`, token, {
       method: 'PUT',
       body: JSON.stringify(advertPayload),
     });
 
     if (putRes.status === 404) {
-      // OLX no longer has this advert (was rejected/expired). Create a fresh one.
+      // OLX no longer has this advert — recreate it.
       method = 'POST';
       storiaResponse = await olxFetch('/advert/v1', token, {
         method: 'POST',
@@ -86,7 +89,7 @@ export async function POST(request: Request) {
       storiaResponse = putRes;
     }
   } else {
-    // Create new advert — POST /advert/v1
+    // Create (or re-create) the advert — POST /advert/v1.
     method = 'POST';
     storiaResponse = await olxFetch('/advert/v1', token, {
       method: 'POST',
