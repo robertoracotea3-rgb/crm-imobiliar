@@ -24,14 +24,22 @@ export async function GET(request: Request) {
     const { profile } = await getCallerProfile(token);
 
     const { data: agency } = await admin.from('agencies')
-      .select('id, name, created_at')
+      .select('id, name, created_at, settings')
       .eq('id', profile.agency_id).single();
 
     const { data: authUser } = await admin.auth.admin.getUserById(profile.user_id);
     const meta = authUser?.user?.user_metadata || {};
 
+    const wm = (agency?.settings as Record<string, unknown>)?.watermark as Record<string, unknown> | undefined;
+
     return Response.json({
-      agency,
+      agency: agency ? {
+        id: agency.id, name: agency.name, created_at: agency.created_at,
+        watermark: {
+          enabled:  !!wm?.enabled,
+          logo_url: (wm?.logo_url as string) || null,
+        },
+      } : null,
       profile: {
         ...profile,
         email: authUser?.user?.email || '',
@@ -51,14 +59,25 @@ export async function PATCH(request: Request) {
     const { user, profile } = await getCallerProfile(token);
 
     const body = await request.json();
-    const { full_name, phone, job_title, agency_name } = body;
+    const { full_name, phone, job_title, agency_name, watermark_enabled } = body;
+    const isManager = ['owner', 'admin'].includes(profile.role);
+
+    // Toggling the global watermark flag is owner/admin only; merge into agencies.settings.
+    if (typeof watermark_enabled === 'boolean' && isManager) {
+      const { data: agency } = await admin.from('agencies').select('settings').eq('id', profile.agency_id).single();
+      const settings = (agency?.settings as Record<string, unknown>) || {};
+      const watermark = { ...(settings.watermark as Record<string, unknown> || {}), enabled: watermark_enabled };
+      await admin.from('agencies').update({ settings: { ...settings, watermark } }).eq('id', profile.agency_id);
+    }
 
     await Promise.all([
-      admin.from('profiles').update({ full_name: full_name?.trim() || null }).eq('user_id', user.id),
-      admin.auth.admin.updateUserById(user.id, {
-        user_metadata: { full_name: full_name?.trim(), phone: phone?.trim(), job_title: job_title?.trim() },
-      }),
-      ...(agency_name && ['owner', 'admin'].includes(profile.role)
+      ...(full_name !== undefined ? [admin.from('profiles').update({ full_name: full_name?.trim() || null }).eq('user_id', user.id)] : []),
+      ...(full_name !== undefined || phone !== undefined || job_title !== undefined
+        ? [admin.auth.admin.updateUserById(user.id, {
+            user_metadata: { full_name: full_name?.trim(), phone: phone?.trim(), job_title: job_title?.trim() },
+          })]
+        : []),
+      ...(agency_name && isManager
         ? [admin.from('agencies').update({ name: agency_name.trim() }).eq('id', profile.agency_id)]
         : []),
     ]);

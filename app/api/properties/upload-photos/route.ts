@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
 import sharp from 'sharp';
+import { applyWatermark } from '@/lib/watermark';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,8 +34,27 @@ function fileHash(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex').slice(0, 20);
 }
 
-/** Process one image buffer into WebP variants using sharp */
-async function generateVariants(buffer: Buffer): Promise<{ thumb: Buffer; medium: Buffer; large: Buffer }> {
+/** Resize the source to a variant width, optionally stamp the watermark, then encode WebP. */
+async function makeVariant(
+  source: Buffer, width: number, quality: number, watermark?: Buffer
+): Promise<Buffer> {
+  let resized = await sharp(source)
+    .resize(width, undefined, { fit: 'inside', withoutEnlargement: true })
+    .toBuffer();
+  if (watermark) {
+    resized = await applyWatermark(resized, watermark);
+  }
+  return sharp(resized).webp({ quality, effort: 4 }).toBuffer();
+}
+
+/**
+ * Process one image buffer into WebP variants using sharp.
+ * When `watermark` (agency logo) is provided, it is stamped on the medium + large
+ * variants. The thumbnail is left clean — it's too small for a legible logo.
+ */
+async function generateVariants(
+  buffer: Buffer, watermark?: Buffer
+): Promise<{ thumb: Buffer; medium: Buffer; large: Buffer }> {
   const meta = await sharp(buffer).metadata();
 
   // Auto-resize if either dimension exceeds 2500px
@@ -46,18 +66,9 @@ async function generateVariants(buffer: Buffer): Promise<{ thumb: Buffer; medium
     : buffer;
 
   const [thumb, medium, large] = await Promise.all([
-    sharp(source)
-      .resize(SIZES.thumb.width, undefined, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: SIZES.thumb.quality, effort: 4 })
-      .toBuffer(),
-    sharp(source)
-      .resize(SIZES.medium.width, undefined, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: SIZES.medium.quality, effort: 4 })
-      .toBuffer(),
-    sharp(source)
-      .resize(SIZES.large.width, undefined, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: SIZES.large.quality, effort: 4 })
-      .toBuffer(),
+    makeVariant(source, SIZES.thumb.width,  SIZES.thumb.quality),
+    makeVariant(source, SIZES.medium.width, SIZES.medium.quality, watermark),
+    makeVariant(source, SIZES.large.width,  SIZES.large.quality,  watermark),
   ]);
 
   return { thumb, medium, large };
@@ -128,6 +139,22 @@ async function deleteOrphanPhotos(agencyId: string, propertyId: string, keepUrls
   }
 }
 
+/** Load the agency watermark logo IF the global toggle is on and a logo exists. */
+async function loadWatermark(agencyId: string): Promise<Buffer | undefined> {
+  try {
+    const { data: agency } = await supabaseAdmin
+      .from('agencies').select('settings').eq('id', agencyId).single();
+    const wm = (agency?.settings as Record<string, unknown>)?.watermark as Record<string, unknown> | undefined;
+    if (!wm?.enabled || !wm.logo_path) return undefined;
+    const { data: blob } = await supabaseAdmin.storage.from('agency-assets').download(wm.logo_path as string);
+    if (!blob) return undefined;
+    return Buffer.from(await blob.arrayBuffer());
+  } catch (e) {
+    console.error('[upload-photos] watermark load failed', e);
+    return undefined; // never block uploads on a watermark problem
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const authHeader = request.headers.get('Authorization');
@@ -178,6 +205,9 @@ export async function POST(request: Request) {
       }
     }
 
+    // Agency logo watermark (applied only when the global toggle is on).
+    const watermark = await loadWatermark(agencyId);
+
     const photoUrls: string[] = [];
     const photoRows: {
       property_id: string; storage_path: string; hash: string;
@@ -208,10 +238,10 @@ export async function POST(request: Request) {
         continue; // Skip re-processing & re-uploading
       }
 
-      // Generate WebP variants
+      // Generate WebP variants (watermarked when the agency toggle is on)
       let variants: { thumb: Buffer; medium: Buffer; large: Buffer };
       try {
-        variants = await generateVariants(buffer);
+        variants = await generateVariants(buffer, watermark);
       } catch (e) {
         console.error(`[upload] sharp error for file ${file.name}:`, e);
         return Response.json({ error: `Eroare procesare imagine: ${file.name}` }, { status: 422 });
