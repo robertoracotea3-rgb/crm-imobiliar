@@ -14,7 +14,7 @@ export const OLX_API_BASE     = 'https://api.olxgroup.com';
 export const OLX_TOKEN_URL    = `${OLX_API_BASE}/oauth/v1/token`;
 export const STORIA_SITE_URN  = 'urn:site:storiaro';
 export const OTODOM_SITE_URN  = 'urn:site:otodompl';
-export const OLX_USER_AGENT   = 'FortisCRM/1.0';
+export const OLX_USER_AGENT   = 'KiraCRM/1.0';
 
 // OLX test mode: set STORIA_TEST_MODE=true in env to use the Otodom.pl test account.
 // Test ads must have [qatest-mercury] prefix and OLX-mandated description.
@@ -186,7 +186,7 @@ export function propertyToAdvert(
   const contactEmail = (a.contact_email as string) || '';
   if (contactEmail.trim()) {
     advert.contact = {
-      name:  (a.contact_name as string) || 'Fortis Imobiliare',
+      name:  (a.contact_name as string) || 'Kira Imobiliare',
       email: contactEmail.trim(),
       ...(a.contact_phone ? { phone: a.contact_phone } : {}),
     };

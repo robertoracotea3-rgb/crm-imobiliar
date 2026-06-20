@@ -1335,7 +1335,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[
-                  { key: 'pub_site', label: 'Site Propriu Fortis' },
+                  { key: 'pub_site', label: 'Site Propriu Kira' },
                   { key: 'pub_imobiliare', label: 'Imobiliare.ro' },
                   { key: 'pub_olx', label: 'OLX' },
                   { key: 'pub_storia', label: 'Storia' },

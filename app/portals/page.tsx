@@ -80,7 +80,7 @@ export default function PortalsPage() {
       setLoadingStoria(false);
     }
 
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://crm.fortisfagaras.ro';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://crm.kiraimobiliare.ro';
     setFeedUrl(`${origin}/api/feed/properties.xml?agency_id=${aid}`);
   }, []);
 
@@ -224,7 +224,7 @@ export default function PortalsPage() {
                   Adăugați variabilele în Vercel → Settings → Environment Variables:
                 </p>
                 <div className="space-y-1.5">
-                  {['STORIA_CLIENT_ID', 'STORIA_CLIENT_SECRET', 'STORIA_API_KEY', 'STORIA_WEBHOOK_SECRET', 'NEXT_PUBLIC_APP_URL = https://crm.fortisfagaras.ro'].map(v => (
+                  {['STORIA_CLIENT_ID', 'STORIA_CLIENT_SECRET', 'STORIA_API_KEY', 'STORIA_WEBHOOK_SECRET', 'NEXT_PUBLIC_APP_URL = https://crm.kiraimobiliare.ro'].map(v => (
                     <code key={v} className="block text-xs bg-amber-100 text-amber-900 px-3 py-1.5 rounded">{v}</code>
                   ))}
                 </div>
@@ -328,7 +328,7 @@ export default function PortalsPage() {
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <p className="text-xs font-semibold text-gray-500 mb-1">URL Webhook (pentru notificări OLX)</p>
                 <code className="text-xs bg-gray-100 px-3 py-1.5 rounded block text-gray-700">
-                  https://crm.fortisfagaras.ro/api/portals/storia/webhook
+                  https://crm.kiraimobiliare.ro/api/portals/storia/webhook
                 </code>
                 <p className="text-xs text-gray-400 mt-1">Adăugați în Developer Hub → Webhook settings.</p>
               </div>

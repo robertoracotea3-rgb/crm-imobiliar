@@ -85,12 +85,8 @@ export function Sidebar() {
       {/* Sidebar desktop */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white border-r border-gray-200 z-30">
         <div className="px-4 py-5 border-b border-gray-100 flex items-center justify-center bg-white">
-          <span
-            className="text-gray-700 select-none leading-none"
-            style={{ fontFamily: 'var(--font-playfair, Georgia, serif)', fontSize: '1.6rem', fontWeight: 700, letterSpacing: '0.18em' }}
-          >
-            FORTIS
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/logo-kira.png" alt="KIRA Imobiliare" className="h-10 w-auto" />
         </div>
 
         <nav className="flex-1 p-4 space-y-2">

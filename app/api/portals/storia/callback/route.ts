@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const code  = searchParams.get('code');
   const error = searchParams.get('error');
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.fortisfagaras.ro';
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://crm.kiraimobiliare.ro';
 
   if (error) {
     return NextResponse.redirect(
