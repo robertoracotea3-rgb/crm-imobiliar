@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 );
 
 // Access code stored in env; fallback keeps existing registrations working
-const ACCESS_CODE = (process.env.REGISTRATION_ACCESS_CODE || 'FORTIS2024').toUpperCase();
+const ACCESS_CODE = (process.env.REGISTRATION_ACCESS_CODE || 'KIRA2024').toUpperCase();
 
 // Username: only letters, numbers, dots, underscores (3-30 chars)
 const USERNAME_RE = /^[a-zA-Z0-9._]{3,30}$/;
