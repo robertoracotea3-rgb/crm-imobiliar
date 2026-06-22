@@ -141,16 +141,19 @@ export function PropertiesList({
                       </span>
                     )}
                     <ActivityStatus daysAgo={getDaysAgo(property.created_at)} />
-                    {property.publications && property.publications.length > 0 ? (
-                      <span
-                        className="text-xs font-medium bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full"
-                        title={`Publicată pe: ${[...new Set(property.publications.filter(p => p.isEnabled).map(p => p.portal))].join(', ')}`}
-                      >
-                        Publicată
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Nepublicată</span>
-                    )}
+                    {(() => {
+                      const channels = [...new Set((property.publications || []).filter(p => p.isEnabled).map(p => p.portal))];
+                      if (channels.length === 0) {
+                        return <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Nepublicată</span>;
+                      }
+                      // Yellow on a single channel, green on 2+ (wider reach).
+                      const cls = channels.length >= 2 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
+                      return (
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cls}`} title={`Publicată pe: ${channels.join(', ')}`}>
+                          Publicată
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex items-center gap-2">
