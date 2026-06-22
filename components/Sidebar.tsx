@@ -84,12 +84,12 @@ export function Sidebar() {
     <>
       {/* Sidebar desktop */}
       <aside className="hidden md:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white border-r border-gray-200 z-30">
-        <div className="px-4 py-4 border-b border-gray-100 flex items-center justify-center bg-white">
+        <div className="px-4 py-4 border-b border-gray-100 flex items-center justify-center bg-white flex-shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/images/logo-kira.png" alt="KIRA Imobiliare" className="h-16 w-auto" />
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname.startsWith(item.href);
@@ -123,16 +123,16 @@ export function Sidebar() {
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 flex-shrink-0">
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors"
+            className="flex items-center gap-3 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors text-sm"
           >
-            <LogOut size={20} />
+            <LogOut size={18} />
             <span>Logout</span>
           </button>
           {user && (
-            <p className="text-xs text-gray-500 mt-2 truncate">{user.email}</p>
+            <p className="text-xs text-gray-500 mt-2 truncate text-center">{user.email}</p>
           )}
         </div>
       </aside>
@@ -165,6 +165,14 @@ export function Sidebar() {
             </Link>
           );
         })}
+        {/* Mobile logout */}
+        <button
+          onClick={handleLogout}
+          className="flex-1 py-3 flex flex-col items-center gap-1 text-red-600 hover:bg-red-50 transition-colors"
+        >
+          <LogOut size={24} />
+          <span className="text-xs">Logout</span>
+        </button>
       </nav>
     </>
   );
