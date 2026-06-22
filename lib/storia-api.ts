@@ -317,12 +317,15 @@ export async function olxFetch(path: string, accessToken: string, options: Reque
   });
 }
 
-// Map an OLX advert status (POSTED / TO_POST / NOT_POSTED / REJECTED / TO_DELETE)
+// Map an OLX advert status (POSTED / TO_POST / TO_PUT / NOT_POSTED / REJECTED / TO_DELETE)
 // to our canonical portal_listings status. Shared by publish, webhook and sync.
+// TO_POST = queued for first publish; TO_PUT = queued update of a live ad —
+// both are transient "pending" states that settle back to POSTED in minutes.
 export function mapOlxStatus(raw: unknown): string {
   const up = String(raw || '').toUpperCase();
   if (up === 'POSTED')       return 'active';
   if (up === 'TO_POST')      return 'pending';
+  if (up === 'TO_PUT')       return 'pending';
   if (up === 'NOT_POSTED')   return 'error';
   if (up === 'REJECTED')     return 'rejected';
   if (up.includes('DELETE')) return 'deleted';

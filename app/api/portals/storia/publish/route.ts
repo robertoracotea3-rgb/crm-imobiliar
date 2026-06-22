@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getValidToken, olxFetch, propertyToAdvert, missingAdvertFields } from '@/lib/storia-api';
+import { getValidToken, olxFetch, propertyToAdvert, missingAdvertFields, mapOlxStatus } from '@/lib/storia-api';
 
 // POST /api/portals/storia/publish
 // Body: { property_id: string }
@@ -123,12 +123,9 @@ export async function POST(request: Request) {
   const data = (result.data || result) as Record<string, unknown>;
   const externalId = (data.uuid || data.id || data.advert_id || existing?.external_id) as string | undefined;
   const advertUrl  = (data.url || data.advert_url || existing?.advert_url) as string | undefined;
-  // OLX statuses: TO_POST / POSTED / TO_DELETE / REJECTED. Map TO_POST → pending.
+  // Canonical status mapping (TO_POST/TO_PUT → pending, POSTED → active, etc.).
   const rawStatus  = (data.last_action_status || data.status || 'pending') as string;
-  const status     = rawStatus === 'TO_POST' ? 'pending'
-                   : rawStatus === 'POSTED'  ? 'active'
-                   : rawStatus === 'REJECTED' ? 'rejected'
-                   : String(rawStatus).toLowerCase();
+  const status     = mapOlxStatus(rawStatus);
 
   // OLX returns validation errors inside data.error.validation[] even on 2xx.
   // Extract them so the CRM can show a human-readable message instead of null.

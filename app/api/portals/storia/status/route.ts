@@ -5,7 +5,7 @@ import { getValidToken, fetchAdvertStatus } from '@/lib/storia-api';
 // Statuses that are worth re-syncing from OLX.
 // Includes 'error' because an error may reflect a failed update attempt on our side
 // (e.g. expired token during PUT) while the advert is still POSTED on OLX.
-const NON_TERMINAL = new Set(['pending', 'not_posted', 'to_post', 'processing', 'error']);
+const NON_TERMINAL = new Set(['pending', 'not_posted', 'to_post', 'to_put', 'processing', 'error']);
 
 // GET /api/portals/storia/status?property_id=<optional>
 // Returns: connection status + listings for a specific property (or all listings).
