@@ -62,6 +62,26 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+// Parse a coordinate value, rejecting empty strings, NaN and 0 (Number('') === 0,
+// which OLX's Mercury geocoder rejects as the "null island" 0,0 point).
+function parseCoord(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return isNaN(n) || n === 0 ? null : n;
+}
+
+// Resolve a property's coordinates from the top-level columns or the attributes
+// fallback. Returns null when neither holds a valid (non-zero) coordinate pair.
+export function resolveCoords(
+  property: Record<string, unknown>,
+  a: Record<string, unknown>
+): { lat: number; lon: number } | null {
+  const lat = parseCoord(property.latitude) ?? parseCoord(a.lat);
+  const lon = parseCoord(property.longitude) ?? parseCoord(a.lon);
+  if (lat == null || lon == null) return null;
+  return { lat, lon };
+}
+
 // number-of-rooms is a select: urn:concept:1 … urn:concept:10, urn:concept:more.
 function roomsUrn(nrCamere: unknown): string | null {
   const n = toNum(nrCamere);
@@ -120,19 +140,29 @@ export function missingAdvertFields(
   if (!isTestMode() && desc.trim().length < 50) missing.push('Descriere (minim 50 caractere)');
   if (!property.price || Number(property.price) <= 0) missing.push('Preț');
 
-  // Location is validated by OLX on their side; we skip the pre-flight check here
-  // to avoid false negatives when coordinates are in attributes instead of top-level columns.
+  // OLX's Mercury geocoder requires valid coordinates. Missing/zero coords are
+  // rejected asynchronously with MercuryLatLonException — block early instead.
+  if (!resolveCoords(property, a)) missing.push('Coordonate pe hartă (lat/lon)');
 
   // OLX requires at least one image (stored in attributes.photos as URL strings).
   const photoUrls = Array.isArray(a.photos) ? a.photos as string[] : [];
   const hasPhoto = photoUrls.some(u => typeof u === 'string' && u.startsWith('http'));
   if (!hasPhoto) missing.push('Cel puțin o poză');
 
-  // OLX mandates number-of-rooms for apartments (advert_put_error if missing).
+  // Per-category mandatory attributes (verified against OLX taxonomy + live errors).
   const fam = categoryFamily(property.category as string);
+  const netArea  = toNum(a.sup_utila) ?? toNum(property.surface_useful);
+  const landArea = toNum(a.sup_teren) ?? toNum(property.surface_land);
   if (fam === 'apartment') {
     const rooms = toNum(a.nr_camere);
     if (!rooms || rooms < 1) missing.push('Număr camere (obligatoriu pentru apartamente)');
+    if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
+  } else if (fam === 'house') {
+    if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
+  } else if (fam === 'land') {
+    if ((!landArea || landArea <= 0) && (!netArea || netArea <= 0)) missing.push('Suprafață teren (mp)');
+  } else { // store | warehouse
+    if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
   }
 
   return missing;
@@ -177,11 +207,11 @@ export function propertyToAdvert(
     advert.price = { value: Number(property.price), currency: (property.currency as string) || 'EUR' };
   }
 
-  const lat = property.latitude != null ? Number(property.latitude) : a.lat != null ? Number(a.lat) : undefined;
-  const lon = property.longitude != null ? Number(property.longitude) : a.lon != null ? Number(a.lon) : undefined;
-  if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
-    // Use exact:false — OLX Mercury geocoder rejects exact pins for smaller Romanian cities.
-    advert.location = { lat, lon, exact: false };
+  // Only attach a location when we have valid, non-zero coordinates. Number('')
+  // is 0, so a naive parse would send the 0,0 "null island" that OLX rejects.
+  const coords = resolveCoords(property, a);
+  if (coords) {
+    advert.location = { lat: coords.lat, lon: coords.lon, exact: !a.ascunde_adresa };
   }
 
   // Contact is OPTIONAL. If present, OLX requires a valid email — so only send the

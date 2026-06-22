@@ -417,14 +417,31 @@ export default function EditPropertyPage() {
   const hasEtaje = isAp || fd.tip_proprietate === 'Birou' || isComercial;
   const cities = getCities(fd.judet);
 
+  // Coordinates are valid only when both are present, numeric and non-zero
+  // (OLX's Mercury geocoder rejects 0,0; an empty string parses to 0).
+  const hasValidCoords = () => {
+    const la = parseFloat(fd.lat), lo = parseFloat(fd.lon);
+    return !isNaN(la) && !isNaN(lo) && la !== 0 && lo !== 0;
+  };
+
   const validate = (s: number) => {
     if (s === 1) {
       if (!fd.title.trim()) { setError('Titlul este obligatoriu'); return false; }
+      if (fd.title.trim().length < 5) { setError('Titlul trebuie să aibă minim 5 caractere (cerință Storia/OLX)'); return false; }
       if (!fd.price) { setError('Pretul este obligatoriu'); return false; }
     }
     if (s === 2) {
       if (!fd.judet) { setError('Judetul este obligatoriu'); return false; }
       if (!fd.localitate) { setError('Localitatea este obligatorie'); return false; }
+      if (!hasValidCoords()) { setError('Selectează locația pe hartă — coordonatele (lat/lon) sunt obligatorii pentru publicarea pe Storia/OLX'); return false; }
+    }
+    if (s === 4) {
+      if (isAp && (!fd.nr_camere || +fd.nr_camere < 1)) { setError('Numărul de camere este obligatoriu pentru apartamente (cerință Storia/OLX)'); return false; }
+      if (isTeren) {
+        if (!fd.sup_teren || +fd.sup_teren <= 0) { setError('Suprafața terenului este obligatorie (cerință Storia/OLX)'); return false; }
+      } else {
+        if (!fd.sup_utila || +fd.sup_utila <= 0) { setError('Suprafața utilă este obligatorie (cerință Storia/OLX)'); return false; }
+      }
     }
     return true;
   };
@@ -485,6 +502,12 @@ export default function EditPropertyPage() {
   };
 
   const handleSave = async () => {
+    // Safety net: the step bar lets users jump steps, bypassing per-step validation.
+    // Re-check the OLX-mandatory data fields and jump to the first gap.
+    for (const s of [1, 2, 4]) {
+      if (!validate(s)) { setStep(s); return; }
+    }
+
     try {
       setLoading(true);
       setError('');
@@ -864,11 +887,11 @@ export default function EditPropertyPage() {
                 <input type="text" value={fd.cod_postal} onChange={e => set('cod_postal', e.target.value)}
                   placeholder="ex: 400001" className={ic} />
               </F>
-              <F label="Latitudine">
+              <F label="Latitudine *">
                 <input type="text" value={fd.lat} onChange={e => set('lat', e.target.value)}
                   placeholder="46.7712" className={ic} />
               </F>
-              <F label="Longitudine">
+              <F label="Longitudine *">
                 <input type="text" value={fd.lon} onChange={e => set('lon', e.target.value)}
                   placeholder="23.5236" className={ic} />
               </F>
@@ -950,12 +973,12 @@ export default function EditPropertyPage() {
           <div className="space-y-3 bg-white rounded-lg p-6">
             <SH title="Suprafețe (m²)" />
             <div className="grid grid-cols-3 gap-3">
-              <F label="Suprafață utilă"><input type="number" value={fd.sup_utila} onChange={e => set('sup_utila', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
+              <F label={`Suprafață utilă${!isTeren ? ' *' : ''}`}><input type="number" value={fd.sup_utila} onChange={e => set('sup_utila', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
               <F label="Suprafață construită"><input type="number" value={fd.sup_construita} onChange={e => set('sup_construita', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
               <F label="Suprafață totală"><input type="number" value={fd.sup_totala} onChange={e => set('sup_totala', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <F label="Suprafață teren"><input type="number" value={fd.sup_teren} onChange={e => set('sup_teren', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
+              <F label={`Suprafață teren${isTeren ? ' *' : ''}`}><input type="number" value={fd.sup_teren} onChange={e => set('sup_teren', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
               <F label="Suprafață curte"><input type="number" value={fd.sup_curte} onChange={e => set('sup_curte', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
               <F label="Suprafață balcon"><input type="number" value={fd.sup_balcon} onChange={e => set('sup_balcon', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
             </div>
@@ -972,7 +995,7 @@ export default function EditPropertyPage() {
               <>
                 <SH title="Compartimentare" />
                 <div className="grid grid-cols-3 gap-3">
-                  <F label="Camere"><input type="number" value={fd.nr_camere} onChange={e => set('nr_camere', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
+                  <F label={`Camere${isAp ? ' *' : ''}`}><input type="number" value={fd.nr_camere} onChange={e => set('nr_camere', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                   <F label="Dormitoare"><input type="number" value={fd.nr_dormitoare} onChange={e => set('nr_dormitoare', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                   <F label="Băi"><input type="number" value={fd.nr_bai} onChange={e => set('nr_bai', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                 </div>
