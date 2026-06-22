@@ -662,6 +662,11 @@ export default function TeamPage() {
     { id: 'permissions', label: 'Permisiuni', icon: <Shield size={16} /> },
   ] as const;
 
+  // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
+  if (role !== 'owner') {
+    return null;
+  }
+
   return (
     <ProtectedLayout>
       <div className="p-6 max-w-7xl mx-auto">

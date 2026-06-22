@@ -155,6 +155,11 @@ export default function PortalsPage() {
   const activeListings = storia?.listings.filter(l => l.status === 'active').length ?? 0;
   const totalListings  = storia?.listings.length ?? 0;
 
+  // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
+  if (role !== 'owner') {
+    return null;
+  }
+
   return (
     <ProtectedLayout>
       <div className="p-6 max-w-4xl mx-auto">

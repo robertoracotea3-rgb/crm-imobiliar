@@ -41,6 +41,9 @@ const mobileMenuItems = ['/dashboard', '/properties', '/matches', '/leads', '/vi
   .map(href => menuItems.find(m => m.href === href)!)
   .filter(Boolean);
 
+// Pagini accesibile DOAR proprietarului (owner)
+const OWNER_ONLY = ['/finance', '/portals', '/team', '/settings'];
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -49,7 +52,7 @@ export function Sidebar() {
 
   // Restrict owner-only items (Finance, Portals, Team, Settings) to owners only
   const visibleItems = menuItems.filter(item => {
-    if (['​/finance', '/portals', '/team', '/settings'].includes(item.href)) {
+    if (OWNER_ONLY.includes(item.href)) {
       return role === 'owner';
     }
     return true;

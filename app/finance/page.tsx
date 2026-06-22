@@ -274,6 +274,11 @@ export default function FinancePage() {
   const propLabel = (id?: string | null) => { const p = props.find(x => x.id === id); return p ? `${p.internal_code}` : '—'; };
   const agentLabel = (id?: string | null) => { const a = agents.find(x => x.id === id); return a?.name || a?.email || '—'; };
 
+  // Blochează randarea pentru non-owner (redirect gestionat în useEffect de mai sus)
+  if (role !== 'owner') {
+    return null;
+  }
+
   return (
     <ProtectedLayout>
       <div className="p-6 max-w-6xl mx-auto space-y-6">

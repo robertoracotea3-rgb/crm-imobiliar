@@ -175,6 +175,11 @@ export default function SettingsPage() {
     { id: 'security', label: 'Securitate', icon: Shield },
   ] as const;
 
+  // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
+  if (role !== 'owner') {
+    return null;
+  }
+
   return (
     <ProtectedLayout>
       <div className="p-6 max-w-3xl mx-auto">
