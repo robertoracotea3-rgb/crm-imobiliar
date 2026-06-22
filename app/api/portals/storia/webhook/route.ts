@@ -51,9 +51,10 @@ export async function POST(request: Request) {
     if (isError) {
       newStatus = 'error';
     } else if (rawStatus) {
+      // POSTED/PUT/POST = live; TO_POST/TO_PUT = queued (pending). See mapOlxStatus.
       const up = String(rawStatus).toUpperCase();
-      newStatus = up === 'POSTED'      ? 'active'
-                : up === 'TO_POST'     ? 'pending'
+      newStatus = (up === 'POSTED' || up === 'PUT' || up === 'POST') ? 'active'
+                : (up === 'TO_POST' || up === 'TO_PUT') ? 'pending'
                 : up === 'NOT_POSTED'  ? 'error'
                 : up === 'REJECTED'    ? 'rejected'
                 : up.includes('DELETE') ? 'deleted'

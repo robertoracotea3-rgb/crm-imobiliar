@@ -317,15 +317,17 @@ export async function olxFetch(path: string, accessToken: string, options: Reque
   });
 }
 
-// Map an OLX advert status (POSTED / TO_POST / TO_PUT / NOT_POSTED / REJECTED / TO_DELETE)
-// to our canonical portal_listings status. Shared by publish, webhook and sync.
-// TO_POST = queued for first publish; TO_PUT = queued update of a live ad —
-// both are transient "pending" states that settle back to POSTED in minutes.
+// Map an OLX advert status to our canonical portal_listings status.
+// Shared by publish, webhook and sync. The OLX lifecycle is action-based:
+//   TO_POST → POSTED  (create: queued → live)
+//   TO_PUT  → PUT     (update: queued → live with new data)
+// So TO_* are transient "pending" states, while POSTED/PUT/POST mean the
+// advert is live. Both PUT and POSTED must map to active.
 export function mapOlxStatus(raw: unknown): string {
   const up = String(raw || '').toUpperCase();
-  if (up === 'POSTED')       return 'active';
-  if (up === 'TO_POST')      return 'pending';
-  if (up === 'TO_PUT')       return 'pending';
+  if (up === 'POSTED' || up === 'POST') return 'active';
+  if (up === 'PUT')                     return 'active'; // update applied → live
+  if (up === 'TO_POST' || up === 'TO_PUT') return 'pending';
   if (up === 'NOT_POSTED')   return 'error';
   if (up === 'REJECTED')     return 'rejected';
   if (up.includes('DELETE')) return 'deleted';
