@@ -44,8 +44,16 @@ const mobileMenuItems = ['/dashboard', '/properties', '/matches', '/leads', '/vi
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, signOut } = useAuth();
+  const { user, role, loading, signOut } = useAuth();
   const [notifCount, setNotifCount] = useState(0);
+
+  // Restrict owner-only items (Finance, Portals, Team, Settings) to owners only
+  const visibleItems = menuItems.filter(item => {
+    if (['​/finance', '/portals', '/team', '/settings'].includes(item.href)) {
+      return role === 'owner';
+    }
+    return true;
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -90,7 +98,7 @@ export function Sidebar() {
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {menuItems.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname.startsWith(item.href);
             const isNotif = item.href === '/notifications';
@@ -139,7 +147,10 @@ export function Sidebar() {
 
       {/* Bottom nav mobile */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around">
-        {mobileMenuItems.map((item) => {
+        {mobileMenuItems.filter(item => {
+          if (item.href === '/finance') return role === 'owner';
+          return true;
+        }).map((item) => {
           const Icon = item.icon;
           const isActive = pathname.startsWith(item.href);
           const isNotif = item.href === '/notifications';

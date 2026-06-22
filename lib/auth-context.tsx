@@ -16,6 +16,7 @@ interface Agency {
 interface AuthContextType {
   user: User | null;
   agency: Agency | null;
+  role: 'owner' | 'admin' | 'agent' | null;
   loading: boolean;
   signUp: (email: string, password: string, agencyName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -27,6 +28,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [agency, setAgency] = useState<Agency | null>(null);
+  const [role, setRole] = useState<'owner' | 'admin' | 'agent' | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Check session on mount
@@ -42,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(null);
         setAgency(null);
+        setRole(null);
       }
     });
 
@@ -66,7 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchUserAgency = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('agency_id, agencies(id, name)')
+      .select('agency_id, role, agencies(id, name)')
       .eq('user_id', userId)
       .single();
 
@@ -75,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    setRole((data?.role as 'owner' | 'admin' | 'agent') || 'agent');
     if (data?.agencies && Array.isArray(data.agencies) && data.agencies.length > 0) {
       setAgency(data.agencies[0] as Agency);
     } else if (data?.agencies && !Array.isArray(data.agencies)) {
@@ -171,10 +175,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await supabase.auth.signOut();
     setUser(null);
     setAgency(null);
+    setRole(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, agency, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, agency, role, loading, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
