@@ -33,11 +33,10 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#F6F5F1' }}>
       <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2" style={{ color: '#0E6B54' }}>
-            CRM Imobiliar
-          </h1>
-          <p className="text-gray-600">Platforma pentru agentiile imobiliare</p>
+        <div className="text-center mb-8 flex flex-col items-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/logo-kira.png" alt="KIRA Imobiliare" className="h-24 w-auto mb-3" />
+          <p className="text-gray-600">Platforma pentru agențiile imobiliare</p>
         </div>
 
         <div className="bg-white rounded-lg p-8 shadow-sm">
