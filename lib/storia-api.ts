@@ -128,9 +128,12 @@ export function missingAdvertFields(
   const hasPhoto = photoUrls.some(u => typeof u === 'string' && u.startsWith('http'));
   if (!hasPhoto) missing.push('Cel puțin o poză');
 
-  // Note: per-category attributes (rooms/area/market) are sent best-effort via
-  // buildAdvertAttributes; OLX accepts the advert even when some are absent, so we
-  // don't block publishing on them here — only on the hard-rejected fields above.
+  // OLX mandates number-of-rooms for apartments (advert_put_error if missing).
+  const fam = categoryFamily(property.category as string);
+  if (fam === 'apartment') {
+    const rooms = toNum(a.nr_camere);
+    if (!rooms || rooms < 1) missing.push('Număr camere (obligatoriu pentru apartamente)');
+  }
 
   return missing;
 }
@@ -308,7 +311,11 @@ export async function fetchAdvertStatus(
   }
   const data = (body.data || body) as Record<string, unknown>;
   const rawStatus = data.last_action_status || data.status;
-  // OLX surfaces validation/rejection reasons under various keys.
-  const reason = (data.rejection_reason || data.error_message || data.reason || null) as string | null;
+  // Extract validation errors from OLX's error.validation[] array (returned even on 2xx NOT_POSTED).
+  const olxErr = data.error as Record<string, unknown> | undefined;
+  const validation = olxErr?.validation as Array<{ detail: string }> | undefined;
+  const reason = validation?.length
+    ? validation.map(v => v.detail).join('; ')
+    : ((data.rejection_reason || data.error_message || data.reason || olxErr?.detail || null) as string | null);
   return { status: mapOlxStatus(rawStatus), reason, raw: body };
 }

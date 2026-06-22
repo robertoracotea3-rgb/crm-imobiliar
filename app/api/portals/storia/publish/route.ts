@@ -130,6 +130,14 @@ export async function POST(request: Request) {
                    : rawStatus === 'REJECTED' ? 'rejected'
                    : String(rawStatus).toLowerCase();
 
+  // OLX returns validation errors inside data.error.validation[] even on 2xx.
+  // Extract them so the CRM can show a human-readable message instead of null.
+  const olxError = data.error as Record<string, unknown> | undefined;
+  const validation = olxError?.validation as Array<{ detail: string }> | undefined;
+  const errorMessage = validation?.length
+    ? validation.map(v => v.detail).join('; ')
+    : (olxError?.detail as string | undefined) || null;
+
   await supabase.from('portal_listings').upsert(
     {
       agency_id:     agency.id,
@@ -139,7 +147,7 @@ export async function POST(request: Request) {
       status,
       advert_url:    advertUrl,
       last_sync_at:  new Date().toISOString(),
-      error_message: null,
+      error_message: errorMessage,
       raw_response:  result,
       updated_at:    new Date().toISOString(),
     },
