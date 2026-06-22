@@ -75,17 +75,32 @@ export async function GET(request: Request) {
   } else {
     const { data } = await supabase
       .from('portal_listings')
-      .select('*, properties(id, title, internal_code)')
+      .select('*')
       .eq('agency_id', agency.id)
       .eq('portal', 'storia')
       .order('updated_at', { ascending: false });
-    listings = (data || []).map((l: Record<string, unknown>) => {
-      const prop = l.properties as { id: string; title: string; internal_code: string } | null;
+
+    // Enrich with property title + internal code. There's no FK relationship
+    // between portal_listings and properties in the schema, so an embedded join
+    // (PGRST200) fails — fetch the properties separately and merge by id.
+    const rows = (data || []) as Record<string, unknown>[];
+    const propIds = [...new Set(rows.map(l => l.property_id).filter(Boolean))] as string[];
+    const propMap = new Map<string, { title: string; internal_code: string }>();
+    if (propIds.length > 0) {
+      const { data: props } = await supabase
+        .from('properties')
+        .select('id, title, internal_code')
+        .in('id', propIds);
+      for (const p of (props || []) as { id: string; title: string; internal_code: string }[]) {
+        propMap.set(p.id, { title: p.title, internal_code: p.internal_code });
+      }
+    }
+    listings = rows.map(l => {
+      const prop = propMap.get(l.property_id as string);
       return {
         ...l,
         property_title: prop?.title || null,
         internal_code: prop?.internal_code || null,
-        properties: undefined,
       };
     });
 
