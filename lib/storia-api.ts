@@ -180,7 +180,8 @@ export function propertyToAdvert(
   const lat = property.latitude != null ? Number(property.latitude) : a.lat != null ? Number(a.lat) : undefined;
   const lon = property.longitude != null ? Number(property.longitude) : a.lon != null ? Number(a.lon) : undefined;
   if (lat !== undefined && lon !== undefined && !isNaN(lat) && !isNaN(lon)) {
-    advert.location = { lat, lon, exact: !a.ascunde_adresa };
+    // Use exact:false — OLX Mercury geocoder rejects exact pins for smaller Romanian cities.
+    advert.location = { lat, lon, exact: false };
   }
 
   // Contact is OPTIONAL. If present, OLX requires a valid email — so only send the
