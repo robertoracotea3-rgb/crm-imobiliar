@@ -66,6 +66,19 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
 
 // ─── main ────────────────────────────────────────────────────────────────────
 
+// Freshness of a Storia listing based on days since the last update/sync.
+// Green < 20 days, yellow at 20–21 days, red at 22+ days (agency refresh cadence).
+function storiaFreshness(lastSync?: string): {
+  days: number | null; dot: string; text: string; label: string; stale: boolean;
+} {
+  if (!lastSync) return { days: null, dot: '#9ca3af', text: '#6b7280', label: 'Nesincronizat', stale: false };
+  const days = Math.floor((Date.now() - new Date(lastSync).getTime()) / 86_400_000);
+  const ago = days <= 0 ? 'azi' : days === 1 ? 'acum 1 zi' : `acum ${days} zile`;
+  if (days >= 22) return { days, dot: '#ef4444', text: '#b91c1c', label: `Actualizat ${ago} — reactualizează acum`, stale: true };
+  if (days >= 20) return { days, dot: '#f59e0b', text: '#b45309', label: `Actualizat ${ago} — recomandat să reactualizezi`, stale: true };
+  return { days, dot: '#10b981', text: '#047857', label: `Actualizat ${ago}`, stale: false };
+}
+
 const SOURCE_LABEL: Record<string, string> = {
   facebook: 'Facebook', olx: 'OLX', storia: 'Storia',
   imobiliare: 'Imobiliare.ro', banner: 'Banner',
@@ -722,6 +735,13 @@ export default function PropertyDetailPage() {
             <div className="flex items-center gap-3 px-5 py-3.5 border-b border-gray-100">
               <Globe size={17} className="text-orange-500" />
               <span className="font-semibold text-gray-800 text-sm flex-1">Storia + OLX Imobiliare</span>
+              {storiaListing && storiaListing.status === 'active' && storiaListing.last_sync_at && (
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: storiaFreshness(storiaListing.last_sync_at).dot }}
+                  title={storiaFreshness(storiaListing.last_sync_at).label}
+                />
+              )}
               {storiaListing && storiaListing.status !== 'deleted' && (
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                   storiaListing.status === 'active'   ? 'bg-emerald-100 text-emerald-800' :
@@ -744,12 +764,27 @@ export default function PropertyDetailPage() {
                 </div>
               ) : storiaListing && storiaListing.status !== 'deleted' ? (
                 <div className="space-y-3">
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>ID Storia: <code className="bg-gray-100 px-1.5 py-0.5 rounded">{storiaListing.external_id || '—'}</code></span>
-                    {storiaListing.last_sync_at && (
-                      <span>Sincronizat: {new Date(storiaListing.last_sync_at).toLocaleString('ro-RO')}</span>
-                    )}
-                  </div>
+                  {(() => {
+                    const f = storiaFreshness(storiaListing.last_sync_at);
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span
+                            className="inline-block w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: f.dot, boxShadow: f.stale ? `0 0 0 4px ${f.dot}26` : undefined }}
+                            title={f.label}
+                          />
+                          <span className="font-medium" style={{ color: f.text }}>{f.label}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span>ID Storia: <code className="bg-gray-100 px-1.5 py-0.5 rounded">{storiaListing.external_id || '—'}</code></span>
+                          {storiaListing.last_sync_at && (
+                            <span>Ultima actualizare: {new Date(storiaListing.last_sync_at).toLocaleString('ro-RO')}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {storiaListing.error_message && (
                     <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
                       {storiaListing.error_message}
