@@ -8,7 +8,7 @@ import {
   ChevronLeft, Edit, Trash2, MapPin, DollarSign, Calendar,
   Home, Building2, Ruler, Zap, Paintbrush, Trees, Megaphone, User, FileText,
   Target, CheckCircle, AlertCircle, ExternalLink, ChevronDown,
-  Globe, Loader2, Link2Off,
+  Globe, Loader2, Link2Off, GripVertical, Save, X as XIcon, Images,
 } from 'lucide-react';
 import { PropertyMapView } from '@/components/PropertyMapView';
 import { PropertyDocuments } from '@/components/PropertyDocuments';
@@ -97,6 +97,52 @@ export default function PropertyDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+
+  // Photo reordering
+  const [editingPhotos, setEditingPhotos] = useState(false);
+  const [photoOrder, setPhotoOrder] = useState<string[]>([]);
+  const [photoDragIdx, setPhotoDragIdx] = useState<number | null>(null);
+  const [photoSaving, setPhotoSaving] = useState(false);
+
+  const startPhotoEdit = () => {
+    const photos = (property?.attributes?.photos as string[]) || [];
+    setPhotoOrder([...photos]);
+    setEditingPhotos(true);
+  };
+
+  const movePhoto = (from: number, dir: -1 | 1) => {
+    const to = from + dir;
+    if (to < 0 || to >= photoOrder.length) return;
+    const next = [...photoOrder];
+    [next[from], next[to]] = [next[to], next[from]];
+    setPhotoOrder(next);
+  };
+
+  const savePhotoOrder = async () => {
+    if (!property) return;
+    try {
+      setPhotoSaving(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sesiune expirată');
+      const form = new FormData();
+      form.append('propertyId', property.id);
+      form.append('existingPhotos', JSON.stringify(photoOrder));
+      form.append('replacePhotos', 'true');
+      const res = await fetch('/api/properties/upload-photos', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: form,
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Eroare salvare');
+      setProperty(p => p ? { ...p, attributes: { ...p.attributes, photos: photoOrder } } : p);
+      setEditingPhotos(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Eroare');
+    } finally {
+      setPhotoSaving(false);
+    }
+  };
 
   // Storia / OLX publishing
   interface StoriaListing { external_id?: string; status: string; advert_url?: string; error_message?: string; last_sync_at?: string }
@@ -367,12 +413,85 @@ export default function PropertyDetailPage() {
         </div>
         {/* Poze */}
         {(a.photos as string[])?.length > 0 && (
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
-            {(a.photos as string[]).map((url: string, i: number) => (
-              <div key={i} className="rounded-lg overflow-hidden bg-gray-100 aspect-video">
-                <img src={url} alt={`Poza ${i + 1}`} className="w-full h-full object-cover" />
+          <div className="mt-4">
+            {/* Header galerie */}
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Images size={14} /> Galerie ({(a.photos as string[]).length} poze)
+              </span>
+              {!editingPhotos ? (
+                <button onClick={startPhotoEdit}
+                  className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
+                  <GripVertical size={13} /> Editează ordinea
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Trage pozele pentru reordonare</span>
+                  <button onClick={() => setEditingPhotos(false)} disabled={photoSaving}
+                    className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
+                    <XIcon size={12} /> Anulează
+                  </button>
+                  <button onClick={savePhotoOrder} disabled={photoSaving}
+                    className="flex items-center gap-1 px-3 py-1 text-xs font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+                    {photoSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                    Salvează
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Grid normal (vizualizare) */}
+            {!editingPhotos && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {(a.photos as string[]).map((url: string, i: number) => (
+                  <div key={i} className="rounded-lg overflow-hidden bg-gray-100 aspect-video">
+                    <img src={url} alt={`Poza ${i + 1}`} className="w-full h-full object-cover" />
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            {/* Grid editabil cu drag & drop */}
+            {editingPhotos && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {photoOrder.map((url, i) => (
+                  <div key={url}
+                    draggable
+                    onDragStart={() => setPhotoDragIdx(i)}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => {
+                      e.preventDefault();
+                      if (photoDragIdx === null || photoDragIdx === i) return;
+                      const next = [...photoOrder];
+                      const [moved] = next.splice(photoDragIdx, 1);
+                      next.splice(i, 0, moved);
+                      setPhotoOrder(next);
+                      setPhotoDragIdx(null);
+                    }}
+                    onDragEnd={() => setPhotoDragIdx(null)}
+                    className={`relative rounded-lg overflow-hidden bg-gray-100 aspect-video cursor-grab border-2 transition-all ${
+                      photoDragIdx === i ? 'border-emerald-400 opacity-50 scale-95' : 'border-transparent hover:border-emerald-300'
+                    }`}>
+                    <img src={url} alt={`Poza ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                    {/* Overlay cu numărul și gripul */}
+                    <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-between p-1.5">
+                      <span className="bg-black/60 text-white text-xs px-1.5 py-0.5 rounded font-medium">{i + 1}</span>
+                      <div className="flex gap-1">
+                        <button type="button" onClick={() => movePhoto(i, -1)} disabled={i === 0}
+                          className="bg-white/90 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-white text-xs leading-none">◀</button>
+                        <button type="button" onClick={() => movePhoto(i, 1)} disabled={i === photoOrder.length - 1}
+                          className="bg-white/90 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-white text-xs leading-none">▶</button>
+                      </div>
+                    </div>
+                    {i === 0 && (
+                      <div className="absolute top-1.5 left-1.5 bg-emerald-500 text-white text-xs px-1.5 py-0.5 rounded font-semibold">
+                        Copertă
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
