@@ -437,7 +437,7 @@ export default function EditPropertyPage() {
       if (!hasValidCoords()) { setError('Selectează locația pe hartă — coordonatele (lat/lon) sunt obligatorii pentru publicarea pe Storia/OLX'); return false; }
     }
     if (s === 4) {
-      if (isAp && (!fd.nr_camere || +fd.nr_camere < 1)) { setError('Numărul de camere este obligatoriu pentru apartamente (cerință Storia/OLX)'); return false; }
+      if ((isAp || isCasa) && (!fd.nr_camere || +fd.nr_camere < 1)) { setError('Numărul de camere este obligatoriu (cerință Storia/OLX)'); return false; }
       if (isTeren) {
         if (!fd.sup_teren || +fd.sup_teren <= 0) { setError('Suprafața terenului este obligatorie (cerință Storia/OLX)'); return false; }
       } else {
@@ -997,7 +997,7 @@ export default function EditPropertyPage() {
               <>
                 <SH title="Compartimentare" />
                 <div className="grid grid-cols-3 gap-3">
-                  <F label={`Camere${isAp ? ' *' : ''}`}><input type="number" value={fd.nr_camere} onChange={e => set('nr_camere', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
+                  <F label={`Camere${isAp || isCasa ? ' *' : ''}`}><input type="number" value={fd.nr_camere} onChange={e => set('nr_camere', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                   <F label="Dormitoare"><input type="number" value={fd.nr_dormitoare} onChange={e => set('nr_dormitoare', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                   <F label="Băi"><input type="number" value={fd.nr_bai} onChange={e => set('nr_bai', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                 </div>

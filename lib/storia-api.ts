@@ -110,6 +110,10 @@ export function buildAdvertAttributes(
     if (netArea != null)  attrs.push({ urn: 'urn:concept:net-area-m2',     value: String(netArea) });
     if (isSale)           attrs.push({ urn: 'urn:concept:market',          value: market });
   } else if (fam === 'house') {
+    // OLX Export (cross-post to OLX.ro) requires number-of-rooms for houses —
+    // without it the advert posts on Storia but never reaches OLX.ro.
+    const rooms = roomsUrn(a.nr_camere);
+    if (rooms)            attrs.push({ urn: 'urn:concept:number-of-rooms', value: rooms });
     if (netArea != null)  attrs.push({ urn: 'urn:concept:net-area-m2',     value: String(netArea) });
     if (landArea != null) attrs.push({ urn: 'urn:concept:terrain-area-m2', value: String(landArea) });
     if (isSale)           attrs.push({ urn: 'urn:concept:market',          value: market });
@@ -159,6 +163,9 @@ export function missingAdvertFields(
     if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
   } else if (fam === 'house') {
     // OLX rejects houses without terrain area: "Suprafata teren este necesar".
+    // number-of-rooms is required by the OLX Export to reach OLX.ro.
+    const rooms = toNum(a.nr_camere);
+    if (!rooms || rooms < 1) missing.push('Număr camere (obligatoriu pentru OLX)');
     if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
     if (!landArea || landArea <= 0) missing.push('Suprafață teren (mp)');
   } else if (fam === 'land') {
