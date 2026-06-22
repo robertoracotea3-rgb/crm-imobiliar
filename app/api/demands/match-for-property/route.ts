@@ -7,15 +7,18 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function scorePropertyAgainstDemand(property: any, demand: any): { score: number; details: Record<string, string> } {
+function scorePropertyAgainstDemand(property: any, demand: any): { score: number; details: Record<string, string>; categoryMatch: boolean; cityMatch: boolean; locationMatch: boolean } {
   let score = 0;
   const details: Record<string, string> = {};
   const c = demand.criteria || {};
+  let categoryMatch = false;
+  let cityMatch = false;
 
   // Categorie (25 pts)
   if (property.category === demand.category) {
     score += 25;
     details.categorie = '✓ Potrivit';
+    categoryMatch = true;
   } else {
     details.categorie = `Cerut: ${demand.category?.replace(/_/g, ' ')}, prop: ${property.category?.replace(/_/g, ' ')}`;
   }
@@ -38,6 +41,7 @@ function scorePropertyAgainstDemand(property: any, demand: any): { score: number
     if (match) {
       score += 20;
       details.oras = '✓ Potrivit';
+      cityMatch = true;
     } else {
       details.oras = `Cerut: ${demand.cities?.join(', ')}, prop: ${property.city}`;
     }
@@ -47,6 +51,7 @@ function scorePropertyAgainstDemand(property: any, demand: any): { score: number
   }
 
   // Judet (10 pts) — demand.counties is an array
+  let countyMatch = false;
   const demCounties: string[] = (demand.counties || []).map((s: string) => s.toLowerCase().trim());
   const propCounty = (property.county || '').toLowerCase().trim();
   if (demCounties.length > 0 && propCounty) {
@@ -54,6 +59,7 @@ function scorePropertyAgainstDemand(property: any, demand: any): { score: number
     if (match) {
       score += 10;
       details.judet = '✓ Potrivit';
+      countyMatch = true;
     } else {
       details.judet = `Cerut: ${demand.counties?.join(', ')}, prop: ${property.county}`;
     }
@@ -61,6 +67,12 @@ function scorePropertyAgainstDemand(property: any, demand: any): { score: number
     score += 5;
     details.judet = 'Nespecificat';
   }
+
+  // Location relevance: if the demand names specific cities, the property's city
+  // must be one of them; otherwise fall back to the county (most demands are only
+  // county-level). A demand for "Holbav" never matches a Făgăraș property, but a
+  // county-wide "Brașov" demand does.
+  const locationMatch = demCities.length > 0 ? cityMatch : countyMatch;
 
   // Pret (20 pts) — budget_min / budget_max
   const propPrice = property.price || 0;
@@ -105,7 +117,7 @@ function scorePropertyAgainstDemand(property: any, demand: any): { score: number
     details.camere = `${propCamere} cam — cerut ${minCam}-${maxCam === Infinity ? '+' : maxCam}`;
   }
 
-  return { score: Math.min(100, Math.round(score)), details };
+  return { score: Math.min(100, Math.round(score)), details, categoryMatch, cityMatch, locationMatch };
 }
 
 export async function GET(request: Request) {
@@ -141,7 +153,9 @@ export async function GET(request: Request) {
 
     const scored = demands
       .map((d) => ({ ...d, ...scorePropertyAgainstDemand(property, d) }))
-      .filter((d) => d.score >= 30)
+      // Hard requirement: only demands of the SAME category AND the same location
+      // (city when the demand names one, else the county). Everything else is noise.
+      .filter((d) => d.categoryMatch && d.locationMatch)
       .sort((a, b) => b.score - a.score);
 
     return Response.json({ matches: scored });
