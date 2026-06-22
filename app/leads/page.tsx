@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { ReplyLeadDialog } from '@/components/ReplyLeadDialog';
+import { formatWaitTime } from '@/lib/format-time';
 import {
   MessageCircle, TrendingUp, Clock, Plus, X, Loader2,
   Phone, Mail, User, Filter, Search, Trash2, ArrowRightCircle,
@@ -409,8 +410,8 @@ export default function LeadsPage() {
                   <div className="flex items-center gap-1 text-xs text-gray-400 flex-shrink-0 mt-0.5">
                     <Clock size={12} />
                     {lead.first_response_at
-                      ? `${Math.floor((new Date(lead.first_response_at).getTime() - new Date(lead.received_at).getTime()) / 60000)}m`
-                      : `${Math.floor((Date.now() - new Date(lead.received_at).getTime()) / 60000)}m așteptare`}
+                      ? formatWaitTime(Math.floor((new Date(lead.first_response_at).getTime() - new Date(lead.received_at).getTime()) / 60000))
+                      : `${formatWaitTime(Math.floor((Date.now() - new Date(lead.received_at).getTime()) / 60000))} așteptare`}
                   </div>
                 </div>
                 {/* Row 2: contact info */}
