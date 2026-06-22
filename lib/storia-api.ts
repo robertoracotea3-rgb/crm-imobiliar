@@ -158,7 +158,9 @@ export function missingAdvertFields(
     if (!rooms || rooms < 1) missing.push('Număr camere (obligatoriu pentru apartamente)');
     if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
   } else if (fam === 'house') {
+    // OLX rejects houses without terrain area: "Suprafata teren este necesar".
     if (!netArea || netArea <= 0) missing.push('Suprafață utilă (mp)');
+    if (!landArea || landArea <= 0) missing.push('Suprafață teren (mp)');
   } else if (fam === 'land') {
     if ((!landArea || landArea <= 0) && (!netArea || netArea <= 0)) missing.push('Suprafață teren (mp)');
   } else { // store | warehouse

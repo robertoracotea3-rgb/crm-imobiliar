@@ -348,6 +348,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   }, []);
 
   const isAp = fd.tip_proprietate === 'Apartament';
+  const isCasa = ['Casă/Vilă', 'Hotel/Pensiune'].includes(fd.tip_proprietate);
   const isTeren = ['Teren', 'Fermă'].includes(fd.tip_proprietate);
   const isComercial = ['Spațiu comercial', 'Hală', 'Industrial', 'Birou'].includes(fd.tip_proprietate);
   const hasEtaje = isAp || fd.tip_proprietate === 'Birou' || isComercial;
@@ -389,6 +390,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
         if (!fd.sup_teren || +fd.sup_teren <= 0) { setError('Suprafața terenului este obligatorie (cerință Storia/OLX)'); return false; }
       } else {
         if (!fd.sup_utila || +fd.sup_utila <= 0) { setError('Suprafața utilă este obligatorie (cerință Storia/OLX)'); return false; }
+        if (isCasa && (!fd.sup_teren || +fd.sup_teren <= 0)) { setError('Suprafața terenului este obligatorie pentru case (cerință Storia/OLX)'); return false; }
       }
     }
     return true;
@@ -938,7 +940,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <F label="Suprafață totală"><input type="number" value={fd.sup_totala} onChange={e => set('sup_totala', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <F label={`Suprafață teren${isTeren ? ' *' : ''}`}><input type="number" value={fd.sup_teren} onChange={e => set('sup_teren', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
+                <F label={`Suprafață teren${isTeren || isCasa ? ' *' : ''}`}><input type="number" value={fd.sup_teren} onChange={e => set('sup_teren', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
                 <F label="Suprafață curte"><input type="number" value={fd.sup_curte} onChange={e => set('sup_curte', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
                 <F label="Suprafață balcon"><input type="number" value={fd.sup_balcon} onChange={e => set('sup_balcon', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
               </div>
