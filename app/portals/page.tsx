@@ -12,6 +12,7 @@ interface StoriaListing {
   id: string;
   property_id: string;
   property_title?: string;
+  internal_code?: string;
   external_id?: string;
   status: string;
   advert_url?: string;
@@ -274,6 +275,7 @@ export default function PortalsPage() {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
+                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID intern</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Proprietate</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID Storia</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Status</th>
@@ -284,6 +286,9 @@ export default function PortalsPage() {
                         <tbody className="divide-y divide-gray-100">
                           {storia.listings.map(l => (
                             <tr key={l.id} className="hover:bg-gray-50">
+                              <td className="px-3 py-2.5">
+                                <span className="font-mono text-xs font-semibold text-gray-700">{l.internal_code || '—'}</span>
+                              </td>
                               <td className="px-3 py-2.5 max-w-[200px]">
                                 <a href={`/properties/${l.property_id}`}
                                   className="text-xs text-emerald-700 hover:underline font-medium truncate block"
