@@ -75,11 +75,14 @@ export async function GET(request: Request) {
   } else {
     const { data } = await supabase
       .from('portal_listings')
-      .select('*')
+      .select('*, properties(id, title)')
       .eq('agency_id', agency.id)
       .eq('portal', 'storia')
       .order('updated_at', { ascending: false });
-    listings = data || [];
+    listings = (data || []).map((l: Record<string, unknown>) => {
+      const prop = l.properties as { id: string; title: string } | null;
+      return { ...l, property_title: prop?.title || null, properties: undefined };
+    });
 
     // Refresh button (Portaluri page): re-sync any listing still in OLX's pipeline.
     if (token) {

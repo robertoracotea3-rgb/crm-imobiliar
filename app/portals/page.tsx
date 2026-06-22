@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 interface StoriaListing {
   id: string;
   property_id: string;
+  property_title?: string;
   external_id?: string;
   status: string;
   advert_url?: string;
@@ -273,6 +274,7 @@ export default function PortalsPage() {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
+                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Proprietate</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID Storia</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Status</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Ultima sincronizare</th>
@@ -282,6 +284,13 @@ export default function PortalsPage() {
                         <tbody className="divide-y divide-gray-100">
                           {storia.listings.map(l => (
                             <tr key={l.id} className="hover:bg-gray-50">
+                              <td className="px-3 py-2.5 max-w-[200px]">
+                                <a href={`/properties/${l.property_id}`}
+                                  className="text-xs text-emerald-700 hover:underline font-medium truncate block"
+                                  title={l.property_title || l.property_id}>
+                                  {l.property_title || l.property_id}
+                                </a>
+                              </td>
                               <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{l.external_id || '—'}</td>
                               <td className="px-3 py-2.5">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LISTING_STATUS_COLOR[l.status] || 'bg-gray-100 text-gray-600'}`}>
