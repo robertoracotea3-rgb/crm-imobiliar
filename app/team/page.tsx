@@ -1,5 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
@@ -594,6 +597,8 @@ function ActivityTab({ token }: { token: string }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TeamPage() {
+  const router = useRouter();
+  const { role, loading: authLoading } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [stats, setStats] = useState<TeamStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -607,6 +612,13 @@ export default function TeamPage() {
   const [dialogMember, setDialogMember] = useState<Member | null | undefined>(undefined);
   const [profileMember, setProfileMember] = useState<Member | null>(null);
   const [deleteMember, setDeleteMember] = useState<Member | null>(null);
+
+  // Owner-only page
+  useEffect(() => {
+    if (!authLoading && role !== 'owner') {
+      router.push('/dashboard');
+    }
+  }, [role, authLoading, router]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

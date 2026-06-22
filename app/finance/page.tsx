@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { BarChart } from '@/components/Charts';
 import {
@@ -210,6 +212,8 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
 }
 
 export default function FinancePage() {
+  const router = useRouter();
+  const { role, loading: authLoading } = useAuth();
   const [data, setData] = useState<Finance | null>(null);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [props, setProps] = useState<PropOpt[]>([]);
@@ -219,6 +223,13 @@ export default function FinancePage() {
   const [error, setError] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editing, setEditing] = useState<Tx | null>(null);
+
+  // Owner-only page
+  useEffect(() => {
+    if (!authLoading && role !== 'owner') {
+      router.push('/dashboard');
+    }
+  }, [role, authLoading, router]);
 
   const token = async () => (await supabase.auth.getSession()).data.session?.access_token;
 

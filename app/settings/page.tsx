@@ -1,5 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Settings, User, Building2, Shield, Copy, CheckCircle, AlertTriangle, Stamp, Upload, Trash2, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +20,8 @@ interface SettingsData {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
+  const { role, loading: authLoading } = useAuth();
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -28,6 +33,13 @@ export default function SettingsPage() {
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', job_title: '' });
   const [agencyForm, setAgencyForm] = useState({ agency_name: '' });
   const [activeTab, setActiveTab] = useState<'profile' | 'agency' | 'security'>('profile');
+
+  // Owner-only page
+  useEffect(() => {
+    if (!authLoading && role !== 'owner') {
+      router.push('/dashboard');
+    }
+  }, [role, authLoading, router]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setLoadError('');

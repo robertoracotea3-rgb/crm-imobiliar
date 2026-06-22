@@ -1,5 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+
 import { useState, useEffect, useCallback } from 'react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import {
@@ -52,6 +55,8 @@ const LISTING_STATUS_COLOR: Record<string, string> = {
 };
 
 export default function PortalsPage() {
+  const router = useRouter();
+  const { role, loading: authLoading } = useAuth();
   const [token, setToken] = useState('');
   const [agencyId, setAgencyId] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
@@ -63,6 +68,13 @@ export default function PortalsPage() {
 
   // Read URL params for OAuth callback result
   const [flashMsg, setFlashMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Owner-only page
+  useEffect(() => {
+    if (!authLoading && role !== 'owner') {
+      router.push('/dashboard');
+    }
+  }, [role, authLoading, router]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
