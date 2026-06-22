@@ -36,7 +36,41 @@ export async function GET(request: Request) {
       .limit(500);
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
-    return Response.json({ properties: data || [] });
+
+    // Real publication state per property. Storia/OLX come from portal_listings;
+    // "Site propriu" is live when status is 'activa' and attributes.publicare.site is set.
+    const { data: listings } = await admin
+      .from('portal_listings')
+      .select('property_id, portal, status')
+      .eq('agency_id', profile.agency_id)
+      .in('status', ['active', 'pending', 'to_put']);
+    const listingsByProp = new Map<string, { portal: string; status: string }[]>();
+    for (const l of listings || []) {
+      const arr = listingsByProp.get(l.property_id) || [];
+      arr.push(l);
+      listingsByProp.set(l.property_id, arr);
+    }
+
+    const properties = (data || []).map((p) => {
+      const attrs = (p.attributes || {}) as Record<string, unknown>;
+      const pub = (attrs.publicare || {}) as Record<string, boolean>;
+      const publications: { portal: string; isEnabled: boolean; status: 'published' | 'pending' }[] = [];
+
+      // Site propriu — exactly the condition the public website uses.
+      if (p.status === 'activa' && pub.site) {
+        publications.push({ portal: 'Site propriu', isEnabled: true, status: 'published' });
+      }
+      // Storia + OLX — a single storia listing cross-posts to both.
+      const storia = (listingsByProp.get(p.id) || []).find((x) => x.portal === 'storia');
+      if (storia) {
+        const st = storia.status === 'active' ? 'published' : 'pending';
+        publications.push({ portal: 'Storia', isEnabled: true, status: st });
+        publications.push({ portal: 'OLX', isEnabled: true, status: st });
+      }
+      return { ...p, publications };
+    });
+
+    return Response.json({ properties });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }

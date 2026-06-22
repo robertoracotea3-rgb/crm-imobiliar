@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { Trash2, MapPin, DollarSign, Home } from 'lucide-react';
 import { ActivityStatus } from './ActivityStatus';
-import { PublicationBadges } from './PublicationBadges';
 
 interface Property {
   id: string;
@@ -143,9 +142,14 @@ export function PropertiesList({
                     )}
                     <ActivityStatus daysAgo={getDaysAgo(property.created_at)} />
                     {property.publications && property.publications.length > 0 ? (
-                      <PublicationBadges publications={property.publications} />
+                      <span
+                        className="text-xs font-medium bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full"
+                        title={`Publicată pe: ${[...new Set(property.publications.filter(p => p.isEnabled).map(p => p.portal))].join(', ')}`}
+                      >
+                        Publicată
+                      </span>
                     ) : (
-                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Nepublicata</span>
+                      <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">Nepublicată</span>
                     )}
                   </div>
 
