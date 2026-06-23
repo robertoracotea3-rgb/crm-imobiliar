@@ -55,11 +55,14 @@ export async function GET(request: Request) {
     if (token && listing?.external_id && NON_TERMINAL.has(String(listing.status))) {
       try {
         const live = await fetchAdvertStatus(listing.external_id, token);
-        if (live && live.status !== listing.status) {
+        const liveReason = live?.reason || null;
+        const statusChanged = live && live.status !== listing.status;
+        const reasonChanged = live && liveReason !== (listing.error_message || null);
+        if (statusChanged || reasonChanged) {
           const patch = {
-            status:        live.status,
-            error_message: live.reason || null,
-            raw_response:  live.raw as Record<string, unknown>,
+            ...(statusChanged ? { status: live!.status } : {}),
+            error_message: liveReason,
+            raw_response:  live!.raw as Record<string, unknown>,
             last_sync_at:  new Date().toISOString(),
             updated_at:    new Date().toISOString(),
           };
@@ -67,6 +70,12 @@ export async function GET(request: Request) {
             .update(patch)
             .eq('id', listing.id);
           listing = { ...listing, ...patch };
+        } else if (live) {
+          // Always update last_sync_at so we know the OLX check ran successfully.
+          await supabase.from('portal_listings')
+            .update({ last_sync_at: new Date().toISOString() })
+            .eq('id', listing.id);
+          listing = { ...listing, last_sync_at: new Date().toISOString() };
         }
       } catch (e) {
         console.error('[Storia status] live sync failed', e);
@@ -110,16 +119,24 @@ export async function GET(request: Request) {
         if (!l.external_id || !NON_TERMINAL.has(String(l.status))) return l;
         try {
           const live = await fetchAdvertStatus(l.external_id as string, token);
-          if (live && live.status !== l.status) {
+          const liveReason = live?.reason || null;
+          const statusChanged = live && live.status !== l.status;
+          const reasonChanged = live && liveReason !== ((l.error_message as string) || null);
+          if (statusChanged || reasonChanged) {
             const patch = {
-              status:        live.status,
-              error_message: live.reason || null,
-              raw_response:  live.raw as Record<string, unknown>,
+              ...(statusChanged ? { status: live!.status } : {}),
+              error_message: liveReason,
+              raw_response:  live!.raw as Record<string, unknown>,
               last_sync_at:  new Date().toISOString(),
               updated_at:    new Date().toISOString(),
             };
             await supabase.from('portal_listings').update(patch).eq('id', l.id as string);
             return { ...l, ...patch };
+          } else if (live) {
+            await supabase.from('portal_listings')
+              .update({ last_sync_at: new Date().toISOString() })
+              .eq('id', l.id as string);
+            return { ...l, last_sync_at: new Date().toISOString() };
           }
         } catch (e) {
           console.error('[Storia status] live sync failed', e);
