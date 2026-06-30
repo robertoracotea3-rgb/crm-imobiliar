@@ -74,6 +74,8 @@ interface DemandsListProps {
   onStatusChange?: (id: string, status: string) => void;
   canDelete?: boolean;
   agentNames?: Record<string, string>;
+  agents?: { id: string; email?: string; name?: string }[];
+  onChanged?: () => void;
 }
 
 function EditDemandModal({ demand, onClose, onSuccess }: {
@@ -480,13 +482,61 @@ function MatchModal({ demand, onClose }: { demand: Demand; onClose: () => void }
   );
 }
 
-export function DemandsList({ demands, onDelete, onStatusChange, canDelete = false, agentNames = {} }: DemandsListProps) {
+export function DemandsList({ demands, onDelete, onStatusChange, canDelete = false, agentNames = {}, agents = [], onChanged }: DemandsListProps) {
   const [matchDemand, setMatchDemand] = useState<Demand | null>(null);
   const [closeDemand, setCloseDemand] = useState<Demand | null>(null);
   const [editDemand, setEditDemand] = useState<Demand | null>(null);
   const [localDemands, setLocalDemands] = useState<Demand[]>(demands);
 
   useEffect(() => { setLocalDemands(demands); }, [demands]);
+
+  // ── Selecție + atribuire în masă ──
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkAgent, setBulkAgent] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkErr, setBulkErr] = useState('');
+
+  // Curăță selecția când se schimbă lista (refetch / filtrare)
+  useEffect(() => { setSelected(new Set()); }, [demands]);
+
+  const toggleOne = (id: string) =>
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+
+  const allSelected = localDemands.length > 0 && localDemands.every(d => selected.has(d.id));
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(localDemands.map(d => d.id)));
+
+  const applyBulkAgent = async () => {
+    if (selected.size === 0 || !bulkAgent) return;
+    setBulkLoading(true);
+    setBulkErr('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Neautentificat');
+      const agentId = bulkAgent === '__none__' ? null : bulkAgent;
+      const ids = Array.from(selected);
+      const res = await fetch('/api/demands/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ ids, agent_id: agentId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Eroare la atribuire');
+      // Feedback imediat + golește selecția; părintele se reîmprospătează via onChanged
+      setLocalDemands(prev => prev.map(dm => ids.includes(dm.id) ? { ...dm, agent_id: agentId ?? undefined } : dm));
+      setSelected(new Set());
+      setBulkAgent('');
+      onChanged?.();
+    } catch (e) {
+      setBulkErr(e instanceof Error ? e.message : 'Eroare');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
 
   if (localDemands.length === 0) {
     return (
@@ -524,6 +574,52 @@ export function DemandsList({ demands, onDelete, onStatusChange, canDelete = fal
         />
       )}
 
+      {/* Bară selecție + atribuire în masă */}
+      <div className="flex items-center gap-3 mb-3 flex-wrap">
+        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleAll}
+            className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+          />
+          Selectează tot ({localDemands.length})
+        </label>
+
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 flex-wrap bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            <span className="text-sm font-medium text-emerald-800">{selected.size} selectate</span>
+            <select
+              value={bulkAgent}
+              onChange={(e) => setBulkAgent(e.target.value)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+            >
+              <option value="">— Alege agent —</option>
+              <option value="__none__">Fără agent (dezatribuie)</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.email || a.name || a.id}</option>
+              ))}
+            </select>
+            <button
+              onClick={applyBulkAgent}
+              disabled={!bulkAgent || bulkLoading}
+              className="px-4 py-1.5 text-sm font-semibold text-white rounded-lg disabled:opacity-50 hover:opacity-90 transition-colors"
+              style={{ backgroundColor: '#0E6B54' }}
+            >
+              {bulkLoading ? 'Se atribuie...' : 'Atribuie'}
+            </button>
+            <button
+              onClick={() => setSelected(new Set())}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Deselectează
+            </button>
+          </div>
+        )}
+
+        {bulkErr && <span className="text-sm text-red-600">{bulkErr}</span>}
+      </div>
+
       <div className="space-y-3">
         {localDemands.map((demand) => {
           const c = demand.criteria || {};
@@ -548,6 +644,13 @@ export function DemandsList({ demands, onDelete, onStatusChange, canDelete = fal
               {/* Rand principal */}
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(demand.id)}
+                    onChange={() => toggleOne(demand.id)}
+                    className="mt-1 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 flex-shrink-0 cursor-pointer"
+                    aria-label="Selectează cererea"
+                  />
                   <div className="flex-1 min-w-0">
                     {/* Cod + titlu auto + badges */}
                     <div className="flex items-center gap-2 flex-wrap">

@@ -221,6 +221,8 @@ export default function MatchesPage() {
             <DemandsList
               demands={filtered}
               agentNames={agentNames}
+              agents={agents}
+              onChanged={fetchDemands}
               canDelete
               onDelete={async (id) => {
                 const { data: { session } } = await supabase.auth.getSession();
