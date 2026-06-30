@@ -18,7 +18,6 @@ interface AuthContextType {
   agency: Agency | null;
   role: 'owner' | 'admin' | 'agent' | null;
   loading: boolean;
-  signUp: (email: string, password: string, agencyName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -86,75 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signUp = async (
-    email: string,
-    password: string,
-    agencyName: string
-  ) => {
-    try {
-      // Sign up user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('User creation failed');
-
-      // Create agency
-      const { data: agencyData, error: agencyError } = await supabase
-        .from('agencies')
-        .insert([{ name: agencyName }])
-        .select()
-        .single();
-
-      if (agencyError) throw agencyError;
-
-      // Create owner profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            user_id: authData.user.id,
-            agency_id: agencyData.id,
-            role: 'owner',
-          },
-        ]);
-
-      if (profileError) throw profileError;
-
-      // Create default message templates
-      await createDefaultTemplates(agencyData.id);
-
-      setUser({
-        id: authData.user.id,
-        email: authData.user.email || '',
-      });
-      setAgency(agencyData);
-    } catch (err) {
-      throw err;
-    }
-  };
-
-  const createDefaultTemplates = async (agencyId: string) => {
-    const templates = [
-      {
-        agency_id: agencyId,
-        name: 'Prezentare proprietate',
-        subject: 'Proprietatea {titlu_proprietate}',
-        body: 'Bună {nume_client},\n\nVă prezint proprietatea {titlu_proprietate} cu prețul de {pret} RON.\n\nDoriti să vizitati?\n\nAsteptam raspunsul dvs.',
-      },
-      {
-        agency_id: agencyId,
-        name: 'Follow-up lead',
-        subject: 'Urmărire - {titlu_proprietate}',
-        body: 'Bună {nume_client},\n\nNu ati raspuns inca la oferta pentru {titlu_proprietate}. Sunt disponibil pentru orice intrebari!\n\nAsteptam.\n{nume_agent}',
-      },
-    ];
-
-    await supabase.from('message_templates').insert(templates);
-  };
-
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -179,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, agency, role, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, agency, role, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

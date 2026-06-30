@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Build artifacts present in the working tree — not source code:
+    ".netlify/**",
+    ".vercel/**",
   ]),
 ]);
 

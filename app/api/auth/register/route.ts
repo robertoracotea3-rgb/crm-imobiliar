@@ -7,14 +7,22 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Access code stored in env; fallback keeps existing registrations working
-const ACCESS_CODE = (process.env.REGISTRATION_ACCESS_CODE || 'KIRA2024').toUpperCase();
+// Fail closed: registration is disabled unless REGISTRATION_ACCESS_CODE is set
+// in the environment. No hardcoded fallback (avoids a universally-known code).
+const ACCESS_CODE = process.env.REGISTRATION_ACCESS_CODE?.toUpperCase() || '';
 
 // Username: only letters, numbers, dots, underscores (3-30 chars)
 const USERNAME_RE = /^[a-zA-Z0-9._]{3,30}$/;
 
 export async function POST(request: Request) {
   try {
+    if (!ACCESS_CODE) {
+      return Response.json(
+        { error: 'Înregistrarea este dezactivată (lipsește REGISTRATION_ACCESS_CODE).' },
+        { status: 503 }
+      );
+    }
+
     const body = await request.json().catch(() => null);
     if (!body) return Response.json({ error: 'Date invalide' }, { status: 400 });
 
