@@ -22,6 +22,7 @@ interface Lead {
   status: 'new' | 'replied' | 'contacted' | 'in_progress' | 'won' | 'lost';
   source?: string;
   notes?: string;
+  agent_id?: string;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,6 +42,29 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_PIPELINE = ['new', 'contacted', 'viewing', 'negotiation', 'precontract', 'won'];
 const SOURCES = ['Facebook', 'OLX', 'Storia', 'Imobiliare.ro', 'Site propriu', 'Recomandare', 'Manual', 'Altul'];
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
+
+// Curăță mesajul unui lead pentru afișare: scoate eticheta sursei ([Storia]/[OLX]),
+// id-ul de conversație (conv:...) și liniile redundante adăugate automat
+// (— Proprietate: …, — Sursă: …). Întoarce textul curat + sursa dedusă.
+function parseLeadMessage(raw?: string, fallbackSource?: string): { text: string; source: string | null } {
+  let msg = raw || '';
+  let source: string | null = fallbackSource || null;
+
+  const tag = msg.match(/^\s*\[([^\]]+)\]\s*/);
+  if (tag && /storia|olx|facebook|imobiliare/i.test(tag[1])) {
+    source = source || tag[1].trim();
+    msg = msg.slice(tag[0].length);
+  }
+
+  msg = msg.replace(/\bconv:[A-Za-z0-9-]+\s*/gi, '');
+
+  const srcM = msg.match(/[—-]\s*Surs[ăa]:\s*([^\n]*)/i);
+  if (srcM) source = source || srcM[1].trim();
+  msg = msg.replace(/\n?\s*[—-]\s*Proprietate:\s*[^\n]*/gi, '');
+  msg = msg.replace(/\n?\s*[—-]\s*Surs[ăa]:\s*[^\n]*/gi, '');
+
+  return { text: msg.trim(), source };
+}
 
 function AddLeadDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [form, setForm] = useState({ contact_name: '', contact_phone: '', contact_email: '', message: '', source: 'Manual', agent_id: '' });
@@ -142,6 +166,8 @@ function AddLeadDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [agents, setAgents] = useState<{ id: string; email: string }[]>([]);
+  const agentNames = Object.fromEntries(agents.map((a) => [a.id, a.email]));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -179,6 +205,14 @@ export default function LeadsPage() {
   }, []);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      fetch('/api/agents/list', { headers: { Authorization: `Bearer ${session.access_token}` } })
+        .then((r) => r.json()).then((d) => setAgents(d.agents || [])).catch(() => {});
+    });
+  }, []);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Ștergi acest lead?')) return;
@@ -394,7 +428,10 @@ export default function LeadsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filtered.map(lead => (
+            {filtered.map(lead => {
+              const parsed = parseLeadMessage(lead.message, lead.source);
+              const agentName = lead.agent_id ? (agentNames[lead.agent_id] || '') : '';
+              return (
               <div key={lead.id}
                 className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 transition-all p-4"
                 style={{ borderLeftWidth: '4px', borderLeftColor: '#0E6B54' }}>
@@ -405,7 +442,12 @@ export default function LeadsPage() {
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${STATUS_COLORS[lead.status] || 'bg-gray-100 text-gray-600'}`}>
                       {STATUS_LABELS[lead.status] || lead.status}
                     </span>
-                    {lead.source && <span className="text-xs text-gray-400 flex-shrink-0">{lead.source}</span>}
+                    {parsed.source && <span className="text-xs text-gray-400 flex-shrink-0">{parsed.source}</span>}
+                    {agentName && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 flex items-center gap-1 flex-shrink-0">
+                        <User size={11} />{agentName}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 text-xs text-gray-400 flex-shrink-0 mt-0.5">
                     <Clock size={12} />
@@ -419,7 +461,7 @@ export default function LeadsPage() {
                   <span className="flex items-center gap-1"><Phone size={12} />{lead.contact_phone}</span>
                   {lead.contact_email && <span className="flex items-center gap-1"><Mail size={12} />{lead.contact_email}</span>}
                 </div>
-                {lead.message && <p className="text-sm text-gray-700 mb-1 line-clamp-2">{lead.message}</p>}
+                {parsed.text && <p className="text-sm text-gray-700 mb-1 line-clamp-2">{parsed.text}</p>}
                 {lead.property_title && <p className="text-xs text-emerald-700 mb-2">Proprietate: {lead.property_title}</p>}
                 {/* Row last: action buttons */}
                 <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
@@ -442,7 +484,7 @@ export default function LeadsPage() {
                   </button>
                 </div>
               </div>
-            ))}
+            ); })}
           </div>
         )}
 

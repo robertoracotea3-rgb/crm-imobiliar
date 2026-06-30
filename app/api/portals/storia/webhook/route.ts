@@ -78,7 +78,7 @@ async function handleIncomingLead(d: Record<string, unknown>) {
   ].filter(Boolean);
   const fullMessage = parts.join(' ').trim();
 
-  await supabase.from('leads').insert({
+  const { data: inserted } = await supabase.from('leads').insert({
     agency_id:    agencyId,
     property_id:  propertyId ?? null,
     portal_id:    portalId   ?? null,
@@ -88,7 +88,15 @@ async function handleIncomingLead(d: Record<string, unknown>) {
     message:       fullMessage,
     status:        'new',
     received_at:   new Date().toISOString(),
-  });
+  }).select('id').maybeSingle();
+
+  // Auto-atribuire la agentul proprietății (best-effort; sigur dacă lipsește coloana agent_id)
+  if (inserted?.id && propertyId) {
+    try {
+      const { data: prop } = await supabase.from('properties').select('agent_id').eq('id', propertyId).maybeSingle();
+      if (prop?.agent_id) await supabase.from('leads').update({ agent_id: prop.agent_id }).eq('id', inserted.id);
+    } catch { /* coloana agent_id poate lipsi încă — ignorăm */ }
+  }
 
   console.log('[Storia webhook] lead created for', senderName || senderEmail, 'property', propertyId);
 }

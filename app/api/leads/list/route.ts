@@ -28,7 +28,21 @@ export async function GET(request: Request) {
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
-    return Response.json({ leads: data || [] });
+    // Îmbogățire: titlul proprietății după property_id
+    // (sigur chiar dacă tabela leads nu are coloana property_title)
+    const rows = data || [];
+    const propIds = [...new Set(rows.map((l) => l.property_id).filter(Boolean))] as string[];
+    let titleById: Record<string, string> = {};
+    if (propIds.length) {
+      const { data: props } = await admin.from('properties').select('id, title').in('id', propIds);
+      titleById = Object.fromEntries((props || []).map((p) => [p.id, p.title]));
+    }
+    const leads = rows.map((l) => ({
+      ...l,
+      property_title: l.property_title || titleById[l.property_id] || null,
+    }));
+
+    return Response.json({ leads });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 500 });
   }

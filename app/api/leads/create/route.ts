@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
 
     const body = await request.json();
-    const { contact_name, contact_phone, contact_email, message, property_id, source } = body;
+    const { contact_name, contact_phone, contact_email, message, property_id, source, agent_id } = body;
 
     if (!contact_name?.trim()) return Response.json({ error: 'Numele contactului este obligatoriu' }, { status: 400 });
     if (!contact_phone?.trim()) return Response.json({ error: 'Telefonul este obligatoriu' }, { status: 400 });
@@ -51,6 +51,21 @@ export async function POST(request: Request) {
     }).select().single();
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
+
+    // Auto-atribuire: agentul ales explicit, altfel agentul proprietății.
+    // Best-effort: dacă tabela leads nu are încă coloana agent_id, ignorăm fără să stricăm crearea.
+    try {
+      let assignedAgent: string | null = (agent_id as string) || null;
+      if (!assignedAgent && property_id) {
+        const { data: prop } = await admin
+          .from('properties').select('agent_id').eq('id', property_id).eq('agency_id', profile.agency_id).maybeSingle();
+        assignedAgent = prop?.agent_id || null;
+      }
+      if (assignedAgent && data?.id) {
+        await admin.from('leads').update({ agent_id: assignedAgent }).eq('id', data.id);
+        (data as Record<string, unknown>).agent_id = assignedAgent;
+      }
+    } catch { /* coloana agent_id poate lipsi încă — ignorăm */ }
 
     return Response.json({ lead: data }, { status: 201 });
   } catch (err) {
