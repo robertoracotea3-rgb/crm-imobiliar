@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // procesare sharp poate dura; pe Pro până la 60s
 
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
@@ -34,6 +35,24 @@ function fileHash(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex').slice(0, 20);
 }
 
+/** Procesează items cu concurență limitată, păstrând ordinea rezultatelor. */
+async function mapLimit<T, R>(
+  items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  );
+  return results;
+}
+
 /** Resize the source to a variant width, optionally stamp the watermark, then encode WebP. */
 async function makeVariant(
   source: Buffer, width: number, quality: number, watermark?: Buffer
@@ -44,26 +63,45 @@ async function makeVariant(
   if (watermark) {
     resized = await applyWatermark(resized, watermark);
   }
-  return sharp(resized).webp({ quality, effort: 4 }).toBuffer();
+  return sharp(resized).webp({ quality, effort: 3 }).toBuffer();
+}
+
+/**
+ * Auto-îmbunătățire „premium" pentru poze imobiliare (gratis, local, fără AI extern):
+ * deschide pozele întunecate, adaugă contrast și claritate, scoate culorile în evidență.
+ * Preset moderat — nu supra-procesează (riscul ar fi poze nenaturale).
+ */
+async function enhanceForRealEstate(buffer: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(buffer)
+      .modulate({ brightness: 1.06, saturation: 1.10 }) // luminează blând + culori mai vii (nu întunecă umbrele, nu arde highlight-urile)
+      .sharpen({ sigma: 0.7 })                           // claritate fină
+      .toBuffer();
+  } catch {
+    return buffer; // dacă pică procesarea, păstrăm originalul
+  }
 }
 
 /**
  * Process one image buffer into WebP variants using sharp.
  * When `watermark` (agency logo) is provided, it is stamped on the medium + large
  * variants. The thumbnail is left clean — it's too small for a legible logo.
+ * When `enhance` is set, a real-estate auto-enhance preset is applied to the source first.
  */
 async function generateVariants(
-  buffer: Buffer, watermark?: Buffer
+  buffer: Buffer, watermark?: Buffer, enhance?: boolean
 ): Promise<{ thumb: Buffer; medium: Buffer; large: Buffer }> {
   const meta = await sharp(buffer).metadata();
 
   // Auto-resize if either dimension exceeds 2500px
   const needsResize = (meta.width ?? 0) > MAX_DIMENSION || (meta.height ?? 0) > MAX_DIMENSION;
-  const source = needsResize
+  let source = needsResize
     ? await sharp(buffer)
         .resize(MAX_DIMENSION, MAX_DIMENSION, { fit: 'inside', withoutEnlargement: true })
         .toBuffer()
     : buffer;
+
+  if (enhance) source = await enhanceForRealEstate(source);
 
   const [thumb, medium, large] = await Promise.all([
     makeVariant(source, SIZES.thumb.width,  SIZES.thumb.quality),
@@ -168,9 +206,18 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const propertyId = formData.get('propertyId') as string;
-    const agencyId = formData.get('agencyId') as string;
+    let agencyId = formData.get('agencyId') as string;
     const replacePhotos = formData.get('replacePhotos') === 'true';
+    const enhance = formData.get('enhance') === 'true';
     const files = formData.getAll('photos') as File[];
+
+    // Fallback: dacă agencyId nu a fost trimis (ex: reordonare poze), îl
+    // derivăm din proprietate. Mai robust și mai sigur decât să-l credem pe client.
+    if (!agencyId && propertyId) {
+      const { data: prop } = await supabaseAdmin
+        .from('properties').select('agency_id').eq('id', propertyId).single();
+      if (prop?.agency_id) agencyId = prop.agency_id;
+    }
 
     // Ordered list of existing photo URLs to KEEP — drives reordering + removal on edit.
     // When replacePhotos is set, the final gallery is exactly: existingPhotos (in this order) + newly uploaded files.
@@ -226,40 +273,44 @@ export async function POST(request: Request) {
       sortStart = count ?? 0;
     }
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    // Procesare PARALELĂ (concurență 4) — păstrează ordinea prin index.
+    // Reduce drastic timpul total vs. secvențial, fără a depăși memoria.
+    type Processed = { url: string; row: (typeof photoRows)[number] | null };
+    const processed = await mapLimit(files, 4, async (file, i): Promise<Processed> => {
       const buffer = Buffer.from(await file.arrayBuffer());
       const hash = fileHash(buffer);
 
-      // Check for duplicate: same hash already uploaded for this property
+      // Dedup: același hash deja încărcat pentru această proprietate
       const existingUrl = await photoExists(agencyId, propertyId, hash);
-      if (existingUrl) {
-        photoUrls.push(existingUrl);
-        continue; // Skip re-processing & re-uploading
-      }
+      if (existingUrl) return { url: existingUrl, row: null };
 
-      // Generate WebP variants (watermarked when the agency toggle is on)
       let variants: { thumb: Buffer; medium: Buffer; large: Buffer };
       try {
-        variants = await generateVariants(buffer, watermark);
+        variants = await generateVariants(buffer, watermark, enhance);
       } catch (e) {
         console.error(`[upload] sharp error for file ${file.name}:`, e);
-        return Response.json({ error: `Eroare procesare imagine: ${file.name}` }, { status: 422 });
+        throw new Error(`Eroare procesare imagine: ${file.name}`);
       }
 
       const mediumUrl = await uploadVariants(agencyId, propertyId, hash, variants);
-      photoUrls.push(mediumUrl);
+      return {
+        url: mediumUrl,
+        row: {
+          property_id: propertyId,
+          storage_path: `${agencyId}/${propertyId}/${hash}/medium.webp`,
+          hash,
+          sort_order: sortStart + i,
+          is_cover: i === 0 && replacePhotos && existingPhotos.length === 0,
+          is_private: false,
+          is_floorplan: false,
+          is_360: false,
+        },
+      };
+    });
 
-      photoRows.push({
-        property_id: propertyId,
-        storage_path: `${agencyId}/${propertyId}/${hash}/medium.webp`,
-        hash,
-        sort_order: sortStart + i,
-        is_cover: i === 0 && replacePhotos && existingPhotos.length === 0,
-        is_private: false,
-        is_floorplan: false,
-        is_360: false,
-      });
+    for (const r of processed) {
+      photoUrls.push(r.url);
+      if (r.row) photoRows.push(r.row);
     }
 
     // Build the final ordered gallery: kept existing photos (in the order the user arranged them)

@@ -2,10 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2, GripVertical, Star, ArrowLeft, ArrowRight } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2, GripVertical, Star, ArrowLeft, ArrowRight, Copy, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { JUDETE, getCities, filterOptions } from '@/lib/romania-locations';
+import { uploadPropertyPhotos } from '@/lib/upload-photos-client';
 import { MapPicker } from '@/components/MapPicker';
 
 interface Contact {
@@ -36,6 +37,63 @@ function Chk({ label, checked, onChange }: { label: string; checked: boolean; on
       {label}
     </label>
   );
+}
+
+function TagPicker({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+  const selected = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const toggle = (opt: string) => {
+    const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
+    onChange(next.join(', '));
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5 p-2 border border-gray-300 rounded-lg min-h-[38px] bg-white">
+      {options.map(opt => (
+        <button key={opt} type="button" onClick={() => toggle(opt)}
+          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${selected.includes(opt) ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+async function geocodeAddress(strada: string, numar: string, localitate: string, judet: string): Promise<{ lat: string; lon: string } | null> {
+  const enc = encodeURIComponent;
+  const tryFetch = async (url: string): Promise<{ lat: string; lon: string } | null> => {
+    try {
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ro' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.[0]?.lat && data?.[0]?.lon) {
+        return { lat: String(parseFloat(data[0].lat).toFixed(6)), lon: String(parseFloat(data[0].lon).toFixed(6)) };
+      }
+    } catch { /* ignore */ }
+    return null;
+  };
+  const pause = () => new Promise(r => setTimeout(r, 350));
+
+  // 1. Query STRUCTURAT cu stradă (+număr) — cea mai bună precizie pentru adrese RO
+  if (strada && localitate) {
+    const street = numar ? `${numar} ${strada}` : strada;
+    const url = `https://nominatim.openstreetmap.org/search?street=${enc(street)}&city=${enc(localitate)}${judet ? `&county=${enc(judet)}` : ''}&country=Romania&format=json&limit=1`;
+    const r = await tryFetch(url);
+    if (r) return r;
+    await pause();
+  }
+  // 2. Free-text adresă completă
+  if (strada && localitate) {
+    const q = [strada, numar, localitate, judet, 'Romania'].filter(Boolean).join(', ');
+    const r = await tryFetch(`https://nominatim.openstreetmap.org/search?q=${enc(q)}&format=json&limit=1&countrycodes=ro`);
+    if (r) return r;
+    await pause();
+  }
+  // 3. Fallback la nivel de localitate
+  if (localitate) {
+    const q = [localitate, judet, 'Romania'].filter(Boolean).join(', ');
+    const r = await tryFetch(`https://nominatim.openstreetmap.org/search?q=${enc(q)}&format=json&limit=1&countrycodes=ro`);
+    if (r) return r;
+  }
+  return null;
 }
 
 function AutoComplete({ value, onChange, options, placeholder, disabled }: {
@@ -70,6 +128,12 @@ function AutoComplete({ value, onChange, options, placeholder, disabled }: {
     </div>
   );
 }
+
+const OPT_PERETI   = ['Lavabil', 'Faianță', 'Gresie', 'Rigips', 'Tencuială', 'Vopsea', 'Marmură', 'Cărămidă aparentă', 'Tablă', 'Lambriu'];
+const OPT_PODELE   = ['Parchet', 'Gresie', 'Marmură', 'Laminat', 'Covor', 'Beton', 'Ciment', 'Scândură'];
+const OPT_TAMPL    = ['PVC termopan', 'Lemn', 'Aluminiu', 'Tâmplărie veche'];
+const OPT_USA      = ['Metalică', 'Blindată', 'Lemn', 'PVC'];
+const OPT_ACOPERI  = ['Tablă', 'Țiglă', 'Bitum', 'Terasă', 'Șindrilă', 'Eternit'];
 
 const TIP_PROPRIETATE = [
   'Apartament', 'Casă/Vilă', 'Teren', 'Spațiu comercial',
@@ -132,7 +196,7 @@ interface FD {
   meta_desc: string; tags: string;
   pub_site: boolean; pub_imobiliare: boolean; pub_olx: boolean;
   pub_storia: boolean; pub_facebook: boolean;
-  agent: string; data_preluarii: string; data_expirare: string;
+  agent: string; agent_id: string; data_preluarii: string; data_expirare: string;
   sursa_lead: string; obs_interne: string;
 }
 
@@ -183,7 +247,7 @@ const EMPTY: FD = {
   meta_desc: '', tags: '',
   pub_site: false, pub_imobiliare: false, pub_olx: false,
   pub_storia: false, pub_facebook: false,
-  agent: '', data_preluarii: '', data_expirare: '',
+  agent: '', agent_id: '', data_preluarii: '', data_expirare: '',
   sursa_lead: '', obs_interne: '',
 };
 
@@ -197,13 +261,29 @@ export default function EditPropertyPage() {
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
+  const [enhancePhotos, setEnhancePhotos] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [agencyId, setAgencyId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Original pub_storia at load time — used to detect user turning it off → auto-unpublish
+  const origPubStoriaRef = useRef<boolean>(false);
+
+  // AI photo analysis
+  const [photoAnalyzing, setPhotoAnalyzing] = useState(false);
+  const [photoAnalyses, setPhotoAnalyses] = useState<{photos: Array<{index: number; room_type: string; description: string; features?: string[]}>; overall_observations?: string} | null>(null);
+  const [photoAnalysisError, setPhotoAnalysisError] = useState('');
+
+  // AI description generator
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDescriptions, setAiDescriptions] = useState<Record<string, string> | null>(null);
+  const [aiError, setAiError] = useState('');
+  const [copiedKey, setCopiedKey] = useState('');
+
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [contactSearch, setContactSearch] = useState('');
   const [contactOpen, setContactOpen] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -249,7 +329,7 @@ export default function EditPropertyPage() {
         judet: attrs.judet || '',
         localitate: attrs.localitate || '',
         cartier: attrs.cartier || '',
-        zona: attrs.zona || '',
+        zona: attrs.zona || attrs.cartier || '',
         strada: attrs.strada || '',
         numar: attrs.numar || '',
         bloc: attrs.bloc || '',
@@ -367,17 +447,22 @@ export default function EditPropertyPage() {
         pub_storia: attrs.publicare?.storia || false,
         pub_facebook: attrs.publicare?.facebook || false,
         agent: attrs.agent || '',
+        agent_id: p.agent_id || '',
         data_preluarii: attrs.data_preluarii || '',
         data_expirare: attrs.data_expirare || '',
         sursa_lead: attrs.sursa_lead || '',
         obs_interne: attrs.obs_interne || '',
       };
 
+      origPubStoriaRef.current = attrs.publicare?.storia || false;
       setFd(formData);
 
       // Load contacts
       fetch('/api/contacts', { headers: { Authorization: `Bearer ${session.access_token}` } })
         .then(r => r.json()).then(d => setContacts(d.contacts || []));
+      // Load agents (pentru dropdown-ul „Agent responsabil")
+      fetch('/api/agents/list', { headers: { Authorization: `Bearer ${session.access_token}` } })
+        .then(r => r.json()).then(d => setAgents((d.agents || []).map((a: { id: string; email: string; name?: string }) => ({ id: a.id, name: a.name || a.email }))));
     } catch (err) {
       console.error('Eroare:', err);
       setError('Nu am putut incarca proprietatea');
@@ -625,32 +710,49 @@ export default function EditPropertyPage() {
           description: fd.descriere,
           county: fd.judet,
           city: fd.localitate,
-          zone: fd.cartier,
+          zone: fd.zona || fd.cartier,
           street: fd.strada,
           street_number: fd.numar,
           latitude: fd.lat ? parseFloat(fd.lat) : null,
           longitude: fd.lon ? parseFloat(fd.lon) : null,
           attributes,
+          agent_id: fd.agent_id || null,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Eroare server');
 
-      // Handle photos
+      // Handle photos — redimensionate + în loturi, cu verificare
       if (photos.length > 0 || existingPhotos.length > 0) {
-        setStatus('Se incarca pozele...');
-        const form = new FormData();
-        form.append('propertyId', String(params.id));
-        form.append('agencyId', agencyId || '');
-        form.append('replacePhotos', 'true');
-        form.append('existingPhotos', JSON.stringify(existingPhotos));
-        photos.forEach(f => form.append('photos', f));
-        await fetch('/api/properties/upload-photos', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          body: form,
+        const up = await uploadPropertyPhotos({
+          propertyId: String(params.id),
+          agencyId: agencyId || '',
+          photos,
+          token: session.access_token,
+          replacePhotos: true,
+          existingPhotos,
+          enhance: enhancePhotos,
+          onProgress: (done, total) => setStatus(`Se incarca pozele... ${done}/${total}`),
         });
+        if (!up.ok) {
+          setStatus('');
+          setError(`Datele s-au salvat, dar pozele au eșuat: ${up.error}. Reîncearcă din editare.`);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Auto-unpublish from Storia/OLX when user turns off the checkbox
+      if (origPubStoriaRef.current === true && !fd.pub_storia) {
+        setStatus('Se retrage din Storia / OLX...');
+        try {
+          await fetch('/api/portals/storia/unpublish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ property_id: params.id }),
+          });
+        } catch { /* best-effort — user can also retract manually from property page */ }
       }
 
       // Auto-publish on Storia/OLX if checkbox is checked
@@ -667,6 +769,22 @@ export default function EditPropertyPage() {
             alert(pd.error || 'Proprietatea s-a salvat, dar publicarea pe Storia a eșuat. Reîncearcă din pagina proprietății.');
           }
         } catch { alert('Proprietatea s-a salvat, dar publicarea pe Storia a eșuat (rețea). Reîncearcă din pagina proprietății.'); }
+      }
+
+      // Auto-publish pe Facebook Page dacă bifa e activă
+      if (fd.pub_facebook) {
+        setStatus('Se publică pe Facebook...');
+        try {
+          const fbRes = await fetch('/api/portals/facebook/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ property_id: params.id }),
+          });
+          if (!fbRes.ok) {
+            const fd2 = await fbRes.json().catch(() => ({}));
+            alert(fd2.error || 'Proprietatea s-a salvat, dar postarea pe Facebook a eșuat.');
+          }
+        } catch { alert('Proprietatea s-a salvat, dar postarea pe Facebook a eșuat (rețea).'); }
       }
 
       router.push(`/properties/${params.id}`);
@@ -847,26 +965,30 @@ export default function EditPropertyPage() {
               <MapPicker lat={fd.lat} lon={fd.lon} onCoords={(lat, lon) => { set('lat', lat); set('lon', lon); }} />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <F label="Cartier">
-                <input type="text" value={fd.cartier} onChange={e => set('cartier', e.target.value)}
-                  placeholder="ex: Mănăștur" className={ic} />
-              </F>
-              <F label="Zonă">
-                <input type="text" value={fd.zona} onChange={e => set('zona', e.target.value)}
-                  placeholder="ex: Centru" className={ic} />
-              </F>
-            </div>
+            <F label="Zonă">
+              <input type="text" value={fd.zona} onChange={e => set('zona', e.target.value)}
+                placeholder="ex: Centru" className={ic} />
+            </F>
 
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <F label="Stradă">
                   <input type="text" value={fd.strada} onChange={e => set('strada', e.target.value)}
+                    onBlur={async () => {
+                      if (!fd.strada || (fd.lat && fd.lon)) return;
+                      const coords = await geocodeAddress(fd.strada, fd.numar, fd.localitate, fd.judet);
+                      if (coords) { set('lat', coords.lat); set('lon', coords.lon); }
+                    }}
                     placeholder="ex: Str. Eroilor" className={ic} />
                 </F>
               </div>
               <F label="Număr">
                 <input type="text" value={fd.numar} onChange={e => set('numar', e.target.value)}
+                  onBlur={async () => {
+                    if (!fd.strada) return;
+                    const coords = await geocodeAddress(fd.strada, fd.numar, fd.localitate, fd.judet);
+                    if (coords) { set('lat', coords.lat); set('lon', coords.lon); }
+                  }}
                   placeholder="12" className={ic} />
               </F>
             </div>
@@ -884,11 +1006,7 @@ export default function EditPropertyPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-3">
-              <F label="Cod Poștal">
-                <input type="text" value={fd.cod_postal} onChange={e => set('cod_postal', e.target.value)}
-                  placeholder="ex: 400001" className={ic} />
-              </F>
+            <div className="grid grid-cols-2 gap-3">
               <F label="Latitudine *">
                 <input type="text" value={fd.lat} onChange={e => set('lat', e.target.value)}
                   placeholder="46.7712" className={ic} />
@@ -1178,16 +1296,14 @@ export default function EditPropertyPage() {
                 </select>
               </F>
             </div>
+            <F label="Pereți"><TagPicker value={fd.pereti} onChange={v => set('pereti', v)} options={OPT_PERETI} /></F>
+            <F label="Podele"><TagPicker value={fd.podele} onChange={v => set('podele', v)} options={OPT_PODELE} /></F>
             <div className="grid grid-cols-2 gap-3">
-              <F label="Pereți"><input type="text" value={fd.pereti} onChange={e => set('pereti', e.target.value)} placeholder="ex: Gresie, vopsea" className={ic} /></F>
-              <F label="Podele"><input type="text" value={fd.podele} onChange={e => set('podele', e.target.value)} placeholder="ex: Parchet, gresie" className={ic} /></F>
+              <F label="Tâmplărie"><TagPicker value={fd.tamplarie} onChange={v => set('tamplarie', v)} options={OPT_TAMPL} /></F>
+              <F label="Ușă intrare"><TagPicker value={fd.usa_intrare} onChange={v => set('usa_intrare', v)} options={OPT_USA} /></F>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <F label="Tâmplărie"><input type="text" value={fd.tamplarie} onChange={e => set('tamplarie', e.target.value)} placeholder="ex: PVC, termopan" className={ic} /></F>
-              <F label="Ușă intrare"><input type="text" value={fd.usa_intrare} onChange={e => set('usa_intrare', e.target.value)} placeholder="ex: Metalică, blindată" className={ic} /></F>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <F label="Acoperiș"><input type="text" value={fd.acoperis} onChange={e => set('acoperis', e.target.value)} placeholder="ex: Tablă, țiglă" className={ic} /></F>
+              <F label="Acoperiș"><TagPicker value={fd.acoperis} onChange={v => set('acoperis', v)} options={OPT_ACOPERI} /></F>
               <F label="Utilat">
                 <select value={fd.utilat} onChange={e => set('utilat', e.target.value)} className={sc}>
                   <option value="">-</option>
@@ -1233,67 +1349,112 @@ export default function EditPropertyPage() {
               <p className="text-sm text-gray-600">Click pentru a adăuga poze</p>
               <p className="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP — max 10MB</p>
             </div>
+            {/* Auto-îmbunătățire — se aplică doar pozelor NOI adăugate */}
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 select-none bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              <input type="checkbox" checked={enhancePhotos} onChange={e => setEnhancePhotos(e.target.checked)}
+                className="w-4 h-4 accent-amber-600" />
+              <span>✨ <span className="font-medium">Îmbunătățește pozele noi</span> — lumini, contrast și claritate optimizate (doar pozele adăugate acum)</span>
+            </label>
 
             {existingPhotos.length > 0 && (
-              <div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  <GripVertical size={13} className="text-gray-400" />
-                  <p className="text-xs font-medium text-gray-600">
-                    Poze existente — trage pentru a reordona. Prima poză este cea principală.
-                  </p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <GripVertical size={13} className="text-gray-400" />
+                    <p className="text-xs font-medium text-gray-600">
+                      Poze existente — trage pentru a reordona. Prima poză este cea principală.
+                    </p>
+                  </div>
+                  <button type="button" disabled={photoAnalyzing}
+                    onClick={async () => {
+                      setPhotoAnalyzing(true);
+                      setPhotoAnalysisError('');
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session) throw new Error('Nu ești autentificat');
+                        const res = await fetch('/api/properties/analyze-photos', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                          body: JSON.stringify({ photos: existingPhotos.slice(0, 10).map(url => ({ url })) }),
+                        });
+                        const d = await res.json();
+                        if (!res.ok) throw new Error(d.error || 'Eroare server');
+                        setPhotoAnalyses(d);
+                      } catch (err) {
+                        setPhotoAnalysisError(err instanceof Error ? err.message : 'Eroare la analiză');
+                      } finally {
+                        setPhotoAnalyzing(false);
+                      }
+                    }}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors">
+                    {photoAnalyzing ? <><span className="animate-spin">⏳</span> Analizez...</> : <><span>✨</span> Analizează cu AI</>}
+                  </button>
                 </div>
+                {photoAnalysisError && <p className="text-xs text-red-600">{photoAnalysisError}</p>}
+                {photoAnalyses?.overall_observations && (
+                  <p className="text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+                    <span className="font-semibold">AI: </span>{photoAnalyses.overall_observations}
+                  </p>
+                )}
                 <div className="grid grid-cols-4 gap-2">
-                  {existingPhotos.map((url, i) => (
-                    <div
-                      key={url}
-                      draggable
-                      onDragStart={() => setDragIndex(i)}
-                      onDragOver={e => e.preventDefault()}
-                      onDrop={e => { e.preventDefault(); if (dragIndex !== null) reorderExisting(dragIndex, i); setDragIndex(null); }}
-                      onDragEnd={() => setDragIndex(null)}
-                      className={`relative group rounded-lg border bg-white cursor-move transition-all ${
-                        dragIndex === i ? 'border-emerald-500 ring-2 ring-emerald-300 opacity-60' : 'border-gray-200 hover:border-emerald-300'
-                      }`}
-                    >
-                      <img src={url} alt="" className="w-full h-20 object-cover rounded-lg pointer-events-none" />
+                  {existingPhotos.map((url, i) => {
+                    const label = photoAnalyses?.photos?.[i]?.room_type;
+                    return (
+                      <div
+                        key={url}
+                        draggable
+                        onDragStart={() => setDragIndex(i)}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => { e.preventDefault(); if (dragIndex !== null) reorderExisting(dragIndex, i); setDragIndex(null); }}
+                        onDragEnd={() => setDragIndex(null)}
+                        className={`relative group rounded-lg border bg-white cursor-move transition-all ${
+                          dragIndex === i ? 'border-emerald-500 ring-2 ring-emerald-300 opacity-60' : 'border-gray-200 hover:border-emerald-300'
+                        }`}
+                      >
+                        <img src={url} alt="" className="w-full h-20 object-cover rounded-lg pointer-events-none" />
 
-                      {/* Order index + Main badge */}
-                      <span className="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-semibold w-4 h-4 flex items-center justify-center rounded-full">
-                        {i + 1}
-                      </span>
-                      {i === 0 && (
-                        <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-[10px] px-1 rounded flex items-center gap-0.5">
-                          <Star size={9} /> Principală
+                        {/* Order index */}
+                        <span className="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-semibold w-4 h-4 flex items-center justify-center rounded-full">
+                          {i + 1}
                         </span>
-                      )}
 
-                      {/* Hover controls */}
-                      <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {i > 0 && (
-                          <button type="button" title="Setează ca principală" onClick={() => setAsMain(i)}
-                            className="bg-emerald-600 text-white rounded-full p-0.5 hover:bg-emerald-700">
-                            <Star size={11} />
+                        {/* Room type label or Main badge */}
+                        {label ? (
+                          <span className="absolute bottom-1 left-1 right-1 bg-black/70 text-white text-[10px] px-1 py-0.5 rounded text-center truncate">{label}</span>
+                        ) : i === 0 ? (
+                          <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-[10px] px-1 rounded flex items-center gap-0.5">
+                            <Star size={9} /> Principală
+                          </span>
+                        ) : null}
+
+                        {/* Hover controls */}
+                        <div className="absolute top-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {i > 0 && (
+                            <button type="button" title="Setează ca principală" onClick={() => setAsMain(i)}
+                              className="bg-emerald-600 text-white rounded-full p-0.5 hover:bg-emerald-700">
+                              <Star size={11} />
+                            </button>
+                          )}
+                          <button type="button" title="Șterge" onClick={() => removeExistingPhoto(url)}
+                            className="bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600">
+                            <Trash2 size={11} />
                           </button>
-                        )}
-                        <button type="button" title="Șterge" onClick={() => removeExistingPhoto(url)}
-                          className="bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600">
-                          <Trash2 size={11} />
-                        </button>
-                      </div>
+                        </div>
 
-                      {/* Arrow fallback (mobile / no-drag) */}
-                      <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button type="button" title="Mută stânga" disabled={i === 0} onClick={() => movePhoto(i, -1)}
-                          className="bg-white/90 border border-gray-200 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-gray-50">
-                          <ArrowLeft size={11} />
-                        </button>
-                        <button type="button" title="Mută dreapta" disabled={i === existingPhotos.length - 1} onClick={() => movePhoto(i, 1)}
-                          className="bg-white/90 border border-gray-200 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-gray-50">
-                          <ArrowRight size={11} />
-                        </button>
+                        {/* Arrow fallback (mobile / no-drag) */}
+                        <div className="absolute bottom-1 right-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button type="button" title="Mută stânga" disabled={i === 0} onClick={() => movePhoto(i, -1)}
+                            className="bg-white/90 border border-gray-200 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-gray-50">
+                            <ArrowLeft size={11} />
+                          </button>
+                          <button type="button" title="Mută dreapta" disabled={i === existingPhotos.length - 1} onClick={() => movePhoto(i, 1)}
+                            className="bg-white/90 border border-gray-200 text-gray-700 rounded p-0.5 disabled:opacity-30 hover:bg-gray-50">
+                            <ArrowRight size={11} />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1340,6 +1501,172 @@ export default function EditPropertyPage() {
               <input type="text" value={fd.meta_desc} onChange={e => set('meta_desc', e.target.value)} placeholder="Descriere scurtă pentru Google" className={ic} />
             </F>
 
+            {/* AI Description Generator */}
+            <div className="border border-dashed border-emerald-300 rounded-lg p-3 space-y-2 bg-emerald-50/40">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-emerald-800">Generare automată cu AI</p>
+                <button type="button" disabled={aiLoading}
+                  onClick={async () => {
+                    setAiLoading(true);
+                    setAiError('');
+                    setAiDescriptions(null);
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      if (!session) throw new Error('Nu ești autentificat');
+                      const res = await fetch('/api/properties/generate-description', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                        body: JSON.stringify({
+                          tip_proprietate: fd.tip_proprietate, tip_oferta: fd.tip_oferta,
+                          price: parseFloat(fd.price) || 0, currency: fd.currency,
+                          negociabil: fd.negociabil,
+                          judet: fd.judet, localitate: fd.localitate,
+                          cartier: fd.cartier, zona: fd.zona,
+                          strada: fd.strada, numar: fd.numar,
+                          nr_camere: fd.nr_camere ? +fd.nr_camere : null,
+                          nr_dormitoare: fd.nr_dormitoare ? +fd.nr_dormitoare : null,
+                          nr_bai: fd.nr_bai ? +fd.nr_bai : null,
+                          nr_balcoane: fd.nr_balcoane ? +fd.nr_balcoane : null,
+                          nr_terase: fd.nr_terase ? +fd.nr_terase : null,
+                          nr_parcare: fd.nr_parcare ? +fd.nr_parcare : null,
+                          sup_utila: fd.sup_utila ? +fd.sup_utila : null,
+                          sup_construita: fd.sup_construita ? +fd.sup_construita : null,
+                          sup_teren: fd.sup_teren ? +fd.sup_teren : null,
+                          sup_curte: fd.sup_curte ? +fd.sup_curte : null,
+                          sup_balcon: fd.sup_balcon ? +fd.sup_balcon : null,
+                          sup_terasa: fd.sup_terasa ? +fd.sup_terasa : null,
+                          etaj: fd.etaj ? +fd.etaj : null,
+                          nr_etaje: fd.nr_etaje ? +fd.nr_etaje : null,
+                          parter: fd.parter, ultimul_etaj: fd.ultimul_etaj,
+                          an_constructie: fd.an_constructie ? +fd.an_constructie : null,
+                          an_renovare: fd.an_renovare ? +fd.an_renovare : null,
+                          structura: fd.structura, regim_inaltime: fd.regim_inaltime,
+                          compartimentare: fd.compartimentare, confort: fd.confort,
+                          clasa_energetica: fd.clasa_energetica, risc_seismic: fd.risc_seismic,
+                          finisaje: {
+                            stare: fd.stare, pereti: fd.pereti, podele: fd.podele,
+                            tamplarie: fd.tamplarie, usa_intrare: fd.usa_intrare, acoperis: fd.acoperis,
+                          },
+                          incalzire: {
+                            centrala_proprie: fd.inc_centrala_proprie, centrala_bloc: fd.inc_centrala_bloc,
+                            termoficare: fd.inc_termoficare, pardoseala: fd.inc_pardoseala,
+                            semineu: fd.inc_semineu, aer_conditionat: fd.aer_conditionat, nr_ac: fd.nr_ac ? +fd.nr_ac : null,
+                          },
+                          utilitati: {
+                            curent: fd.util_curent, apa: fd.util_apa, canalizare: fd.util_canal,
+                            gaz: fd.util_gaz, internet: fd.util_internet, cablu: fd.util_cablu,
+                            fotovoltaice: fd.util_fotovoltaice, trifazic: fd.util_trifazic,
+                          },
+                          dotari: {
+                            lift: fd.dot_lift, interfon: fd.dot_interfon, videointerfon: fd.dot_videointerfon,
+                            alarma: fd.dot_alarma, supraveghere: fd.dot_supraveghere,
+                            curte: fd.dot_curte, gradina: fd.dot_gradina, piscina: fd.dot_piscina,
+                            foisor: fd.dot_foisor, garaj: fd.dot_garaj, boxa: fd.dot_boxa,
+                            dressing: fd.dot_dressing, debara: fd.dot_debara,
+                            jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna, terasa: fd.dot_terasa,
+                          },
+                          mobilat: fd.mobilat, utilat: fd.utilat,
+                          descriere: fd.descriere,
+                          photo_analyses: photoAnalyses ?? undefined,
+                        }),
+                      });
+                      const d = await res.json();
+                      if (!res.ok) throw new Error(d.error || 'Eroare server');
+                      if (d.descriptions?.titlu_seo && !fd.titlu_seo) set('titlu_seo', d.descriptions.titlu_seo);
+                      if (d.descriptions?.meta_desc && !fd.meta_desc) set('meta_desc', d.descriptions.meta_desc);
+                      setAiDescriptions(d.descriptions ?? d);
+                    } catch (err) {
+                      setAiError(err instanceof Error ? err.message : 'Eroare la generare');
+                    } finally {
+                      setAiLoading(false);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs rounded-lg disabled:opacity-50 hover:opacity-90 transition-colors"
+                  style={{ backgroundColor: '#B57514' }}>
+                  {aiLoading ? <><span className="animate-spin inline-block">⏳</span> Generez...</> : <><span>✨</span> Generează descriere AI</>}
+                </button>
+              </div>
+              {aiError && <p className="text-xs text-red-600">{aiError}</p>}
+              {aiDescriptions && (
+                <div className="space-y-2 mt-1">
+                  {aiDescriptions['titlu_seo'] && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-emerald-700">Titlu SEO</span>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => set('titlu_seo', aiDescriptions['titlu_seo'] || '')}
+                            className="text-xs px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Folosește</button>
+                          <button type="button" onClick={() => { navigator.clipboard.writeText(aiDescriptions['titlu_seo'] || ''); setCopiedKey('titlu_seo'); setTimeout(() => setCopiedKey(''), 2000); }}
+                            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                            {copiedKey === 'titlu_seo' ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                            {copiedKey === 'titlu_seo' ? 'Copiat!' : 'Copiază'}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-800 font-medium">{aiDescriptions['titlu_seo']}</p>
+                    </div>
+                  )}
+                  {aiDescriptions['meta_desc'] && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-blue-700">Meta description (Google)</span>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => set('meta_desc', aiDescriptions['meta_desc'] || '')}
+                            className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">Folosește</button>
+                          <button type="button" onClick={() => { navigator.clipboard.writeText(aiDescriptions['meta_desc'] || ''); setCopiedKey('meta_desc'); setTimeout(() => setCopiedKey(''), 2000); }}
+                            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                            {copiedKey === 'meta_desc' ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                            {copiedKey === 'meta_desc' ? 'Copiat!' : 'Copiază'}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-700">{aiDescriptions['meta_desc']}</p>
+                    </div>
+                  )}
+                  {aiDescriptions['seo'] && (
+                    <div className="bg-white border-2 border-emerald-300 rounded-lg p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-emerald-800">Descriere SEO completă (700-1200 cuvinte)</span>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => set('descriere', aiDescriptions['seo'] || '')}
+                            className="text-xs px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">Folosește</button>
+                          <button type="button" onClick={() => { navigator.clipboard.writeText(aiDescriptions['seo'] || ''); setCopiedKey('seo'); setTimeout(() => setCopiedKey(''), 2000); }}
+                            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                            {copiedKey === 'seo' ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                            {copiedKey === 'seo' ? 'Copiat!' : 'Copiază'}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-line">{aiDescriptions['seo']}</p>
+                    </div>
+                  )}
+                  {[
+                    { key: 'completa', label: 'Descriere completă' },
+                    { key: 'scurta', label: 'Scurtă' },
+                    { key: 'facebook', label: 'Facebook' },
+                    { key: 'olx', label: 'OLX' },
+                    { key: 'storia', label: 'Storia' },
+                  ].filter(({ key }) => aiDescriptions[key]).map(({ key, label }) => (
+                    <div key={key} className="bg-white border border-gray-200 rounded-lg p-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-gray-600">{label}</span>
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => set('descriere', aiDescriptions[key] || '')}
+                            className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">Folosește</button>
+                          <button type="button" onClick={() => { navigator.clipboard.writeText(aiDescriptions[key] || ''); setCopiedKey(key); setTimeout(() => setCopiedKey(''), 2000); }}
+                            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                            {copiedKey === key ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                            {copiedKey === key ? 'Copiat!' : 'Copiază'}
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-700 line-clamp-3 whitespace-pre-line">{aiDescriptions[key]}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
           </div>
         )}
 
@@ -1368,8 +1695,10 @@ export default function EditPropertyPage() {
             <SH title="Date interne agenție" />
             <div className="grid grid-cols-2 gap-3">
               <F label="Agent responsabil">
-                <input type="text" value={fd.agent} onChange={e => set('agent', e.target.value)}
-                  className={ic} />
+                <select value={fd.agent_id} onChange={e => set('agent_id', e.target.value)} className={sc}>
+                  <option value="">— Neasignat —</option>
+                  {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
               </F>
               <F label="Sursă lead">
                 <input type="text" value={fd.sursa_lead} onChange={e => set('sursa_lead', e.target.value)} placeholder="ex: Imobiliare.ro, Recomandare" className={ic} />

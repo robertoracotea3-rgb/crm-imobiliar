@@ -5,6 +5,7 @@ import { X, ChevronRight, ChevronLeft, Upload, ImageIcon, UserPlus, Search, Wand
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { JUDETE, getCities, filterOptions } from '@/lib/romania-locations';
+import { uploadPropertyPhotos } from '@/lib/upload-photos-client';
 import { SetupAlert } from './SetupAlert';
 import { MapPicker } from './MapPicker';
 
@@ -38,6 +39,64 @@ function Chk({ label, checked, onChange }: { label: string; checked: boolean; on
       {label}
     </label>
   );
+}
+
+// Multi-select tag picker for finisaje fields
+function TagPicker({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+  const selected = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const toggle = (opt: string) => {
+    const next = selected.includes(opt) ? selected.filter(s => s !== opt) : [...selected, opt];
+    onChange(next.join(', '));
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5 p-2 border border-gray-300 rounded-lg min-h-[38px] bg-white">
+      {options.map(opt => (
+        <button key={opt} type="button" onClick={() => toggle(opt)}
+          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${selected.includes(opt) ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+          {opt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+async function geocodeAddress(strada: string, numar: string, localitate: string, judet: string): Promise<{ lat: string; lon: string } | null> {
+  const enc = encodeURIComponent;
+  const tryFetch = async (url: string): Promise<{ lat: string; lon: string } | null> => {
+    try {
+      const res = await fetch(url, { headers: { 'Accept-Language': 'ro' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.[0]?.lat && data?.[0]?.lon) {
+        return { lat: String(parseFloat(data[0].lat).toFixed(6)), lon: String(parseFloat(data[0].lon).toFixed(6)) };
+      }
+    } catch { /* ignore */ }
+    return null;
+  };
+  const pause = () => new Promise(r => setTimeout(r, 350));
+
+  // 1. Query STRUCTURAT cu stradă (+număr) — cea mai bună precizie pentru adrese RO
+  if (strada && localitate) {
+    const street = numar ? `${numar} ${strada}` : strada; // Nominatim: "număr stradă"
+    const url = `https://nominatim.openstreetmap.org/search?street=${enc(street)}&city=${enc(localitate)}${judet ? `&county=${enc(judet)}` : ''}&country=Romania&format=json&limit=1`;
+    const r = await tryFetch(url);
+    if (r) return r;
+    await pause();
+  }
+  // 2. Free-text adresă completă
+  if (strada && localitate) {
+    const q = [strada, numar, localitate, judet, 'Romania'].filter(Boolean).join(', ');
+    const r = await tryFetch(`https://nominatim.openstreetmap.org/search?q=${enc(q)}&format=json&limit=1&countrycodes=ro`);
+    if (r) return r;
+    await pause();
+  }
+  // 3. Fallback la nivel de localitate (funcționează aproape mereu pentru orașe RO)
+  if (localitate) {
+    const q = [localitate, judet, 'Romania'].filter(Boolean).join(', ');
+    const r = await tryFetch(`https://nominatim.openstreetmap.org/search?q=${enc(q)}&format=json&limit=1&countrycodes=ro`);
+    if (r) return r;
+  }
+  return null;
 }
 
 function AutoComplete({ value, onChange, options, placeholder, disabled }: {
@@ -74,6 +133,12 @@ function AutoComplete({ value, onChange, options, placeholder, disabled }: {
 }
 
 // ─── constants ───────────────────────────────────────────────────────────────
+
+const OPT_PERETI   = ['Lavabil', 'Faianță', 'Gresie', 'Rigips', 'Tencuială', 'Vopsea', 'Marmură', 'Cărămidă aparentă', 'Tablă', 'Lambriu'];
+const OPT_PODELE   = ['Parchet', 'Gresie', 'Marmură', 'Laminat', 'Covor', 'Beton', 'Ciment', 'Scândură'];
+const OPT_TAMPL    = ['PVC termopan', 'Lemn', 'Aluminiu', 'Tâmplărie veche'];
+const OPT_USA      = ['Metalică', 'Blindată', 'Lemn', 'PVC'];
+const OPT_ACOPERI  = ['Tablă', 'Țiglă', 'Bitum', 'Terasă', 'Șindrilă', 'Eternit'];
 
 const TIP_PROPRIETATE = [
   'Apartament', 'Casă/Vilă', 'Teren', 'Spațiu comercial',
@@ -234,6 +299,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const [fd, setFd] = useState<FD>(EMPTY);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [enhancePhotos, setEnhancePhotos] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -256,6 +322,34 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const [aiDescriptions, setAiDescriptions] = useState<Record<string, string> | null>(null);
   const [aiError, setAiError] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
+
+  // AI photo analysis
+  const [photoAnalyzing, setPhotoAnalyzing] = useState(false);
+  const [photoAnalyses, setPhotoAnalyses] = useState<{photos: Array<{index: number; room_type: string; description: string; features?: string[]}>; overall_observations?: string; suggested_fields?: Record<string, string | number | boolean>} | null>(null);
+  const [photoAnalysisError, setPhotoAnalysisError] = useState('');
+  const [autoFilledKeys, setAutoFilledKeys] = useState<string[]>([]);
+
+  // Aplică sugestiile AI peste câmpurile formularului (suprascrie ce detectează)
+  const applySuggestedFields = (sf?: Record<string, string | number | boolean>) => {
+    if (!sf) return;
+    const filled: string[] = [];
+    const strKeys = ['tip_proprietate', 'stare', 'mobilat', 'pereti', 'podele', 'tamplarie', 'usa_intrare', 'acoperis'];
+    const boolKeys = ['dot_piscina', 'dot_gradina', 'dot_curte', 'dot_garaj', 'dot_terasa', 'dot_foisor', 'dot_balcon', 'aer_conditionat'];
+    setFd(prev => {
+      const nextFd = { ...prev };
+      for (const k of strKeys) {
+        const v = sf[k];
+        if (typeof v === 'string' && v.trim()) { (nextFd as Record<string, unknown>)[k] = v.trim(); filled.push(k); }
+      }
+      for (const k of boolKeys) {
+        if (sf[k] === true) { (nextFd as Record<string, unknown>)[k] = true; filled.push(k); }
+      }
+      if (typeof sf.nr_balcoane === 'number' && sf.nr_balcoane > 0) { nextFd.nr_balcoane = String(sf.nr_balcoane); filled.push('nr_balcoane'); }
+      if (typeof sf.nr_terase === 'number' && sf.nr_terase > 0) { nextFd.nr_terase = String(sf.nr_terase); filled.push('nr_terase'); }
+      return nextFd;
+    });
+    setAutoFilledKeys(filled);
+  };
 
   const fetchNextCode = async (tip: string, token: string) => {
     const prefix = CODE_PREFIX[tip] || 'PR';
@@ -286,6 +380,21 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
         .then(code => setFd(prev => ({ ...prev, internal_code: code })));
     });
   }, [isOpen, user]);
+
+  // ── Auto-pin pe hartă: geocodează adresa (debounced) când se schimbă județ/localitate/stradă/număr.
+  // Nu suprascrie dacă utilizatorul a mutat manual pinul (click/drag pe hartă).
+  const pinManualRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen || pinManualRef.current) return;
+    if (!fd.localitate) return; // nevoie de minim localitate ca să aibă sens
+    const t = setTimeout(async () => {
+      const coords = await geocodeAddress(fd.strada, fd.numar, fd.localitate, fd.judet);
+      if (coords && !pinManualRef.current) {
+        setFd(prev => ({ ...prev, lat: coords.lat, lon: coords.lon }));
+      }
+    }, 900);
+    return () => clearTimeout(t);
+  }, [isOpen, fd.judet, fd.localitate, fd.strada, fd.numar]);
 
   const filteredContacts = contactSearch.length > 0
     ? contacts.filter(c =>
@@ -360,7 +469,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
     if (adresa) parts.push(adresa);
     if (isAp && fd.bloc) parts.push(`Bl. ${fd.bloc}`);
     if (isAp && fd.apartament_nr) parts.push(`Ap. ${fd.apartament_nr}`);
-    if (fd.cartier) parts.push(fd.cartier);
+    if (fd.zona) parts.push(fd.zona);
     if (fd.localitate) parts.push(fd.localitate);
     if (fd.judet) parts.push(fd.judet);
     return parts.join(', ') || fd.localitate || fd.judet || '-';
@@ -374,17 +483,17 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   };
 
   const validate = (s: number) => {
-    if (s === 1) {
+    if (s === 2) {
       if (!fd.title.trim()) { setError('Titlul este obligatoriu'); return false; }
       if (fd.title.trim().length < 5) { setError('Titlul trebuie să aibă minim 5 caractere (cerință Storia/OLX)'); return false; }
       if (!fd.price) { setError('Pretul este obligatoriu'); return false; }
     }
-    if (s === 2) {
+    if (s === 3) {
       if (!fd.judet) { setError('Judetul este obligatoriu'); return false; }
       if (!fd.localitate) { setError('Localitatea este obligatorie'); return false; }
       if (!hasValidCoords()) { setError('Selectează locația pe hartă — coordonatele (lat/lon) sunt obligatorii pentru publicarea pe Storia/OLX'); return false; }
     }
-    if (s === 4) {
+    if (s === 5) {
       if ((isAp || isCasa) && (!fd.nr_camere || +fd.nr_camere < 1)) { setError('Numărul de camere este obligatoriu (cerință Storia/OLX)'); return false; }
       if (isTeren) {
         if (!fd.sup_teren || +fd.sup_teren <= 0) { setError('Suprafața terenului este obligatorie (cerință Storia/OLX)'); return false; }
@@ -396,7 +505,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
     return true;
   };
 
-  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 8)); };
+  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 9)); };
   const prev = () => setStep(s => Math.max(s - 1, 1));
 
   const handlePhotos = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -417,7 +526,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const handleSave = async () => {
     // Safety net: the step bar lets users jump steps, bypassing per-step `next()`
     // validation. Re-check the OLX-mandatory data fields and jump to the first gap.
-    for (const s of [1, 2, 4]) {
+    for (const s of [2, 3, 5]) {
       if (!validate(s)) { setStep(s); return; }
     }
 
@@ -550,16 +659,38 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
       if (!res.ok) throw new Error(data.error || 'Eroare server');
 
       if (photos.length > 0) {
-        setStatus(`Se incarca ${photos.length} poze...`);
-        const form = new FormData();
-        form.append('propertyId', data.property_id);
-        form.append('agencyId', data.agency_id);
-        photos.forEach(f => form.append('photos', f));
-        await fetch('/api/properties/upload-photos', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          body: form,
+        const up = await uploadPropertyPhotos({
+          propertyId: data.property_id,
+          agencyId: data.agency_id,
+          photos,
+          token: session.access_token,
+          enhance: enhancePhotos,
+          onProgress: (done, total) => setStatus(`Se incarca pozele... ${done}/${total}`),
         });
+        if (!up.ok) {
+          // Proprietatea e creată; pozele au eșuat → anunțăm, NU închidem silențios
+          setError(`Proprietatea a fost salvată, dar pozele au eșuat: ${up.error}. Le poți reîncărca din editare.`);
+          setLoading(false);
+          setStatus('');
+          onSuccess?.();
+          return;
+        }
+      }
+
+      // Auto-publish pe Facebook Page dacă bifa e activă (după ce pozele sunt încărcate)
+      if (fd.pub_facebook) {
+        setStatus('Se publică pe Facebook...');
+        try {
+          const fbRes = await fetch('/api/portals/facebook/publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ property_id: data.property_id }),
+          });
+          if (!fbRes.ok) {
+            const fbErr = await fbRes.json().catch(() => ({}));
+            alert(fbErr.error || 'Proprietatea s-a salvat, dar postarea pe Facebook a eșuat. Reîncearcă din pagina proprietății.');
+          }
+        } catch { alert('Proprietatea s-a salvat, dar postarea pe Facebook a eșuat (rețea).'); }
       }
 
       setFd(EMPTY);
@@ -569,6 +700,10 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
       setContactSearch('');
       setAiDescriptions(null);
       setAiError('');
+      setPhotoAnalyses(null);
+      setPhotoAnalysisError('');
+      setAutoFilledKeys([]);
+      pinManualRef.current = false;
       setStep(1);
       onClose();
       onSuccess?.();
@@ -582,7 +717,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
   if (!isOpen) return null;
 
-  const STEPS = ['Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media', 'Promovare'];
+  const STEPS = ['Poze', 'Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media', 'Promovare'];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -609,7 +744,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                   <span className="font-bold">{s}</span>
                   <span className="hidden sm:inline">{label}</span>
                 </button>
-                {s < 8 && <div className={`w-4 h-px mx-0.5 ${s < step ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
+                {s < 9 && <div className={`w-4 h-px mx-0.5 ${s < step ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
               </div>
             );
           })}
@@ -624,8 +759,111 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 1: Date Generale ── */}
+          {/* ── Step 1: Poze + Analiză AI ── */}
           {step === 1 && (
+            <div className="space-y-3">
+              <SH title="Poze proprietate" />
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 text-xs text-violet-800">
+                💡 Adaugă pozele primele și apasă <span className="font-semibold">„Analizează cu AI"</span> — completează automat tipul, starea, finisajele și dotările vizibile. Le poți ajusta oricând la pașii următori.
+              </div>
+              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} />
+              <div onClick={() => fileRef.current?.click()}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-5 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-colors">
+                <Upload size={24} className="mx-auto text-gray-400 mb-1" />
+                <p className="text-sm text-gray-600">Click pentru a adăuga poze</p>
+                <p className="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP — max 10MB</p>
+              </div>
+              {/* Auto-îmbunătățire poze (lumini + contrast + claritate) */}
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 select-none bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <input type="checkbox" checked={enhancePhotos} onChange={e => setEnhancePhotos(e.target.checked)}
+                  className="w-4 h-4 accent-amber-600" />
+                <span>✨ <span className="font-medium">Îmbunătățește automat pozele</span> — lumini, contrast și claritate optimizate la salvare</span>
+              </label>
+              {previews.length > 0 && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-4 gap-2">
+                    {previews.map((p, i) => {
+                      const label = photoAnalyses?.photos?.[i]?.room_type;
+                      return (
+                        <div key={i} className="relative group">
+                          <img src={p} alt="" className="w-full h-20 object-cover rounded-lg border border-gray-200" />
+                          <button onClick={() => removePhoto(i)}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <X size={12} />
+                          </button>
+                          {i === 0 && !label && <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-xs px-1 rounded">Main</span>}
+                          {label && (
+                            <span className="absolute bottom-1 left-1 right-1 bg-black/70 text-white text-[10px] px-1 py-0.5 rounded text-center truncate">{label}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                    <div onClick={() => fileRef.current?.click()}
+                      className="h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-emerald-400">
+                      <ImageIcon size={20} className="text-gray-400" />
+                    </div>
+                  </div>
+                  {/* AI photo analysis button */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button type="button" disabled={photoAnalyzing}
+                      onClick={async () => {
+                        setPhotoAnalyzing(true);
+                        setPhotoAnalysisError('');
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (!session) throw new Error('Nu ești autentificat');
+                          const photosPayload = previews.slice(0, 10).map((dataUrl) => {
+                            const [header, base64] = dataUrl.split(',');
+                            const media_type = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
+                            return { base64, media_type };
+                          });
+                          const res = await fetch('/api/properties/analyze-photos', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+                            body: JSON.stringify({ photos: photosPayload }),
+                          });
+                          const d = await res.json();
+                          if (!res.ok) throw new Error(d.error || 'Eroare server');
+                          setPhotoAnalyses(d);
+                          applySuggestedFields(d.suggested_fields);
+                        } catch (err) {
+                          setPhotoAnalysisError(err instanceof Error ? err.message : 'Eroare la analiză');
+                        } finally {
+                          setPhotoAnalyzing(false);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors">
+                      {photoAnalyzing ? (
+                        <><span className="animate-spin">⏳</span> Analizez pozele...</>
+                      ) : (
+                        <><span>✨</span> Analizează cu AI și completează</>
+                      )}
+                    </button>
+                    {photoAnalyses && (
+                      <span className="text-xs text-violet-700 font-medium">✓ {photoAnalyses.photos?.length} poze analizate</span>
+                    )}
+                    {autoFilledKeys.length > 0 && (
+                      <span className="text-xs text-emerald-700 font-medium">✓ {autoFilledKeys.length} câmpuri completate automat</span>
+                    )}
+                    {photoAnalysisError && <span className="text-xs text-red-600">{photoAnalysisError}</span>}
+                  </div>
+                  {photoAnalyses?.overall_observations && (
+                    <p className="text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+                      <span className="font-semibold">AI: </span>{photoAnalyses.overall_observations}
+                    </p>
+                  )}
+                  {photoAnalyses?.suggested_fields && (
+                    <p className="text-xs text-gray-500">
+                      Mergi la pasul următor — câmpurile detectate sunt deja completate (le poți modifica).
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 2: Date Generale ── */}
+          {step === 2 && (
             <div className="space-y-3">
               <div>
                 <div className="flex justify-between items-center mb-1">
@@ -734,8 +972,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 2: Localizare ── */}
-          {step === 2 && (
+          {/* ── Step 3: Localizare ── */}
+          {step === 3 && (
             <div className="space-y-3">
               {/* Județ + Localitate — sus */}
               <div className="grid grid-cols-2 gap-3">
@@ -751,21 +989,24 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 </F>
               </div>
 
-              {/* Hartă — imediat vizibilă, click pentru a seta locația */}
+              {/* Hartă — pinul se așază automat după localitate/stradă/număr; click sau trage pentru ajustare manuală */}
+              <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5">
+                📍 Pinul se pune automat după ce completezi <span className="font-medium">localitate / stradă / număr</span>. Click sau trage pinul pentru a-l ajusta.
+              </div>
               <MapPicker
                 lat={fd.lat}
                 lon={fd.lon}
-                onCoords={(lat, lon) => { set('lat', lat); set('lon', lon); }}
+                onCoords={(lat, lon) => { pinManualRef.current = true; set('lat', lat); set('lon', lon); }}
               />
 
               {/* Coordonate auto-completate de hartă — obligatorii pentru Storia/OLX */}
               <div className="grid grid-cols-2 gap-3">
                 <F label="Latitudine *">
-                  <input type="text" value={fd.lat} onChange={e => set('lat', e.target.value)}
+                  <input type="text" value={fd.lat} onChange={e => { pinManualRef.current = true; set('lat', e.target.value); }}
                     placeholder="45.8416" className={ic} />
                 </F>
                 <F label="Longitudine *">
-                  <input type="text" value={fd.lon} onChange={e => set('lon', e.target.value)}
+                  <input type="text" value={fd.lon} onChange={e => { pinManualRef.current = true; set('lon', e.target.value); }}
                     placeholder="24.9731" className={ic} />
                 </F>
               </div>
@@ -784,16 +1025,10 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 </F>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <F label="Cartier">
-                  <input type="text" value={fd.cartier} onChange={e => set('cartier', e.target.value)}
-                    placeholder="ex: Centru" className={ic} />
-                </F>
-                <F label="Zonă">
-                  <input type="text" value={fd.zona} onChange={e => set('zona', e.target.value)}
-                    placeholder="ex: Central" className={ic} />
-                </F>
-              </div>
+              <F label="Zonă">
+                <input type="text" value={fd.zona} onChange={e => set('zona', e.target.value)}
+                  placeholder="ex: Central" className={ic} />
+              </F>
 
               {isAp && (
                 <div className="grid grid-cols-2 gap-3">
@@ -808,20 +1043,14 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <F label="Cod Poștal">
-                  <input type="text" value={fd.cod_postal} onChange={e => set('cod_postal', e.target.value)}
-                    placeholder="ex: 505200" className={ic} />
-                </F>
-                <div className="flex items-end">
-                  <Chk label="Ascunde adresa exactă pe anunț" checked={fd.ascunde_adresa} onChange={v => set('ascunde_adresa', v)} />
-                </div>
+              <div className="flex items-center pt-1">
+                <Chk label="Ascunde adresa exactă pe anunț" checked={fd.ascunde_adresa} onChange={v => set('ascunde_adresa', v)} />
               </div>
             </div>
           )}
 
-          {/* ── Step 3: Proprietar ── */}
-          {step === 3 && (
+          {/* ── Step 4: Proprietar ── */}
+          {step === 4 && (
             <div className="space-y-3">
               {/* Contact search */}
               <div>
@@ -930,8 +1159,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 4: Suprafete & Compartimentare ── */}
-          {step === 4 && (
+          {/* ── Step 5: Suprafete & Compartimentare ── */}
+          {step === 5 && (
             <div className="space-y-3">
               <SH title="Suprafețe (m²)" />
               <div className="grid grid-cols-3 gap-3">
@@ -1057,8 +1286,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 5: Constructie & Utilitati & Incalzire ── */}
-          {step === 5 && (
+          {/* ── Step 6: Constructie & Utilitati & Incalzire ── */}
+          {step === 6 && (
             <div className="space-y-3">
               <SH title="Clădire" />
               <div className="grid grid-cols-2 gap-3">
@@ -1122,8 +1351,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 6: Finisaje & Dotari ── */}
-          {step === 6 && (
+          {/* ── Step 7: Finisaje & Dotari ── */}
+          {step === 7 && (
             <div className="space-y-3">
               <SH title="Finisaje" />
               <div className="grid grid-cols-2 gap-3">
@@ -1140,16 +1369,14 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                   </select>
                 </F>
               </div>
+              <F label="Pereți"><TagPicker value={fd.pereti} onChange={v => set('pereti', v)} options={OPT_PERETI} /></F>
+              <F label="Podele"><TagPicker value={fd.podele} onChange={v => set('podele', v)} options={OPT_PODELE} /></F>
               <div className="grid grid-cols-2 gap-3">
-                <F label="Pereți"><input type="text" value={fd.pereti} onChange={e => set('pereti', e.target.value)} placeholder="ex: Gresie, vopsea" className={ic} /></F>
-                <F label="Podele"><input type="text" value={fd.podele} onChange={e => set('podele', e.target.value)} placeholder="ex: Parchet, gresie" className={ic} /></F>
+                <F label="Tâmplărie"><TagPicker value={fd.tamplarie} onChange={v => set('tamplarie', v)} options={OPT_TAMPL} /></F>
+                <F label="Ușă intrare"><TagPicker value={fd.usa_intrare} onChange={v => set('usa_intrare', v)} options={OPT_USA} /></F>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <F label="Tâmplărie"><input type="text" value={fd.tamplarie} onChange={e => set('tamplarie', e.target.value)} placeholder="ex: PVC, termopan" className={ic} /></F>
-                <F label="Ușă intrare"><input type="text" value={fd.usa_intrare} onChange={e => set('usa_intrare', e.target.value)} placeholder="ex: Metalică, blindată" className={ic} /></F>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <F label="Acoperiș"><input type="text" value={fd.acoperis} onChange={e => set('acoperis', e.target.value)} placeholder="ex: Tablă, țiglă" className={ic} /></F>
+                <F label="Acoperiș"><TagPicker value={fd.acoperis} onChange={v => set('acoperis', v)} options={OPT_ACOPERI} /></F>
                 <F label="Utilat">
                   <select value={fd.utilat} onChange={e => set('utilat', e.target.value)} className={sc}>
                     <option value="">-</option>
@@ -1184,36 +1411,9 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 7: Media & Marketing & Date interne ── */}
-          {step === 7 && (
+          {/* ── Step 8: Descriere & SEO ── */}
+          {step === 8 && (
             <div className="space-y-3">
-              <SH title="Poze proprietate" />
-              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} />
-              <div onClick={() => fileRef.current?.click()}
-                className="border-2 border-dashed border-gray-300 rounded-lg p-5 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-colors">
-                <Upload size={24} className="mx-auto text-gray-400 mb-1" />
-                <p className="text-sm text-gray-600">Click pentru a adăuga poze</p>
-                <p className="text-xs text-gray-400 mt-0.5">JPG, PNG, WEBP — max 10MB</p>
-              </div>
-              {previews.length > 0 && (
-                <div className="grid grid-cols-4 gap-2">
-                  {previews.map((p, i) => (
-                    <div key={i} className="relative group">
-                      <img src={p} alt="" className="w-full h-20 object-cover rounded-lg border border-gray-200" />
-                      <button onClick={() => removePhoto(i)}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X size={12} />
-                      </button>
-                      {i === 0 && <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-xs px-1 rounded">Main</span>}
-                    </div>
-                  ))}
-                  <div onClick={() => fileRef.current?.click()}
-                    className="h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-emerald-400">
-                    <ImageIcon size={20} className="text-gray-400" />
-                  </div>
-                </div>
-              )}
-
               <SH title="Descriere" />
               <F label="Descriere (RO)">
                 <textarea value={fd.descriere} onChange={e => set('descriere', e.target.value)}
@@ -1234,25 +1434,6 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                       try {
                         const { data: { session } } = await supabase.auth.getSession();
                         if (!session) throw new Error('Nu ești autentificat');
-                        const dotari = [
-                          fd.dot_lift && 'lift', fd.dot_interfon && 'interfon',
-                          fd.dot_videointerfon && 'videointerfon', fd.dot_alarma && 'alarmă',
-                          fd.dot_supraveghere && 'supraveghere', fd.dot_garaj && 'garaj',
-                          fd.dot_piscina && 'piscină', fd.dot_gradina && 'grădină',
-                          fd.dot_terasa && 'terasă', fd.dot_dressing && 'dressing',
-                          fd.dot_boxa && 'boxă',
-                        ].filter(Boolean) as string[];
-                        const utilitati = [
-                          fd.util_curent && 'curent', fd.util_apa && 'apă',
-                          fd.util_canal && 'canalizare', fd.util_gaz && 'gaz',
-                          fd.util_internet && 'internet', fd.util_fotovoltaice && 'panouri fotovoltaice',
-                          fd.util_trifazic && 'curent trifazic',
-                        ].filter(Boolean) as string[];
-                        const incalzire = [
-                          fd.inc_centrala_proprie && 'centrală proprie',
-                          fd.inc_pardoseala && 'încălzire pardoseală',
-                          fd.aer_conditionat && 'aer condiționat',
-                        ].filter(Boolean) as string[];
                         const res = await fetch('/api/properties/generate-description', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -1261,23 +1442,66 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                             tip_oferta: fd.tip_oferta,
                             price: parseFloat(fd.price) || 0,
                             currency: fd.currency,
+                            negociabil: fd.negociabil,
+                            judet: fd.judet, localitate: fd.localitate,
+                            cartier: fd.cartier, zona: fd.zona,
+                            strada: fd.strada, numar: fd.numar,
                             nr_camere: fd.nr_camere ? +fd.nr_camere : null,
+                            nr_dormitoare: fd.nr_dormitoare ? +fd.nr_dormitoare : null,
+                            nr_bai: fd.nr_bai ? +fd.nr_bai : null,
+                            nr_bucatarii: fd.nr_bucatarii ? +fd.nr_bucatarii : null,
+                            nr_balcoane: fd.nr_balcoane ? +fd.nr_balcoane : null,
+                            nr_terase: fd.nr_terase ? +fd.nr_terase : null,
+                            nr_parcare: fd.nr_parcare ? +fd.nr_parcare : null,
                             sup_utila: fd.sup_utila ? +fd.sup_utila : null,
-                            judet: fd.judet,
-                            localitate: fd.localitate,
-                            cartier: fd.cartier,
+                            sup_construita: fd.sup_construita ? +fd.sup_construita : null,
+                            sup_teren: fd.sup_teren ? +fd.sup_teren : null,
+                            sup_curte: fd.sup_curte ? +fd.sup_curte : null,
+                            sup_balcon: fd.sup_balcon ? +fd.sup_balcon : null,
+                            sup_terasa: fd.sup_terasa ? +fd.sup_terasa : null,
+                            sup_pivnita: fd.sup_pivnita ? +fd.sup_pivnita : null,
                             etaj: fd.etaj ? +fd.etaj : null,
                             nr_etaje: fd.nr_etaje ? +fd.nr_etaje : null,
+                            parter: fd.parter, ultimul_etaj: fd.ultimul_etaj,
                             an_constructie: fd.an_constructie ? +fd.an_constructie : null,
-                            stare: fd.stare,
-                            dotari: dotari,
-                            utilitati: utilitati,
-                            incalzire: incalzire,
+                            an_renovare: fd.an_renovare ? +fd.an_renovare : null,
+                            structura: fd.structura, regim_inaltime: fd.regim_inaltime,
+                            compartimentare: fd.compartimentare, confort: fd.confort,
+                            clasa_energetica: fd.clasa_energetica,
+                            risc_seismic: fd.risc_seismic,
+                            finisaje: {
+                              stare: fd.stare, pereti: fd.pereti, podele: fd.podele,
+                              tamplarie: fd.tamplarie, usa_intrare: fd.usa_intrare, acoperis: fd.acoperis,
+                            },
+                            incalzire: {
+                              centrala_proprie: fd.inc_centrala_proprie, centrala_bloc: fd.inc_centrala_bloc,
+                              termoficare: fd.inc_termoficare, pardoseala: fd.inc_pardoseala,
+                              semineu: fd.inc_semineu, aer_conditionat: fd.aer_conditionat, nr_ac: fd.nr_ac ? +fd.nr_ac : null,
+                            },
+                            utilitati: {
+                              curent: fd.util_curent, apa: fd.util_apa, canalizare: fd.util_canal,
+                              gaz: fd.util_gaz, internet: fd.util_internet, cablu: fd.util_cablu,
+                              fotovoltaice: fd.util_fotovoltaice, trifazic: fd.util_trifazic,
+                            },
+                            dotari: {
+                              lift: fd.dot_lift, interfon: fd.dot_interfon, videointerfon: fd.dot_videointerfon,
+                              alarma: fd.dot_alarma, supraveghere: fd.dot_supraveghere,
+                              curte: fd.dot_curte, gradina: fd.dot_gradina, piscina: fd.dot_piscina,
+                              foisor: fd.dot_foisor, garaj: fd.dot_garaj, boxa: fd.dot_boxa,
+                              dressing: fd.dot_dressing, debara: fd.dot_debara,
+                              jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna, terasa: fd.dot_terasa,
+                            },
+                            mobilat: fd.mobilat, utilat: fd.utilat,
+                            descriere: fd.descriere,
+                            photo_analyses: photoAnalyses ?? undefined,
                           }),
                         });
                         const d = await res.json();
                         if (!res.ok) throw new Error(d.error || 'Eroare server');
-                        setAiDescriptions(d);
+                        // Auto-populate titlu_seo and meta_desc if empty
+                        if (d.descriptions?.titlu_seo && !fd.titlu_seo) set('titlu_seo', d.descriptions.titlu_seo);
+                        if (d.descriptions?.meta_desc && !fd.meta_desc) set('meta_desc', d.descriptions.meta_desc);
+                        setAiDescriptions(d.descriptions ?? d);
                       } catch (err) {
                         setAiError(err instanceof Error ? err.message : 'Eroare la generare');
                       } finally {
@@ -1296,20 +1520,86 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
                 {aiDescriptions && (
                   <div className="space-y-2 mt-1">
+                    {/* titlu_seo */}
+                    {aiDescriptions['titlu_seo'] && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-emerald-700">Titlu SEO</span>
+                          <div className="flex gap-1">
+                            <button type="button"
+                              onClick={() => { set('titlu_seo', aiDescriptions['titlu_seo'] || ''); }}
+                              className="text-xs px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+                              Folosește
+                            </button>
+                            <button type="button"
+                              onClick={() => { navigator.clipboard.writeText(aiDescriptions['titlu_seo'] || ''); setCopiedKey('titlu_seo'); setTimeout(() => setCopiedKey(''), 2000); }}
+                              className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                              {copiedKey === 'titlu_seo' ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                              {copiedKey === 'titlu_seo' ? 'Copiat!' : 'Copiază'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-800 font-medium">{aiDescriptions['titlu_seo']}</p>
+                      </div>
+                    )}
+                    {/* meta_desc */}
+                    {aiDescriptions['meta_desc'] && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-blue-700">Meta description (Google)</span>
+                          <div className="flex gap-1">
+                            <button type="button"
+                              onClick={() => { set('meta_desc', aiDescriptions['meta_desc'] || ''); }}
+                              className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-700">
+                              Folosește
+                            </button>
+                            <button type="button"
+                              onClick={() => { navigator.clipboard.writeText(aiDescriptions['meta_desc'] || ''); setCopiedKey('meta_desc'); setTimeout(() => setCopiedKey(''), 2000); }}
+                              className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                              {copiedKey === 'meta_desc' ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                              {copiedKey === 'meta_desc' ? 'Copiat!' : 'Copiază'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-700">{aiDescriptions['meta_desc']}</p>
+                      </div>
+                    )}
+                    {/* seo — main 700-1200 word description */}
+                    {aiDescriptions['seo'] && (
+                      <div className="bg-white border-2 border-emerald-300 rounded-lg p-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold text-emerald-800">Descriere SEO completă (700-1200 cuvinte)</span>
+                          <div className="flex gap-1">
+                            <button type="button"
+                              onClick={() => { set('descriere', aiDescriptions['seo'] || ''); }}
+                              className="text-xs px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+                              Folosește
+                            </button>
+                            <button type="button"
+                              onClick={() => { navigator.clipboard.writeText(aiDescriptions['seo'] || ''); setCopiedKey('seo'); setTimeout(() => setCopiedKey(''), 2000); }}
+                              className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center gap-1">
+                              {copiedKey === 'seo' ? <CheckCircle size={11} className="text-green-600" /> : <Copy size={11} />}
+                              {copiedKey === 'seo' ? 'Copiat!' : 'Copiază'}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-700 line-clamp-4 whitespace-pre-line">{aiDescriptions['seo']}</p>
+                      </div>
+                    )}
+                    {/* remaining descriptions */}
                     {[
-                      { key: 'completa', label: 'Descriere completă' },
-                      { key: 'scurta', label: 'Scurtă' },
-                      { key: 'facebook', label: 'Facebook' },
-                      { key: 'olx', label: 'OLX' },
-                      { key: 'imobiliare', label: 'Imobiliare.ro' },
-                      { key: 'storia', label: 'Storia' },
-                    ].map(({ key, label }) => (
+                      { key: 'completa', label: 'Descriere completă', field: 'descriere' },
+                      { key: 'scurta', label: 'Scurtă', field: 'descriere' },
+                      { key: 'facebook', label: 'Facebook', field: 'descriere' },
+                      { key: 'olx', label: 'OLX', field: 'descriere' },
+                      { key: 'storia', label: 'Storia', field: 'descriere' },
+                    ].filter(({ key }) => aiDescriptions[key]).map(({ key, label, field }) => (
                       <div key={key} className="bg-white border border-gray-200 rounded-lg p-2">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-semibold text-gray-600">{label}</span>
                           <div className="flex gap-1">
                             <button type="button"
-                              onClick={() => { set('descriere', aiDescriptions[key] || ''); }}
+                              onClick={() => { set(field as keyof typeof fd, aiDescriptions[key] || ''); }}
                               className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
                               Folosește
                             </button>
@@ -1351,8 +1641,8 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             </div>
           )}
 
-          {/* ── Step 8: Promovare & Date Interne ── */}
-          {step === 8 && (
+          {/* ── Step 9: Promovare & Date Interne ── */}
+          {step === 9 && (
             <div className="space-y-3">
               <SH title="Publicare (opțional)" />
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-700 mb-2">
@@ -1362,12 +1652,16 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 {[
                   { key: 'pub_site', label: 'Site Propriu Kira' },
                   { key: 'pub_imobiliare', label: 'Imobiliare.ro' },
-                  { key: 'pub_olx', label: 'OLX' },
-                  { key: 'pub_storia', label: 'Storia' },
                   { key: 'pub_facebook', label: 'Facebook' },
                 ].map(({ key, label }) => (
                   <Chk key={key} label={label} checked={fd[key as keyof FD] as boolean} onChange={v => set(key as keyof FD, v)} />
                 ))}
+                {/* Storia + OLX = aceeași integrare (OLX Group) → o singură bifă */}
+                <Chk
+                  label="Storia / OLX"
+                  checked={fd.pub_storia}
+                  onChange={v => { set('pub_storia', v); set('pub_olx', v); }}
+                />
               </div>
 
               <SH title="Date interne agenție" />
@@ -1414,14 +1708,14 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             className="px-5 py-2 border border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-40 text-sm font-medium transition-colors">
             {loading ? (status || 'Se salvează...') : 'Salvează'}
           </button>
-          {step < 8 && (
+          {step < 9 && (
             <button onClick={next}
               className="px-5 py-2 text-white rounded-lg hover:opacity-90 flex items-center gap-1 text-sm font-medium transition-colors"
               style={{ backgroundColor: '#0E6B54' }}>
               Înainte <ChevronRight size={16} />
             </button>
           )}
-          {step === 8 && (
+          {step === 9 && (
             <button onClick={handleSave} disabled={loading}
               className="px-6 py-2 text-white rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium transition-colors"
               style={{ backgroundColor: '#0E6B54' }}>

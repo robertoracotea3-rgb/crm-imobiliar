@@ -87,17 +87,17 @@ const SOURCE_LABEL: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   activa: 'Activă', rezervata: 'Rezervată', tranzactionata: 'Tranzacționată',
-  vanduta_noi: 'Vândută de noi', vanduta_altii: 'Vândută de alții',
   inchiriata: 'Închiriată', retrasa: 'Retrasă', expirata: 'Expirată',
   draft: 'Draft', arhivata: 'Arhivată',
 };
 const STATUS_COLORS: Record<string, string> = {
   activa: 'bg-emerald-100 text-emerald-800', rezervata: 'bg-blue-100 text-blue-800',
-  tranzactionata: 'bg-purple-100 text-purple-800', vanduta_noi: 'bg-green-100 text-green-800',
-  vanduta_altii: 'bg-teal-100 text-teal-800', inchiriata: 'bg-indigo-100 text-indigo-800',
+  tranzactionata: 'bg-purple-100 text-purple-800', inchiriata: 'bg-indigo-100 text-indigo-800',
   retrasa: 'bg-gray-100 text-gray-600', expirata: 'bg-orange-100 text-orange-700',
   draft: 'bg-yellow-100 text-yellow-800', arhivata: 'bg-red-100 text-red-700',
 };
+
+const SALE_STATUSES = new Set(['tranzactionata', 'inchiriata']);
 
 export default function PropertyDetailPage() {
   const params = useParams();
@@ -110,6 +110,14 @@ export default function PropertyDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+
+  // Dialog comision (apare la tranzactionata / inchiriata)
+  const [pendingStatus, setPendingStatus] = useState<string | null>(null);
+  const [commDialog, setCommDialog] = useState(false);
+  const [commForm, setCommForm] = useState({
+    sale_price: '', currency: 'EUR', agency_commission: '', agent_commission: '',
+    closed_at: new Date().toISOString().slice(0, 10), notes: '',
+  });
 
   // Photo reordering
   const [editingPhotos, setEditingPhotos] = useState(false);
@@ -260,6 +268,30 @@ export default function PropertyDetailPage() {
   const handleStatusChange = async (newStatus: string) => {
     if (!property) return;
     setShowStatusMenu(false);
+    // Statuse de finalizare → dialog comision + retragere automată din portale
+    if (SALE_STATUSES.has(newStatus)) {
+      setPendingStatus(newStatus);
+      setCommForm(f => ({
+        ...f,
+        sale_price: String(property.price || ''),
+        currency: property.currency || 'EUR',
+        closed_at: new Date().toISOString().slice(0, 10),
+      }));
+      setCommDialog(true);
+      return;
+    }
+    // Retragere din portale dacă e publicată și statusul devine retrasa/arhivata/draft
+    const retractStatuses = new Set(['retrasa', 'arhivata', 'draft']);
+    if (retractStatuses.has(newStatus) && storiaListing && ['active', 'pending'].includes(storiaListing.status)) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await fetch('/api/portals/storia/unpublish', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ property_id: params.id }),
+        }).catch(() => {});
+      }
+    }
     try {
       setStatusChanging(true);
       const { data: { session } } = await supabase.auth.getSession();
@@ -272,8 +304,62 @@ export default function PropertyDetailPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
       setProperty(p => p ? { ...p, status: newStatus } : p);
+      if (retractStatuses.has(newStatus)) fetchStoriaStatus(session.access_token);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Eroare la schimbare status');
+    } finally {
+      setStatusChanging(false);
+    }
+  };
+
+  const confirmSaleAndCommission = async () => {
+    if (!property || !pendingStatus) return;
+    try {
+      setStatusChanging(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Sesiune expirată');
+
+      // 1. Schimbă statusul proprietății
+      const sRes = await fetch('/api/properties/status', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: params.id, status: pendingStatus }),
+      });
+      const sData = await sRes.json();
+      if (!sRes.ok) throw new Error(sData.error);
+
+      // 2. Retrage automat din portale dacă publicată
+      if (storiaListing && ['active', 'pending'].includes(storiaListing.status)) {
+        await fetch('/api/portals/storia/unpublish', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ property_id: params.id }),
+        }).catch(() => {});
+        fetchStoriaStatus(session.access_token);
+      }
+
+      // 3. Salvează tranzacția financiară
+      await fetch('/api/transactions/create', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          property_id: params.id,
+          agent_id: property.agent_id || null,
+          type: pendingStatus === 'inchiriata' ? 'inchiriere' : 'vanzare',
+          sale_price: Number(commForm.sale_price) || 0,
+          currency: commForm.currency,
+          agency_commission: Number(commForm.agency_commission) || 0,
+          agent_commission: Number(commForm.agent_commission) || 0,
+          closed_at: commForm.closed_at,
+          notes: commForm.notes,
+        }),
+      });
+
+      setProperty(p => p ? { ...p, status: pendingStatus } : p);
+      setCommDialog(false);
+      setPendingStatus(null);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Eroare la finalizare');
     } finally {
       setStatusChanging(false);
     }
@@ -920,6 +1006,78 @@ export default function PropertyDetailPage() {
 
       </div>
     </div>
+      {/* Dialog comision — apare la tranzactionata / inchiriata */}
+      {commDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Finalizare {pendingStatus === 'inchiriata' ? 'închiriere' : 'vânzare'}</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              Proprietatea va fi marcată ca <strong>{STATUS_LABELS[pendingStatus!]}</strong>
+              {storiaListing && ['active', 'pending'].includes(storiaListing.status) && (
+                <span className="text-orange-600"> și retrasă automat din Storia/OLX</span>
+              )}.
+            </p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Preț tranzacție</label>
+                  <input type="number" value={commForm.sale_price}
+                    onChange={e => setCommForm(f => ({ ...f, sale_price: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Monedă</label>
+                  <select value={commForm.currency} onChange={e => setCommForm(f => ({ ...f, currency: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <option>EUR</option><option>RON</option><option>USD</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Comision agenție ({commForm.currency})</label>
+                  <input type="number" value={commForm.agency_commission}
+                    onChange={e => setCommForm(f => ({ ...f, agency_commission: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 block mb-1">Comision agent ({commForm.currency})</label>
+                  <input type="number" value={commForm.agent_commission}
+                    onChange={e => setCommForm(f => ({ ...f, agent_commission: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Data finalizării</label>
+                <input type="date" value={commForm.closed_at}
+                  onChange={e => setCommForm(f => ({ ...f, closed_at: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">Observații</label>
+                <textarea value={commForm.notes} rows={2}
+                  onChange={e => setCommForm(f => ({ ...f, notes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+                  placeholder="Opțional..." />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => { setCommDialog(false); setPendingStatus(null); }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Anulează
+              </button>
+              <button onClick={confirmSaleAndCommission} disabled={statusChanging}
+                className="flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: '#0E6B54' }}>
+                {statusChanging ? 'Se salvează...' : 'Confirmă & Salvează'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </ProtectedLayout>
   );
 }

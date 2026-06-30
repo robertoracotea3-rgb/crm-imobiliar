@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { DemandsList } from '@/components/DemandsList';
 import { AddDemandDialog } from '@/components/AddDemandDialog';
@@ -23,6 +24,7 @@ const SURSE = [
 ];
 
 export default function MatchesPage() {
+  const { user } = useAuth();
   const [demands, setDemands] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,8 +33,26 @@ export default function MatchesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSource, setSelectedSource] = useState('');
+  // Filtru pe agent: implicit doar cererile agentului logat; debifează → toate.
+  const [agents, setAgents] = useState<{ id: string; email: string }[]>([]);
+  const [onlyMine, setOnlyMine] = useState(true);
+  const [selectedAgent, setSelectedAgent] = useState('');
 
-  useEffect(() => { fetchDemands(); }, []);
+  // Nume agent după user_id, pentru badge-urile din carduri + dropdown.
+  const agentNames = Object.fromEntries(agents.map((a) => [a.id, a.email]));
+
+  useEffect(() => { fetchDemands(); fetchAgents(); }, []);
+
+  const fetchAgents = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const res = await fetch('/api/agents/list', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (!res.ok) return;
+    const d = await res.json();
+    setAgents(d.agents || []);
+  };
 
   const fetchDemands = async () => {
     try {
@@ -71,13 +91,22 @@ export default function MatchesPage() {
     if (selectedSource) {
       list = list.filter((d) => d.source === selectedSource);
     }
+    // Filtru pe agent: bifa „doar cererile mele" are prioritate; altfel, dacă e ales
+    // un agent anume din dropdown, arătăm doar cererile lui.
+    if (onlyMine && user?.id) {
+      list = list.filter((d) => d.agent_id === user.id);
+    } else if (!onlyMine && selectedAgent) {
+      list = list.filter((d) => d.agent_id === selectedAgent);
+    }
     setFiltered(list);
-  }, [searchTerm, selectedCategory, selectedSource, demands]);
+  }, [searchTerm, selectedCategory, selectedSource, onlyMine, selectedAgent, user, demands]);
 
   const reset = () => {
     setSearchTerm('');
     setSelectedCategory('');
     setSelectedSource('');
+    setOnlyMine(true);
+    setSelectedAgent('');
   };
 
   return (
@@ -143,6 +172,31 @@ export default function MatchesPage() {
               </button>
             </div>
           </div>
+
+          {/* Filtru pe agent */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={onlyMine}
+                onChange={(e) => setOnlyMine(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              Doar cererile mele
+            </label>
+            <select
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(e.target.value)}
+              disabled={onlyMine}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm disabled:bg-gray-100 disabled:text-gray-400 sm:w-56"
+              title={onlyMine ? 'Debifează „Doar cererile mele" ca să filtrezi după alt agent' : 'Filtrează după agent'}
+            >
+              <option value="">Toți agenții</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.email}{a.id === user?.id ? ' (eu)' : ''}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Content */}
@@ -158,7 +212,7 @@ export default function MatchesPage() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
             <Search size={40} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500 font-medium">{searchTerm || selectedCategory || selectedSource ? 'Nicio cerere găsită' : 'Nu ai cereri încă'}</p>
+            <p className="text-gray-500 font-medium">{searchTerm || selectedCategory || selectedSource || onlyMine || selectedAgent ? 'Nicio cerere găsită' : 'Nu ai cereri încă'}</p>
             <p className="text-sm text-gray-400 mt-1">Adaugă prima cerere cu butonul de mai sus</p>
           </div>
         ) : (
@@ -166,6 +220,7 @@ export default function MatchesPage() {
             <p className="text-sm text-gray-600 mb-4">{filtered.length} cereri</p>
             <DemandsList
               demands={filtered}
+              agentNames={agentNames}
               canDelete
               onDelete={async (id) => {
                 const { data: { session } } = await supabase.auth.getSession();

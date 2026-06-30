@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
 
     const body = await request.json();
-    const { id, title, price, currency, description, county, city, zone, street, street_number, latitude, longitude, attributes } = body;
+    const { id, title, price, currency, description, county, city, zone, street, street_number, latitude, longitude, attributes, agent_id } = body;
 
     if (!id || !title) return Response.json({ error: 'ID sau titlu lipsă' }, { status: 400 });
 
@@ -55,6 +55,8 @@ export async function POST(request: Request) {
       attributes: attributes || {},
       updated_at: new Date().toISOString(),
     };
+    // agent_id: doar dacă a fost trimis (string = atribuit, '' / null = neasignat)
+    if (agent_id !== undefined) updateData.agent_id = agent_id || null;
 
     // Snapshot current values for the activity log
     const { data: old } = await admin

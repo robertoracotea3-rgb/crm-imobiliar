@@ -8,11 +8,11 @@ const admin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const VALID_STATUSES = ['activa', 'rezervata', 'tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata', 'retrasa', 'expirata', 'draft', 'arhivata'];
+const VALID_STATUSES = ['activa', 'rezervata', 'tranzactionata', 'inchiriata', 'retrasa', 'expirata', 'draft', 'arhivata'];
 const STATUS_LABELS: Record<string, string> = {
   activa: 'Activă', rezervata: 'Rezervată', tranzactionata: 'Tranzacționată',
-  vanduta_noi: 'Vândută de noi', vanduta_altii: 'Vândută de alții', inchiriata: 'Închiriată',
-  retrasa: 'Retrasă', expirata: 'Expirată', draft: 'Draft', arhivata: 'Arhivată',
+  inchiriata: 'Închiriată', retrasa: 'Retrasă', expirata: 'Expirată',
+  draft: 'Draft', arhivata: 'Arhivată',
 };
 
 export async function PATCH(request: Request) {

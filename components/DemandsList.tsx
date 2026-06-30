@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Trash2, MapPin, DollarSign, Target, Zap, X, Home, CheckCircle, AlertCircle, Info, XCircle, Pencil } from 'lucide-react';
+import { Trash2, MapPin, DollarSign, Target, Zap, X, Home, CheckCircle, AlertCircle, Info, XCircle, Pencil, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 
@@ -34,6 +34,7 @@ interface Demand {
   category: string;
   transaction?: string;
   source?: string;
+  agent_id?: string;
   budget_min?: number;
   budget_max?: number;
   currency?: string;
@@ -72,6 +73,7 @@ interface DemandsListProps {
   onDelete?: (id: string) => void;
   onStatusChange?: (id: string, status: string) => void;
   canDelete?: boolean;
+  agentNames?: Record<string, string>;
 }
 
 function EditDemandModal({ demand, onClose, onSuccess }: {
@@ -478,7 +480,7 @@ function MatchModal({ demand, onClose }: { demand: Demand; onClose: () => void }
   );
 }
 
-export function DemandsList({ demands, onDelete, onStatusChange, canDelete = false }: DemandsListProps) {
+export function DemandsList({ demands, onDelete, onStatusChange, canDelete = false, agentNames = {} }: DemandsListProps) {
   const [matchDemand, setMatchDemand] = useState<Demand | null>(null);
   const [closeDemand, setCloseDemand] = useState<Demand | null>(null);
   const [editDemand, setEditDemand] = useState<Demand | null>(null);
@@ -563,6 +565,12 @@ export function DemandsList({ demands, onDelete, onStatusChange, canDelete = fal
                       {tranzactie && (
                         <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">
                           {tranzactie === 'vanzare' ? 'Cumparare' : 'Inchiriere'}
+                        </span>
+                      )}
+                      {demand.agent_id && (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 flex items-center gap-1">
+                          <User size={11} />
+                          {agentNames[demand.agent_id] || 'Agent'}
                         </span>
                       )}
                     </div>

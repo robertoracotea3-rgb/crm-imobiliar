@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { PropertiesList } from '@/components/PropertiesList';
 import { PropertiesMapView } from '@/components/PropertiesMapView';
 import { AddPropertyDialog } from '@/components/AddPropertyDialog';
-import { Search, Filter, Plus, Wand2, ArrowUpDown, CheckSquare, Trash2, RefreshCw } from 'lucide-react';
+import { Search, Filter, Plus, Wand2, ArrowUpDown, CheckSquare, Trash2, RefreshCw, User, Globe } from 'lucide-react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 
@@ -24,15 +24,13 @@ const SORT_OPTIONS = [
 
 const STATUS_LABEL: Record<string, string> = {
   activa: 'Activa', rezervata: 'Rezervata', tranzactionata: 'Tranzactionata',
-  vanduta_noi: 'Vândută de noi', vanduta_altii: 'Vândută de alții',
   inchiriata: 'Inchiriata', retrasa: 'Retrasa', expirata: 'Expirata',
   draft: 'Draft', arhivata: 'Arhivata',
 };
 
 const STATUS_COLOR: Record<string, string> = {
   activa: 'bg-emerald-100 text-emerald-800', rezervata: 'bg-blue-100 text-blue-800',
-  tranzactionata: 'bg-purple-100 text-purple-800', vanduta_noi: 'bg-green-100 text-green-800',
-  vanduta_altii: 'bg-teal-100 text-teal-800', inchiriata: 'bg-indigo-100 text-indigo-800',
+  tranzactionata: 'bg-purple-100 text-purple-800', inchiriata: 'bg-indigo-100 text-indigo-800',
   retrasa: 'bg-gray-100 text-gray-600', expirata: 'bg-orange-100 text-orange-700',
   draft: 'bg-yellow-100 text-yellow-800', arhivata: 'bg-red-100 text-red-700',
 };
@@ -101,6 +99,7 @@ export default function PropertiesPage() {
   // Bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkAgent, setBulkAgent] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
 
   const availableCities = selectedCounty ? (ORASE_BY_JUDET[selectedCounty] || []) : [];
@@ -151,7 +150,7 @@ export default function PropertiesPage() {
     const allowedStatuses: string[] = [];
     if (showActive) allowedStatuses.push('activa');
     if (showReservate) allowedStatuses.push('rezervata');
-    if (showTranzactionate) allowedStatuses.push('tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata');
+    if (showTranzactionate) allowedStatuses.push('tranzactionata', 'tranzactionata', 'inchiriata', 'inchiriata');
     if (showRetrase) allowedStatuses.push('retrasa', 'expirata', 'arhivata');
     if (allowedStatuses.length > 0) {
       filtered = filtered.filter((p) => allowedStatuses.includes(p.status || 'activa'));
@@ -272,6 +271,52 @@ export default function PropertiesPage() {
     }
   };
 
+  // Mută proprietățile selectate pe alt agent
+  const applyBulkAgent = async () => {
+    if (selectedIds.size === 0 || !bulkAgent) return; // trebuie aleasă o opțiune (agent sau „neasignat")
+    setBulkLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const agentId = bulkAgent === '__none__' ? null : bulkAgent;
+      const res = await fetch('/api/properties/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ ids: Array.from(selectedIds), agent_id: agentId }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Eroare la mutarea pe agent'); return; }
+      setSelectedIds(new Set());
+      setBulkAgent('');
+      await fetchProperties();
+    } catch (err) {
+      console.error('Eroare bulk agent:', err);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  // Publică/retrage pe site proprietățile selectate
+  const applyBulkPublish = async (publish: boolean) => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/properties/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ ids: Array.from(selectedIds), publishSite: publish, unpublishSite: !publish }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Eroare la publicare'); return; }
+      setSelectedIds(new Set());
+      await fetchProperties();
+    } catch (err) {
+      console.error('Eroare bulk publish:', err);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const applyBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     if (!confirm(`Ștergi ${selectedIds.size} proprietăți? Acțiunea este ireversibilă.`)) return;
@@ -298,7 +343,7 @@ export default function PropertiesPage() {
 
   const activeCount = properties.filter((p) => (p.status || 'activa') === 'activa').length;
   const rezervateCount = properties.filter((p) => p.status === 'rezervata').length;
-  const tranzactionateCount = properties.filter((p) => ['tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata'].includes(p.status)).length;
+  const tranzactionateCount = properties.filter((p) => ['tranzactionata', 'tranzactionata', 'inchiriata', 'inchiriata'].includes(p.status)).length;
   const retraseCount = properties.filter((p) => ['retrasa', 'expirata', 'arhivata'].includes(p.status)).length;
 
   return (
@@ -573,6 +618,43 @@ export default function PropertiesPage() {
                   <RefreshCw size={13} />
                   Aplică
                 </button>
+
+                {/* Mută pe alt agent */}
+                <select
+                  value={bulkAgent}
+                  onChange={(e) => setBulkAgent(e.target.value)}
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="">Mută pe agent...</option>
+                  <option value="__none__">— Neasignat —</option>
+                  {agentsList.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <button
+                  onClick={applyBulkAgent}
+                  disabled={!bulkAgent || bulkLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+                >
+                  <User size={13} />
+                  Mută agent
+                </button>
+
+                {/* Publicare pe site */}
+                <button
+                  onClick={() => applyBulkPublish(true)}
+                  disabled={bulkLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg disabled:opacity-40 hover:bg-blue-700 transition-colors"
+                >
+                  <Globe size={13} />
+                  Publică pe site
+                </button>
+                <button
+                  onClick={() => applyBulkPublish(false)}
+                  disabled={bulkLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-200 transition-colors"
+                >
+                  Retrage
+                </button>
+
                 <button
                   onClick={applyBulkDelete}
                   disabled={bulkLoading}
@@ -598,6 +680,7 @@ export default function PropertiesPage() {
             canDelete={false}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
+            agentNames={Object.fromEntries(agentsList.map((a) => [a.id, a.name]))}
           />
         </div>
       )}

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { ChevronLeft, Loader2, Upload, X } from 'lucide-react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
+import { uploadPropertyPhotos } from '@/lib/upload-photos-client';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm bg-white';
@@ -166,19 +167,21 @@ export default function EditPropertyPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
 
-      // Upload new photos
+      // Upload new photos (redimensionate + în loturi, cu verificare)
       if (photos.length > 0) {
-        const form2 = new FormData();
-        form2.append('propertyId', String(params.id));
-        form2.append('agencyId', property.agency_id);
-        form2.append('replacePhotos', 'true');
-        form2.append('existingPhotos', JSON.stringify(existingPhotos));
-        photos.forEach(f => form2.append('photos', f));
-        await fetch('/api/properties/upload-photos', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          body: form2,
+        const up = await uploadPropertyPhotos({
+          propertyId: String(params.id),
+          agencyId: property.agency_id,
+          photos,
+          token: session.access_token,
+          replacePhotos: true,
+          existingPhotos,
         });
+        if (!up.ok) {
+          setError(`Modificările s-au salvat, dar pozele au eșuat: ${up.error}. Reîncearcă.`);
+          setSaving(false);
+          return;
+        }
       }
 
       router.back();

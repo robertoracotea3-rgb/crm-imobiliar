@@ -1,8 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { Trash2, MapPin, DollarSign, Home } from 'lucide-react';
+import { Trash2, MapPin, Home, User } from 'lucide-react';
 import { ActivityStatus } from './ActivityStatus';
+
+const CAT_LABELS: Record<string, string> = {
+  apartament: 'Apartament', casa_vila: 'Casă/Vilă', teren: 'Teren',
+  spatiu_comercial: 'Spațiu comercial', spatiu_industrial: 'Industrial',
+  birou: 'Birou', garaj: 'Garaj', pensiune_hotel: 'Pensiune/Hotel',
+};
 
 interface Property {
   id: string;
@@ -15,10 +21,12 @@ interface Property {
   currency?: string;
   category: string;
   status?: string;
+  agent_id?: string;
   created_at: string;
   attributes?: {
     location_text?: string;
     photos?: string[];
+    tip_oferta?: string;
   };
   days_since_update?: number;
   publications?: Array<{
@@ -36,6 +44,7 @@ interface PropertiesListProps {
   statusLabelMap?: Record<string, string>;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  agentNames?: Record<string, string>;
 }
 
 export function PropertiesList({
@@ -46,6 +55,7 @@ export function PropertiesList({
   statusLabelMap = {},
   selectedIds,
   onToggleSelect,
+  agentNames = {},
 }: PropertiesListProps) {
   const selectable = !!onToggleSelect;
   const getDaysAgo = (dateStr: string) => {
@@ -135,6 +145,17 @@ export function PropertiesList({
                       <MapPin size={13} className="text-emerald-600" />
                       {[property.city, property.county].filter(Boolean).join(', ') || property.attributes?.location_text || '-'}
                     </span>
+                    {property.category && CAT_LABELS[property.category] && (
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                        {CAT_LABELS[property.category]}
+                      </span>
+                    )}
+                    {property.agent_id && agentNames[property.agent_id] && (
+                      <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                        <User size={11} />
+                        {agentNames[property.agent_id]}
+                      </span>
+                    )}
                     {property.status && property.status !== 'activa' && statusLabelMap[property.status] && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColorMap[property.status] || 'bg-gray-100 text-gray-600'}`}>
                         {statusLabelMap[property.status]}
