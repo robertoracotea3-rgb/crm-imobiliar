@@ -26,7 +26,7 @@ interface DashData {
   };
   contacts: { total: number; this_month: number; last_month: number; by_month: { month: string; count: number }[] };
   clients: {
-    total: number; noi: number; resunat: number; retrasi: number; won: number; lost: number;
+    total: number; noi: number; resunat: number; tranzactionati: number; retrasi: number; won: number; lost: number;
     today: number; this_week: number; this_month: number; last_month: number;
     without_agent: number; old_uncontacted: number; by_source: { source: string; count: number }[];
   };
@@ -319,7 +319,7 @@ export default function DashboardPage() {
           <KpiCard icon={<CheckCircle size={20} className="text-blue-600" />} label="Tranzacționate" value={p.sold} color="bg-blue-50" sub="toate timpurile" />
           <KpiCard icon={<Target size={20} className="text-purple-600" />} label="Clienți NOI" value={clients.noi} prev={clients.last_month} color="bg-purple-50" sub={`${clients.this_month} luna aceasta`} />
           <KpiCard icon={<Users size={20} className="text-orange-600" />} label="Contacte" value={contacts.total} prev={contacts.last_month} color="bg-orange-50" sub={`+${contacts.this_month} luna aceasta`} />
-          <KpiCard icon={<MessageSquare size={20} className="text-pink-600" />} label="De resunat" value={clients.resunat} color="bg-pink-50" sub="urmărire zilnică" />
+          <KpiCard icon={<MessageSquare size={20} className="text-pink-600" />} label="Clienți în pipeline" value={clients.resunat} color="bg-pink-50" sub="contactați / vizionare / negociere" />
           <KpiCard icon={<DollarSign size={20} className="text-teal-600" />} label="Valoare portofoliu" value={p.total_value} color="bg-teal-50" sub={`${p.active} prop. active`} />
         </div>
 
@@ -347,7 +347,7 @@ export default function DashboardPage() {
             </div>
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
               <p className="text-3xl font-black text-amber-700">{clients.resunat}</p>
-              <p className="text-xs font-medium text-amber-600 mt-1">De resunat</p>
+              <p className="text-xs font-medium text-amber-600 mt-1">În pipeline</p>
             </div>
           </div>
           {clients.without_agent > 0 && (
@@ -626,13 +626,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Clienți — Rezumat ── */}
+        {/* ── Clienți — Rezumat (câte o casetă per tab din pagina Clienți) ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Clienți noi', value: clients.noi, color: 'bg-emerald-500', icon: <MessageSquare size={16} className="text-white" /> },
-            { label: 'De resunat', value: clients.resunat, color: 'bg-blue-500', icon: <Activity size={16} className="text-white" /> },
-            { label: 'Câștigați', value: clients.won, color: 'bg-teal-500', icon: <CheckCircle size={16} className="text-white" /> },
-            { label: 'Pierduți', value: clients.lost, color: 'bg-red-400', icon: <AlertTriangle size={16} className="text-white" /> },
+            { label: 'Clienți NOI', value: clients.noi, color: 'bg-emerald-500', icon: <MessageSquare size={16} className="text-white" /> },
+            { label: 'Clienți', value: clients.resunat, color: 'bg-blue-500', icon: <Activity size={16} className="text-white" /> },
+            { label: 'Clienți Tranzacționați', value: clients.tranzactionati, color: 'bg-indigo-500', icon: <CheckCircle size={16} className="text-white" /> },
+            { label: 'Clienți retrași', value: clients.retrasi, color: 'bg-gray-400', icon: <AlertTriangle size={16} className="text-white" /> },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
               <div className={`w-9 h-9 ${s.color} rounded-xl flex items-center justify-center flex-shrink-0`}>{s.icon}</div>

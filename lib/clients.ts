@@ -30,12 +30,13 @@ export const STATUS_ORDER: ClientStatus[] = [
 export function statusLabel(s?: string) { return (s && STATUS_META[s]?.label) || s || '—'; }
 export function statusColor(s?: string) { return (s && STATUS_META[s]?.color) || 'bg-gray-100 text-gray-600'; }
 
-// Taburi: maparea automată după status. `statuses: null` = toate.
+// Taburi: maparea automată după status. Cele 4 taburi acoperă toate cele 12
+// statusuri, fără suprapunere — fiecare client se regăsește într-un singur tab.
 export const CLIENT_TABS: { key: string; label: string; statuses: string[] | null }[] = [
-  { key: 'noi',     label: 'Clienți NOI',       statuses: ['new'] },
-  { key: 'resunat', label: 'Clienți de Resunat', statuses: ['no_answer', 'to_send_offers', 'upcoming_viewing'] },
-  { key: 'toti',    label: 'Toți clienții',      statuses: null },
-  { key: 'retrasi', label: 'Clienți retrași',    statuses: ['withdrawn'] },
+  { key: 'noi',     label: 'Clienți NOI',             statuses: ['new', 'no_answer', 'to_send_offers'] },
+  { key: 'resunat', label: 'Clienți',                 statuses: ['contacted', 'upcoming_viewing', 'viewing', 'in_progress', 'negotiation'] },
+  { key: 'toti',    label: 'Clienți Tranzacționați',  statuses: ['precontract', 'won'] },
+  { key: 'retrasi', label: 'Clienți retrași',         statuses: ['lost', 'withdrawn'] },
 ];
 
 // Inițiale pentru avatar (max 2 litere).

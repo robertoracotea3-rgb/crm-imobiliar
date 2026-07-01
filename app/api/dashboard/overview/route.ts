@@ -147,10 +147,16 @@ export async function GET(request: Request) {
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
 
-    const RESUNAT_STATUSES = new Set(['no_answer', 'to_send_offers', 'upcoming_viewing']);
-    const clientsNew = leads.filter(l => l.status === 'new' || !l.status);
-    const clientsResunat = leads.filter(l => RESUNAT_STATUSES.has(l.status));
-    const clientsRetrasi = leads.filter(l => l.status === 'withdrawn');
+    // Aceleași 4 grupe ca în CLIENT_TABS (lib/clients.ts) — fără suprapunere,
+    // acoperă toate cele 12 statusuri.
+    const NOI_STATUSES = new Set(['new', 'no_answer', 'to_send_offers']);
+    const PIPELINE_STATUSES = new Set(['contacted', 'upcoming_viewing', 'viewing', 'in_progress', 'negotiation']);
+    const TRANZACTIONATI_STATUSES = new Set(['precontract', 'won']);
+    const RETRASI_STATUSES = new Set(['lost', 'withdrawn']);
+    const clientsNew = leads.filter(l => NOI_STATUSES.has(l.status) || !l.status);
+    const clientsResunat = leads.filter(l => PIPELINE_STATUSES.has(l.status));
+    const clientsTranzactionati = leads.filter(l => TRANZACTIONATI_STATUSES.has(l.status));
+    const clientsRetrasi = leads.filter(l => RETRASI_STATUSES.has(l.status));
     const clientsWon = leads.filter(l => l.status === 'won');
     const clientsLost = leads.filter(l => l.status === 'lost');
     const clientsToday = leads.filter(l => {
@@ -161,8 +167,11 @@ export async function GET(request: Request) {
     const clientsThisMonth = leads.filter(l => monthKey(l.received_at) === thisMonth);
     const clientsLastMonth = leads.filter(l => monthKey(l.received_at) === lastMonth);
     const clientsWithoutAgent = leads.filter(l => !l.agent_id);
-    // Clienți NOI (necontactați) mai vechi de 14 zile — merită atenție.
-    const oldUncontactedClients = clientsNew.filter(l => (Date.now() - new Date(l.received_at).getTime()) / 86400000 > 14).slice(0, 3);
+    // Clienți complet netratați (status strict 'new') mai vechi de 14 zile — merită atenție.
+    // Diferit de grupul mai larg "clientsNew" (care include și no_answer/to_send_offers,
+    // adică unii deja atinși) — aici vrem doar cei care nu au fost niciodată contactați.
+    const strictlyNewClients = leads.filter(l => l.status === 'new' || !l.status);
+    const oldUncontactedClients = strictlyNewClients.filter(l => (Date.now() - new Date(l.received_at).getTime()) / 86400000 > 14).slice(0, 3);
 
     const clientSrcMap: Record<string, number> = {};
     leads.forEach(l => { if (l.source) clientSrcMap[l.source] = (clientSrcMap[l.source] || 0) + 1; });
@@ -264,6 +273,7 @@ export async function GET(request: Request) {
         total: leads.length,
         noi: clientsNew.length,
         resunat: clientsResunat.length,
+        tranzactionati: clientsTranzactionati.length,
         retrasi: clientsRetrasi.length,
         won: clientsWon.length,
         lost: clientsLost.length,
