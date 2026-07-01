@@ -32,10 +32,12 @@ create index if not exists idx_activities_lead on activities(lead_id, created_at
 alter table activities disable row level security;
 
 -- 3) Backfill: completează agent/oraș/categorie din proprietatea legată
+-- p.category este tip enum (property_category), p.city/p.county pot fi text —
+-- cast la ::text ca să se potrivească cu coloanele text din leads.
 update leads l
    set agent_id = coalesce(l.agent_id, p.agent_id),
-       city     = coalesce(l.city,     p.city),
-       county   = coalesce(l.county,   p.county),
-       category = coalesce(l.category, p.category)
+       city     = coalesce(l.city,     p.city::text),
+       county   = coalesce(l.county,   p.county::text),
+       category = coalesce(l.category, p.category::text)
   from properties p
  where l.property_id = p.id;
