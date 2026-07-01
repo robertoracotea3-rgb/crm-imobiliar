@@ -27,7 +27,8 @@ export async function POST(request: Request) {
     if (lead.agency_id !== profile.agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
     const { data, error } = await admin.from('activities').insert({
-      type: 'note', description: String(note).trim().slice(0, 1000), lead_id, user_id: user.id,
+      agency_id: profile.agency_id,
+      type: 'note', title: 'Notiță', description: String(note).trim().slice(0, 1000), lead_id, user_id: user.id,
     }).select().single();
     if (error) return Response.json({ error: error.message }, { status: 500 });
 

@@ -93,8 +93,10 @@ async function handleIncomingLead(d: Record<string, unknown>) {
     if (propertyId) { try { await supabase.from('leads').update({ property_id: propertyId }).eq('id', existingId); } catch { /* best-effort */ } }
     try {
       await supabase.from('activities').insert({
+        agency_id: agencyId,
         type: 'request',
-        description: `Solicitare nouă (${source})${message ? ': ' + message.slice(0, 300) : ''}`,
+        title: 'Solicitare nouă',
+        description: `(${source})${message ? ': ' + message.slice(0, 300) : ''}`,
         lead_id: existingId,
       });
     } catch { /* tabela activities poate lipsi */ }
@@ -124,6 +126,12 @@ async function handleIncomingLead(d: Record<string, unknown>) {
       }
       await supabase.from('leads').update({ agent_id: agent, city, county, category, source }).eq('id', inserted.id);
     } catch { /* coloane noi pot lipsi încă — ignorăm */ }
+    try {
+      await supabase.from('activities').insert({
+        agency_id: agencyId, type: 'created', title: 'Client creat',
+        description: `Lead nou din ${source}`, lead_id: inserted.id,
+      });
+    } catch { /* tabela activities poate lipsi */ }
   }
 
   console.log('[Storia webhook] lead created for', senderName || senderEmail, 'property', propertyId);

@@ -77,8 +77,10 @@ export async function POST(request: Request) {
       if (Object.keys(upd).length) { try { await admin.from('leads').update(upd).eq('id', existing.id); } catch { /* best-effort */ } }
       try {
         await admin.from('activities').insert({
+          agency_id: agencyId,
           type: 'request',
-          description: message?.trim() ? `Solicitare nouă: ${String(message).trim().slice(0, 300)}` : 'Solicitare nouă',
+          title: 'Solicitare nouă',
+          description: message?.trim() ? String(message).trim().slice(0, 300) : null,
           lead_id: existing.id, user_id: user.id,
         });
       } catch { /* tabela activities poate lipsi */ }
@@ -111,7 +113,10 @@ export async function POST(request: Request) {
     } catch { /* coloane noi pot lipsi încă */ }
 
     try {
-      await admin.from('activities').insert({ type: 'created', description: 'Client adăugat în CRM', lead_id: data.id, user_id: user.id });
+      await admin.from('activities').insert({
+        agency_id: agencyId, type: 'created', title: 'Client creat',
+        description: 'Client adăugat în CRM', lead_id: data.id, user_id: user.id,
+      });
     } catch { /* tabela activities poate lipsi */ }
 
     return Response.json({ lead: data }, { status: 201 });

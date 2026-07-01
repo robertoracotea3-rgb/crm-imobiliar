@@ -71,8 +71,8 @@ begin
                         || jsonb_build_object('imported_demand_id', d.id::text)
        where id = existing_lead_id;
 
-      insert into activities (type, description, lead_id)
-      values ('request', concat('Cerere migrată ', d.internal_code, coalesce(': ' || d.notes, '')), existing_lead_id);
+      insert into activities (agency_id, type, title, description, lead_id, demand_id)
+      values (d.agency_id, 'request', 'Cerere migrată', concat(d.internal_code, coalesce(': ' || d.notes, '')), existing_lead_id, d.id);
     else
       -- Client nou, provenit exclusiv dintr-o cerere veche
       insert into leads (
@@ -88,8 +88,8 @@ begin
       )
       returning id into existing_lead_id;
 
-      insert into activities (type, description, lead_id)
-      values ('created', concat('Client creat din cererea migrată ', d.internal_code), existing_lead_id);
+      insert into activities (agency_id, type, title, description, lead_id, demand_id)
+      values (d.agency_id, 'created', 'Client creat din cerere', concat('Cerere migrată ', d.internal_code), existing_lead_id, d.id);
     end if;
   end loop;
 end $$;

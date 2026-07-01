@@ -232,7 +232,7 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
 
 // ─────────────────────────────────────────────────────────── History modal
 function HistoryModal({ client, onClose }: { client: Client; onClose: () => void }) {
-  const [events, setEvents] = useState<{ type: string; description: string; created_at: string }[] | null>(null);
+  const [events, setEvents] = useState<{ type: string; title?: string; description: string; created_at: string }[] | null>(null);
   const [receivedAt, setReceivedAt] = useState<string>('');
   useEffect(() => {
     (async () => {
@@ -261,7 +261,8 @@ function HistoryModal({ client, onClose }: { client: Client; onClose: () => void
               {events.map((e, i) => (
                 <li key={i} className="ml-4">
                   <span className="absolute -left-[7px] w-3 h-3 rounded-full bg-emerald-500" />
-                  <p className="text-sm text-gray-800">{e.description || e.type}</p>
+                  <p className="text-sm font-medium text-gray-800">{e.title || e.type}</p>
+                  {e.description && <p className="text-sm text-gray-600">{e.description}</p>}
                   <p className="text-xs text-gray-400">{fmt(e.created_at)}</p>
                 </li>
               ))}

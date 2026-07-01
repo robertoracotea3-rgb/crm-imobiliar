@@ -26,11 +26,11 @@ export async function GET(request: Request) {
     if (!lead) return Response.json({ error: 'Client negăsit' }, { status: 404 });
     if (lead.agency_id !== profile.agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
-    let events: { type: string; description: string; created_at: string }[] = [];
+    let events: { type: string; title?: string; description: string; created_at: string }[] = [];
     try {
       const { data } = await admin
         .from('activities')
-        .select('type, description, created_at')
+        .select('type, title, description, created_at')
         .eq('lead_id', id)
         .order('created_at', { ascending: false });
       events = data || [];

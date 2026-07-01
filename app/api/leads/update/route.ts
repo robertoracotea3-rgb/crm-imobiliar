@@ -74,7 +74,9 @@ export async function PATCH(request: Request) {
     if (status && status !== lead.status) {
       try {
         await admin.from('activities').insert({
+          agency_id: profile.agency_id,
           type: 'status',
+          title: 'Status schimbat',
           description: `Status schimbat în „${statusLabel(status)}"`,
           lead_id: id,
           user_id: user.id,
