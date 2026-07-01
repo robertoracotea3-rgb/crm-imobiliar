@@ -99,11 +99,19 @@ Returnează EXCLUSIV JSON valid, fără alt text:
       }],
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const first = response.content[0];
+    const text = first && first.type === 'text' ? first.text : '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('AI nu a returnat JSON valid');
+    if (!jsonMatch) return Response.json({ error: 'AI nu a returnat un răspuns valid. Încearcă din nou.' }, { status: 502 });
 
-    return Response.json(JSON.parse(jsonMatch[0]));
+    // Parsăm defensiv răspunsul AI — dacă nu e JSON curat, întoarcem tot JSON valid (nu 500 brut).
+    let result;
+    try {
+      result = JSON.parse(jsonMatch[0]);
+    } catch {
+      return Response.json({ error: 'Răspunsul AI nu a putut fi interpretat. Încearcă din nou.' }, { status: 502 });
+    }
+    return Response.json(result);
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Eroare AI' }, { status: 500 });
   }

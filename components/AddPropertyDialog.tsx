@@ -19,6 +19,44 @@ interface Contact {
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
 const sc = `${ic} bg-white`;
 
+// Rezultatul analizei AI a pozelor (răspunsul de la /api/properties/analyze-photos).
+interface PhotoAnalyses {
+  photos: Array<{ index: number; room_type: string; description: string; features?: string[] }>;
+  overall_observations?: string;
+  suggested_fields?: Record<string, string | number | boolean>;
+  error?: string;
+}
+
+// Max poze trimise la analiza AI într-un singur request (limită payload + cost AI).
+const MAX_AI_PHOTOS = 8;
+
+// Redimensionează + comprimă o poză (dataURL) pentru analiza AI: max 1024px latura mare,
+// JPEG calitate ~0.75. Reduce drastic payload-ul, astfel încât să nu depășim limita de body
+// a funcției serverless — cauza erorii 413 „Request Entity Too Large" (răspuns non-JSON).
+// Întoarce null dacă poza nu poate fi procesată (o sărim, nu blocăm tot fluxul).
+async function compressForAI(dataUrl: string, maxEdge = 1024, quality = 0.75): Promise<{ base64: string; media_type: string } | null> {
+  try {
+    const img = document.createElement('img');
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('load'));
+      img.src = dataUrl;
+    });
+    const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const base64 = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+    return base64 ? { base64, media_type: 'image/jpeg' } : null;
+  } catch {
+    return null;
+  }
+}
+
 function F({ label, req, children }: { label: string; req?: boolean; children: React.ReactNode }) {
   return (
     <div>
@@ -325,7 +363,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
   // AI photo analysis
   const [photoAnalyzing, setPhotoAnalyzing] = useState(false);
-  const [photoAnalyses, setPhotoAnalyses] = useState<{photos: Array<{index: number; room_type: string; description: string; features?: string[]}>; overall_observations?: string; suggested_fields?: Record<string, string | number | boolean>} | null>(null);
+  const [photoAnalyses, setPhotoAnalyses] = useState<PhotoAnalyses | null>(null);
   const [photoAnalysisError, setPhotoAnalysisError] = useState('');
   const [autoFilledKeys, setAutoFilledKeys] = useState<string[]>([]);
 
@@ -812,20 +850,41 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                         try {
                           const { data: { session } } = await supabase.auth.getSession();
                           if (!session) throw new Error('Nu ești autentificat');
-                          const photosPayload = previews.slice(0, 10).map((dataUrl) => {
-                            const [header, base64] = dataUrl.split(',');
-                            const media_type = header.match(/:(.*?);/)?.[1] || 'image/jpeg';
-                            return { base64, media_type };
-                          });
+                          if (previews.length === 0) throw new Error('Adaugă cel puțin o poză.');
+
+                          // Comprimă client-side (max 1024px, ~75%) primele MAX_AI_PHOTOS poze —
+                          // payload mic ⇒ fără 413. Sărim peste pozele care nu pot fi procesate.
+                          const photosPayload: { base64: string; media_type: string }[] = [];
+                          for (const dataUrl of previews.slice(0, MAX_AI_PHOTOS)) {
+                            const c = await compressForAI(dataUrl);
+                            if (c) photosPayload.push(c);
+                          }
+                          if (photosPayload.length === 0) throw new Error('Pozele nu au putut fi procesate. Încearcă alte imagini.');
+
                           const res = await fetch('/api/properties/analyze-photos', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
                             body: JSON.stringify({ photos: photosPayload }),
                           });
-                          const d = await res.json();
-                          if (!res.ok) throw new Error(d.error || 'Eroare server');
-                          setPhotoAnalyses(d);
-                          applySuggestedFields(d.suggested_fields);
+
+                          // Parsare sigură: la 413 / erori de infrastructură răspunsul poate fi text
+                          // simplu („Request Entity Too Large"), nu JSON — nu lăsăm .json() să crape.
+                          const rawText = await res.text();
+                          let parsed: PhotoAnalyses | null = null;
+                          try {
+                            parsed = JSON.parse(rawText) as PhotoAnalyses;
+                          } catch {
+                            console.error('[analyze-photos] răspuns non-JSON:', res.status, rawText.slice(0, 300));
+                            throw new Error(
+                              res.status === 413
+                                ? 'Pozele sunt prea mari pentru o singură analiză. Șterge câteva poze și încearcă din nou.'
+                                : 'Analiza AI nu a putut fi finalizată. Răspunsul serverului nu este valid — încearcă din nou.'
+                            );
+                          }
+                          if (!res.ok) throw new Error(parsed?.error || 'Eroare server la analiză');
+
+                          setPhotoAnalyses(parsed);
+                          applySuggestedFields(parsed?.suggested_fields);
                         } catch (err) {
                           setPhotoAnalysisError(err instanceof Error ? err.message : 'Eroare la analiză');
                         } finally {
@@ -846,6 +905,9 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                       <span className="text-xs text-emerald-700 font-medium">✓ {autoFilledKeys.length} câmpuri completate automat</span>
                     )}
                     {photoAnalysisError && <span className="text-xs text-red-600">{photoAnalysisError}</span>}
+                    {previews.length > MAX_AI_PHOTOS && !photoAnalyzing && !photoAnalyses && (
+                      <span className="text-xs text-gray-500">Se vor folosi primele {MAX_AI_PHOTOS} poze pentru analiză.</span>
+                    )}
                   </div>
                   {photoAnalyses?.overall_observations && (
                     <p className="text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
