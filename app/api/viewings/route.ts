@@ -32,17 +32,47 @@ async function auth(request: Request) {
   return { user, agency_id: profile.agency_id as string, role: profile.role as string };
 }
 
+interface ViewingRow {
+  id: string;
+  title: string | null;
+  start_at: string;
+  end_at: string | null;
+  description: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  contact_id: string | null;
+  demand_id?: string | null;
+  lead_id?: string | null;
+  property_id: string | null;
+  agent_id: string | null;
+  completed: boolean | null;
+  status: string | null;
+  outcome: string | null;
+}
+
 // ── GET: list viewings (type='vizionare'), enriched with property titles ──
 export async function GET(request: Request) {
   try {
     const { agency_id } = await auth(request);
-    const { data, error } = await admin
+
+    // demand_id / lead_id may not be migrated yet in production. Mirror the POST/PATCH
+    // resilience: try the full projection, and on a missing-column error drop those
+    // optional columns and retry (otherwise a missing column made GET return 500).
+    const FULL_COLS = 'id, title, start_at, end_at, description, contact_name, contact_phone, contact_id, demand_id, lead_id, property_id, agent_id, completed, status, outcome';
+    const runQuery = (cols: string) => admin
       .from('calendar_events')
-      .select('id, title, start_at, end_at, description, contact_name, contact_phone, contact_id, demand_id, lead_id, property_id, agent_id, completed, status, outcome')
+      .select(cols)
       .eq('agency_id', agency_id)
       .eq('type', 'vizionare')
       .order('start_at', { ascending: false })
-      .limit(300);
+      .limit(300)
+      .returns<ViewingRow[]>();
+
+    let { data, error } = await runQuery(FULL_COLS);
+    if (error && (colMissing(error.message, 'lead_id') || colMissing(error.message, 'demand_id'))) {
+      const reduced = FULL_COLS.replace(', demand_id', '').replace(', lead_id', '');
+      ({ data, error } = await runQuery(reduced));
+    }
 
     if (error) {
       if (colMissing(error.message, 'status') || colMissing(error.message, 'outcome')) {
