@@ -91,7 +91,7 @@ export async function GET(request: Request) {
         type: 'demand',
         severity: 'alert',
         message: `Cerere nouă ${d.internal_code} ți-a fost alocată (${when}) — verifică și contactează clientul`,
-        link: '/matches',
+        link: '/clients',
         created_at: d.created_at,
       });
     });
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
         type: 'lead',
         severity: 'alert',
         message: `Lead nou de la ${l.contact_name} — necesită răspuns urgent`,
-        link: '/leads',
+        link: '/clients',
         created_at: l.received_at,
       });
     });
@@ -116,7 +116,7 @@ export async function GET(request: Request) {
         type: 'lead',
         severity: 'warning',
         message: `Lead de la ${l.contact_name} fără răspuns de ${hours}h`,
-        link: '/leads',
+        link: '/clients',
         created_at: l.received_at,
       });
     });
@@ -152,7 +152,7 @@ export async function GET(request: Request) {
         type: 'demand',
         severity: 'info',
         message: `Cererea ${d.internal_code} este veche de peste 14 zile — verifică dacă mai este actuală`,
-        link: '/matches',
+        link: '/clients',
         created_at: d.created_at,
       });
     });

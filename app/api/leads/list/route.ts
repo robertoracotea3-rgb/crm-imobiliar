@@ -28,19 +28,24 @@ export async function GET(request: Request) {
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
-    // Îmbogățire: titlul proprietății după property_id
-    // (sigur chiar dacă tabela leads nu are coloana property_title)
+    // Îmbogățire din proprietatea legată: titlu + fallback oraș/județ/categorie
     const rows = data || [];
     const propIds = [...new Set(rows.map((l) => l.property_id).filter(Boolean))] as string[];
-    let titleById: Record<string, string> = {};
+    let propById: Record<string, { title?: string; city?: string; county?: string; category?: string }> = {};
     if (propIds.length) {
-      const { data: props } = await admin.from('properties').select('id, title').in('id', propIds);
-      titleById = Object.fromEntries((props || []).map((p) => [p.id, p.title]));
+      const { data: props } = await admin.from('properties').select('id, title, city, county, category').in('id', propIds);
+      propById = Object.fromEntries((props || []).map((p) => [p.id, p]));
     }
-    const leads = rows.map((l) => ({
-      ...l,
-      property_title: l.property_title || titleById[l.property_id] || null,
-    }));
+    const leads = rows.map((l) => {
+      const p = (l.property_id && propById[l.property_id]) || {};
+      return {
+        ...l,
+        property_title: l.property_title || p.title || null,
+        city: l.city || p.city || null,
+        county: l.county || p.county || null,
+        category: l.category || p.category || null,
+      };
+    });
 
     return Response.json({ leads });
   } catch (err) {

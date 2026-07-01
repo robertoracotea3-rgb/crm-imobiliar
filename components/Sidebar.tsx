@@ -25,8 +25,7 @@ const menuItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/properties', label: 'Proprietăți', icon: Building2 },
   { href: '/contacts', label: 'Contacte', icon: BookUser },
-  { href: '/matches', label: 'Cereri & potriviri', icon: Search },
-  { href: '/leads', label: 'Lead-uri', icon: MessageSquare },
+  { href: '/clients', label: 'Clienți', icon: MessageSquare },
   { href: '/viewings', label: 'Vizionări', icon: Eye },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
   { href: '/finance', label: 'Finanțe', icon: Wallet },
@@ -37,7 +36,7 @@ const menuItems = [
 ];
 
 // Mobile bottom nav — only the 8 most used items (screen space limited)
-const mobileMenuItems = ['/dashboard', '/properties', '/matches', '/leads', '/viewings', '/calendar', '/finance']
+const mobileMenuItems = ['/dashboard', '/properties', '/clients', '/viewings', '/calendar', '/finance']
   .map(href => menuItems.find(m => m.href === href)!)
   .filter(Boolean);
 

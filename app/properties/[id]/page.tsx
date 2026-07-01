@@ -989,9 +989,9 @@ export default function PropertyDetailPage() {
                           </div>
                         </div>
                         <button
-                          onClick={() => router.push('/matches')}
+                          onClick={() => router.push('/clients')}
                           className="flex-shrink-0 p-1.5 hover:bg-white/50 rounded-lg transition-colors"
-                          title="Vezi in Cereri"
+                          title="Vezi în Clienți"
                         >
                           <ExternalLink size={14} />
                         </button>

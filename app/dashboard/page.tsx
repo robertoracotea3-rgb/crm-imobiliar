@@ -357,7 +357,7 @@ export default function DashboardPage() {
             <div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               <AlertTriangle size={14} className="flex-shrink-0" />
               <span>{demands.without_agent} cereri fără agent responsabil</span>
-              <Link href="/matches" className="ml-auto font-medium underline hover:text-amber-900">Alocă</Link>
+              <Link href="/clients" className="ml-auto font-medium underline hover:text-amber-900">Alocă</Link>
             </div>
           )}
         </div>
@@ -439,7 +439,7 @@ export default function DashboardPage() {
               </Link>
             )}
             {demands.old_uncontacted > 0 && (
-              <Link href="/matches" className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4 hover:bg-red-100 transition-colors">
+              <Link href="/clients" className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4 hover:bg-red-100 transition-colors">
                 <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0"><Clock size={18} className="text-red-600" /></div>
                 <div><p className="font-bold text-red-800 text-sm">{demands.old_uncontacted} cereri vechi</p><p className="text-xs text-red-600">Cereri active mai vechi de 14 zile</p></div>
               </Link>

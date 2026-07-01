@@ -78,6 +78,30 @@ async function handleIncomingLead(d: Record<string, unknown>) {
   ].filter(Boolean);
   const fullMessage = parts.join(' ').trim();
 
+  // Dedup la nivel de persoană (telefon SAU email în aceeași agenție) —
+  // nu creăm client duplicat, doar adăugăm solicitarea în istoricul lui.
+  let existingId: string | null = null;
+  if (senderPhone) {
+    const { data } = await supabase.from('leads').select('id').eq('agency_id', agencyId).eq('contact_phone', senderPhone).limit(1);
+    if (data?.[0]) existingId = data[0].id;
+  }
+  if (!existingId && senderEmail) {
+    const { data } = await supabase.from('leads').select('id').eq('agency_id', agencyId).eq('contact_email', senderEmail).limit(1);
+    if (data?.[0]) existingId = data[0].id;
+  }
+  if (existingId) {
+    if (propertyId) { try { await supabase.from('leads').update({ property_id: propertyId }).eq('id', existingId); } catch { /* best-effort */ } }
+    try {
+      await supabase.from('activities').insert({
+        type: 'request',
+        description: `Solicitare nouă (${source})${message ? ': ' + message.slice(0, 300) : ''}`,
+        lead_id: existingId,
+      });
+    } catch { /* tabela activities poate lipsi */ }
+    console.log('[Storia webhook] dedup persoană — solicitare adăugată la clientul', existingId);
+    return;
+  }
+
   const { data: inserted } = await supabase.from('leads').insert({
     agency_id:    agencyId,
     property_id:  propertyId ?? null,
@@ -90,12 +114,16 @@ async function handleIncomingLead(d: Record<string, unknown>) {
     received_at:   new Date().toISOString(),
   }).select('id').maybeSingle();
 
-  // Auto-atribuire la agentul proprietății (best-effort; sigur dacă lipsește coloana agent_id)
-  if (inserted?.id && propertyId) {
+  // Enrich + auto-atribuire din proprietate (best-effort; sigur dacă lipsesc coloanele noi)
+  if (inserted?.id) {
     try {
-      const { data: prop } = await supabase.from('properties').select('agent_id').eq('id', propertyId).maybeSingle();
-      if (prop?.agent_id) await supabase.from('leads').update({ agent_id: prop.agent_id }).eq('id', inserted.id);
-    } catch { /* coloana agent_id poate lipsi încă — ignorăm */ }
+      let agent: string | null = null, city: string | null = null, county: string | null = null, category: string | null = null;
+      if (propertyId) {
+        const { data: prop } = await supabase.from('properties').select('agent_id, city, county, category').eq('id', propertyId).maybeSingle();
+        agent = prop?.agent_id || null; city = prop?.city || null; county = prop?.county || null; category = prop?.category || null;
+      }
+      await supabase.from('leads').update({ agent_id: agent, city, county, category, source }).eq('id', inserted.id);
+    } catch { /* coloane noi pot lipsi încă — ignorăm */ }
   }
 
   console.log('[Storia webhook] lead created for', senderName || senderEmail, 'property', propertyId);
