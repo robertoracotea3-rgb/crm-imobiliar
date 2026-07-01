@@ -19,17 +19,20 @@ alter table leads add column if not exists criteria    jsonb default '{}'::jsonb
 create index if not exists idx_leads_agent  on leads(agent_id);
 create index if not exists idx_leads_status on leads(status);
 
--- 2) Timeline / istoric client (există în schema inițială; îl asigurăm idempotent)
+-- 2) Timeline / istoric client — aditiv, ca să funcționeze indiferent dacă tabela
+-- `activities` există deja (posibil cu altă structură dintr-o versiune anterioară)
+-- sau nu există deloc.
 create table if not exists activities (
-  id          uuid default gen_random_uuid() primary key,
-  type        text not null,
-  description text,
-  lead_id     uuid references leads(id) on delete cascade,
-  user_id     uuid references auth.users(id),
-  created_at  timestamptz default now()
+  id         uuid default gen_random_uuid() primary key,
+  created_at timestamptz default now()
 );
+alter table activities add column if not exists type        text;
+alter table activities add column if not exists description text;
+alter table activities add column if not exists lead_id     uuid references leads(id) on delete cascade;
+alter table activities add column if not exists user_id     uuid references auth.users(id);
 create index if not exists idx_activities_lead on activities(lead_id, created_at desc);
 alter table activities disable row level security;
+grant all on table activities to anon, authenticated, service_role;
 
 -- 3) Backfill: completează agent/oraș/categorie din proprietatea legată
 -- p.category este tip enum (property_category), p.city/p.county pot fi text —
