@@ -21,9 +21,9 @@ async function auth(request: Request) {
   if (!token) throw new Error('Neautentificat');
   const { data: { user }, error } = await admin.auth.getUser(token);
   if (error || !user) throw new Error('Sesiune invalidă');
-  const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
+  const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
   if (!profile?.agency_id) throw new Error('Agenție negăsită');
-  return { user, agency_id: profile.agency_id as string };
+  return { user, agency_id: profile.agency_id as string, role: profile.role as string | null };
 }
 
 const migrationError = (msg: string) => /relation|does not exist/i.test(msg);
@@ -115,12 +115,19 @@ export async function PATCH(request: Request) {
 // ── DELETE: remove a task (?id=) ──
 export async function DELETE(request: Request) {
   try {
-    const { agency_id } = await auth(request);
+    const { user, agency_id, role } = await auth(request);
     const id = new URL(request.url).searchParams.get('id');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
 
-    const { data: existing } = await admin.from('tasks').select('id, agency_id').eq('id', id).single();
+    const { data: existing } = await admin.from('tasks').select('id, agency_id, created_by, assigned_to').eq('id', id).single();
     if (!existing || existing.agency_id !== agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
+
+    // Owner/admin pot șterge orice task; ceilalți doar task-urile proprii (create de ei sau atribuite lor).
+    const isManager = ['owner', 'admin'].includes(role || '');
+    const isOwnTask = existing.created_by === user.id || existing.assigned_to === user.id;
+    if (!isManager && !isOwnTask) {
+      return Response.json({ error: 'Poți șterge doar task-urile tale' }, { status: 403 });
+    }
 
     const { error } = await admin.from('tasks').delete().eq('id', id);
     if (error) return Response.json({ error: error.message }, { status: 500 });

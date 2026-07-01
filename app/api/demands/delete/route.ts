@@ -15,8 +15,13 @@ export async function DELETE(request: Request) {
     const { data: { user }, error: userError } = await admin.auth.getUser(token);
     if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
 
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
+    const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
     if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+
+    // Doar owner/admin pot șterge cereri (vezi DEFAULT_PERMISSIONS din lib/team-roles.ts).
+    if (!['owner', 'admin'].includes(profile.role)) {
+      return Response.json({ error: 'Doar proprietarul sau administratorul poate șterge cereri' }, { status: 403 });
+    }
 
     const url = new URL(request.url);
     const id = url.searchParams.get('id');

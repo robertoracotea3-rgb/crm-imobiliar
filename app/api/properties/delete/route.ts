@@ -51,6 +51,11 @@ export async function DELETE(request: Request) {
       .from('profiles').select('agency_id, role').eq('user_id', user.id).single();
     if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
 
+    // Doar owner/admin pot șterge proprietăți (vezi DEFAULT_PERMISSIONS din lib/team-roles.ts).
+    if (!['owner', 'admin'].includes(profile.role)) {
+      return Response.json({ error: 'Doar proprietarul sau administratorul poate șterge proprietăți' }, { status: 403 });
+    }
+
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });

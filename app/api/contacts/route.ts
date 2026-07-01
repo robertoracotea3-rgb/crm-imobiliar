@@ -50,9 +50,9 @@ function toUi(c: DbContact) {
 async function getAgencyId(token: string) {
   const { data: { user }, error } = await admin.auth.getUser(token);
   if (error || !user) throw new Error('Sesiune invalida');
-  const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
+  const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
   if (!profile?.agency_id) throw new Error('Agentie negasita');
-  return { user, agency_id: profile.agency_id };
+  return { user, agency_id: profile.agency_id, role: profile.role as string | null };
 }
 
 export async function GET(request: Request) {
@@ -140,8 +140,12 @@ export async function DELETE(request: Request) {
   try {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-    const { user, agency_id } = await getAgencyId(token);
+    const { user, agency_id, role } = await getAgencyId(token);
     void user;
+    // Doar owner/admin pot șterge contacte (vezi DEFAULT_PERMISSIONS din lib/team-roles.ts).
+    if (!['owner', 'admin'].includes(role || '')) {
+      return Response.json({ error: 'Doar proprietarul sau administratorul poate șterge contacte' }, { status: 403 });
+    }
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
