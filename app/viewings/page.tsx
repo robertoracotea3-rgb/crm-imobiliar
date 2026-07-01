@@ -16,6 +16,7 @@ interface Viewing {
   contact_phone?: string | null;
   contact_id?: string | null;
   demand_id?: string | null;
+  lead_id?: string | null;
   property_id?: string | null;
   property_title?: string | null;
   property_code?: string | null;
@@ -44,12 +45,12 @@ const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-non
 const fmt = (d: string) => new Date(d).toLocaleString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 interface PropOpt { id: string; title: string; internal_code: string; owner_contact_id?: string | null }
-interface DemOpt { id: string; internal_code?: string; category?: string; contact_id?: string | null; cities?: string[] | null }
+interface ClientOpt { id: string; contact_name?: string; contact_phone?: string; category?: string }
 interface ContactOpt { id: string; name: string; phone?: string }
 
 function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | null; onClose: () => void; onSuccess: () => void }) {
   const [form, setForm] = useState({
-    demand_id: editing?.demand_id || '',
+    lead_id: editing?.lead_id || '',
     property_id: editing?.property_id || '',
     contact_id: editing?.contact_id || '',
     start_at: toLocalInput(editing?.start_at),
@@ -57,7 +58,7 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
     description: editing?.description || '',
   });
   const [props, setProps] = useState<PropOpt[]>([]);
-  const [demands, setDemands] = useState<DemOpt[]>([]);
+  const [clients, setClients] = useState<ClientOpt[]>([]);
   const [contacts, setContacts] = useState<ContactOpt[]>([]);
   const [agents, setAgents] = useState<{ id: string; name?: string; email?: string }[]>([]);
   const [saving, setSaving] = useState(false);
@@ -69,7 +70,7 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
       if (!session) return;
       const h = { Authorization: `Bearer ${session.access_token}` };
       fetch('/api/properties/list', { headers: h }).then(r => r.json()).then(d => setProps((d.properties || []).map((p: any) => ({ id: p.id, title: p.title, internal_code: p.internal_code, owner_contact_id: p.owner_contact_id })))).catch(() => {});
-      fetch('/api/demands/list', { headers: h }).then(r => r.json()).then(d => setDemands(d.demands || [])).catch(() => {});
+      fetch('/api/leads/list', { headers: h }).then(r => r.json()).then(d => setClients(d.leads || [])).catch(() => {});
       fetch('/api/contacts', { headers: h }).then(r => r.json()).then(d => setContacts(d.contacts || [])).catch(() => {});
       fetch('/api/agents/list', { headers: h }).then(r => r.json()).then(d => setAgents(d.agents || [])).catch(() => {});
     });
@@ -81,10 +82,11 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
   const clientContact = contactById(form.contact_id);
   const catLabel = (c?: string) => (c ? c.replace(/_/g, ' ') : '');
 
-  // Selectarea cererii completează automat contactul clientului.
-  const onSelectDemand = (id: string) => {
-    const d = demands.find(x => x.id === id);
-    setForm(f => ({ ...f, demand_id: id, contact_id: d?.contact_id || f.contact_id }));
+  // Selectarea clientului completează automat contactul, dacă găsim unul cu același telefon.
+  const onSelectClient = (id: string) => {
+    const cl = clients.find(x => x.id === id);
+    const matchedContact = cl?.contact_phone ? contacts.find(c => c.phone && c.phone === cl.contact_phone) : undefined;
+    setForm(f => ({ ...f, lead_id: id, contact_id: matchedContact?.id || f.contact_id }));
   };
 
   const canSave = !!form.property_id && !!form.contact_id && !!form.start_at;
@@ -92,14 +94,14 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.property_id) { setError('Selectează o proprietate'); return; }
-    if (!form.contact_id) { setError('Selectează un contact (client) — direct sau prin cerere'); return; }
+    if (!form.contact_id) { setError('Selectează un contact (client) — direct sau prin client'); return; }
     if (!form.start_at) { setError('Data și ora sunt obligatorii'); return; }
     try {
       setSaving(true); setError('');
       const t = (await supabase.auth.getSession()).data.session?.access_token;
       if (!t) throw new Error('Sesiune expirată');
       const payload: Record<string, unknown> = {
-        demand_id: form.demand_id || null,
+        lead_id: form.lead_id || null,
         property_id: form.property_id,
         contact_id: form.contact_id,
         contact_name: clientContact?.name || null,
@@ -134,17 +136,18 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
         <form onSubmit={submit} className="p-6 space-y-4">
           {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">{error}</div>}
 
-          {/* Cerere — completează automat clientul */}
+          {/* Client — completează automat contactul, dacă găsim unul cu același telefon */}
           <div>
-            <label className="text-xs font-medium text-gray-600 mb-1 block">Cerere (opțional)</label>
-            <select value={form.demand_id} onChange={e => onSelectDemand(e.target.value)} className={ic}>
-              <option value="">— Fără cerere —</option>
-              {demands.map(d => {
-                const c = contactById(d.contact_id);
-                return <option key={d.id} value={d.id}>{d.internal_code || 'Cerere'} · {catLabel(d.category)}{c ? ` · ${c.name}` : ''}</option>;
-              })}
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Client (opțional)</label>
+            <select value={form.lead_id} onChange={e => onSelectClient(e.target.value)} className={ic}>
+              <option value="">— Fără client —</option>
+              {clients.map(cl => (
+                <option key={cl.id} value={cl.id}>
+                  {cl.contact_name || 'Client'}{catLabel(cl.category) ? ` · ${catLabel(cl.category)}` : ''}{cl.contact_phone ? ` · ${cl.contact_phone}` : ''}
+                </option>
+              ))}
             </select>
-            <p className="text-[11px] text-gray-400 mt-1">Selectarea cererii completează automat contactul clientului.</p>
+            <p className="text-[11px] text-gray-400 mt-1">Dacă clientul are un contact cu același telefon, se completează automat mai jos.</p>
           </div>
 
           {/* Proprietate — obligatoriu */}
@@ -163,7 +166,7 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
             )}
           </div>
 
-          {/* Contact client — obligatoriu (auto din cerere) */}
+          {/* Contact client — obligatoriu (auto din client) */}
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Contact client <span className="text-red-500">*</span></label>
             <select value={form.contact_id} onChange={e => set('contact_id', e.target.value)} className={ic}>
@@ -191,7 +194,7 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
 
           {!canSave && (
             <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              Pentru a salva, alege <b>proprietatea</b>, <b>contactul clientului</b> (direct sau prin cerere) și <b>data</b>.
+              Pentru a salva, alege <b>proprietatea</b>, <b>contactul clientului</b> (direct sau prin client) și <b>data</b>.
             </p>
           )}
 

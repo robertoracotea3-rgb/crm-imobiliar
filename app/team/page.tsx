@@ -35,14 +35,14 @@ interface Member {
   permissions: Record<string, Record<string, boolean>>;
   created_at: string;
   last_sign_in_at: string | null;
-  stats: { properties_active: number; properties_sold: number; demands: number };
+  stats: { properties_active: number; properties_sold: number; clients: number };
 }
 
 interface TeamStats {
   total_members: number;
   active_properties: number;
   sold_properties: number;
-  total_demands: number;
+  total_clients: number;
   avg_properties_per_agent: number;
 }
 
@@ -384,7 +384,7 @@ function ProfileModal({ member, onClose, onEdit }: { member: Member; onClose: ()
           <div className="grid grid-cols-3 gap-3 mb-4">
             <StatCard icon={<Home size={18} />} label="Prop. active" value={member.stats.properties_active} color="text-emerald-600" />
             <StatCard icon={<CheckCircle size={18} />} label="Tranzacții" value={member.stats.properties_sold} color="text-blue-600" />
-            <StatCard icon={<Target size={18} />} label="Cereri" value={member.stats.demands} color="text-purple-600" />
+            <StatCard icon={<Target size={18} />} label="Clienți" value={member.stats.clients} color="text-purple-600" />
           </div>
 
           {/* Notes */}
@@ -466,7 +466,7 @@ function DeleteDialog({ member, members, token, onClose, onSuccess }: {
         </div>
 
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-800">
-          Vei șterge <strong>{member.full_name || member.email}</strong> cu <strong>{member.stats.properties_active} proprietăți active</strong> și <strong>{member.stats.demands} cereri</strong>.
+          Vei șterge <strong>{member.full_name || member.email}</strong> cu <strong>{member.stats.properties_active} proprietăți active</strong> și <strong>{member.stats.clients} clienți</strong>.
         </div>
 
         {others.length > 0 && (
@@ -691,7 +691,7 @@ export default function TeamPage() {
               { label: 'Total agenți', value: stats.total_members, icon: <Users size={20} />, color: 'text-blue-600', bg: 'bg-blue-50' },
               { label: 'Prop. active', value: stats.active_properties, icon: <Home size={20} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
               { label: 'Tranzacționate', value: stats.sold_properties, icon: <CheckCircle size={20} />, color: 'text-purple-600', bg: 'bg-purple-50' },
-              { label: 'Cereri totale', value: stats.total_demands, icon: <Target size={20} />, color: 'text-orange-600', bg: 'bg-orange-50' },
+              { label: 'Clienți totali', value: stats.total_clients, icon: <Target size={20} />, color: 'text-orange-600', bg: 'bg-orange-50' },
               { label: 'Medie prop./agent', value: stats.avg_properties_per_agent, icon: <BarChart3 size={20} />, color: 'text-pink-600', bg: 'bg-pink-50' },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
@@ -799,8 +799,8 @@ export default function TeamPage() {
                           <p className="text-xs text-gray-400">Vândute</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-lg font-black text-gray-900">{m.stats.demands}</p>
-                          <p className="text-xs text-gray-400">Cereri</p>
+                          <p className="text-lg font-black text-gray-900">{m.stats.clients}</p>
+                          <p className="text-xs text-gray-400">Clienți</p>
                         </div>
                       </div>
                     </div>

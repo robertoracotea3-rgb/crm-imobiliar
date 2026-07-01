@@ -27,15 +27,15 @@ export async function GET(request: Request) {
       id: string; type: string; severity: string; message: string; link?: string; created_at: string;
     }> = [];
 
-    // Parallel: properties without photos, without description, old leads, new leads today
+    // Parallel: properties without photos, without description, and clients (leads) needing attention
     const [
       { data: propsNoPhoto },
       { data: propsNoDesc },
-      { data: oldLeads },
-      { data: newLeads },
-      { data: oldDemands },
+      { data: oldUnansweredClients },
+      { data: newClients },
+      { data: oldUncontactedClients },
       { data: recentProps },
-      { data: newDemandsForAgent },
+      { data: newClientsForAgent },
     ] = await Promise.all([
       admin.from('properties')
         .select('id, title, internal_code')
@@ -61,10 +61,12 @@ export async function GET(request: Request) {
         .eq('status', 'new')
         .gte('received_at', new Date(now.getTime() - 60 * 60 * 1000).toISOString())
         .limit(5),
-      admin.from('demands')
-        .select('id, internal_code, created_at')
+      // Clienți NOI (necontactați) mai vechi de 14 zile — merită verificați dacă mai sunt actuali
+      admin.from('leads')
+        .select('id, contact_name, received_at')
         .eq('agency_id', agency_id)
-        .lt('created_at', new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString())
+        .eq('status', 'new')
+        .lt('received_at', new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString())
         .limit(5),
       admin.from('properties')
         .select('id, title, created_at')
@@ -72,50 +74,50 @@ export async function GET(request: Request) {
         .gte('created_at', new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: false })
         .limit(3),
-      // New demands allocated to current user in last 48h
-      admin.from('demands')
-        .select('id, internal_code, created_at, agent_id')
+      // New clients allocated to current user in last 48h
+      admin.from('leads')
+        .select('id, contact_name, received_at, agent_id')
         .eq('agency_id', agency_id)
         .eq('agent_id', user.id)
-        .gte('created_at', new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString())
-        .order('created_at', { ascending: false })
+        .gte('received_at', new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString())
+        .order('received_at', { ascending: false })
         .limit(10),
     ]);
 
-    // New demands allocated to current user (last 48h) — high priority
-    (newDemandsForAgent || []).forEach(d => {
-      const hoursAgo = Math.floor((now.getTime() - new Date(d.created_at).getTime()) / (1000 * 60 * 60));
+    // New clients allocated to current user (last 48h) — high priority
+    (newClientsForAgent || []).forEach(l => {
+      const hoursAgo = Math.floor((now.getTime() - new Date(l.received_at).getTime()) / (1000 * 60 * 60));
       const when = hoursAgo < 1 ? 'acum' : hoursAgo === 1 ? 'acum 1 oră' : `acum ${hoursAgo}h`;
       notifications.push({
-        id: `new_demand_agent_${d.id}`,
-        type: 'demand',
+        id: `new_client_agent_${l.id}`,
+        type: 'client',
         severity: 'alert',
-        message: `Cerere nouă ${d.internal_code} ți-a fost alocată (${when}) — verifică și contactează clientul`,
-        link: '/clients',
-        created_at: d.created_at,
-      });
-    });
-
-    // New leads (last hour) — high priority
-    (newLeads || []).forEach(l => {
-      notifications.push({
-        id: `new_lead_${l.id}`,
-        type: 'lead',
-        severity: 'alert',
-        message: `Lead nou de la ${l.contact_name} — necesită răspuns urgent`,
+        message: `Clientul ${l.contact_name || ''} ți-a fost alocat (${when}) — verifică și contactează`,
         link: '/clients',
         created_at: l.received_at,
       });
     });
 
-    // Old unanswered leads (24h+)
-    (oldLeads || []).forEach(l => {
+    // New clients (last hour) — high priority
+    (newClients || []).forEach(l => {
+      notifications.push({
+        id: `new_client_${l.id}`,
+        type: 'client',
+        severity: 'alert',
+        message: `Client nou: ${l.contact_name} — necesită răspuns urgent`,
+        link: '/clients',
+        created_at: l.received_at,
+      });
+    });
+
+    // Old unanswered clients (24h+)
+    (oldUnansweredClients || []).forEach(l => {
       const hours = Math.floor((now.getTime() - new Date(l.received_at).getTime()) / (1000 * 60 * 60));
       notifications.push({
-        id: `old_lead_${l.id}`,
-        type: 'lead',
+        id: `old_client_${l.id}`,
+        type: 'client',
         severity: 'warning',
-        message: `Lead de la ${l.contact_name} fără răspuns de ${hours}h`,
+        message: `Clientul ${l.contact_name} fără răspuns de ${hours}h`,
         link: '/clients',
         created_at: l.received_at,
       });
@@ -145,15 +147,15 @@ export async function GET(request: Request) {
       });
     }
 
-    // Old uncontacted demands
-    (oldDemands || []).forEach(d => {
+    // Clienți NOI mai vechi de 14 zile — necontactați
+    (oldUncontactedClients || []).forEach(l => {
       notifications.push({
-        id: `old_demand_${d.id}`,
-        type: 'demand',
+        id: `old_uncontacted_${l.id}`,
+        type: 'client',
         severity: 'info',
-        message: `Cererea ${d.internal_code} este veche de peste 14 zile — verifică dacă mai este actuală`,
+        message: `Clientul ${l.contact_name || ''} e în așteptare de peste 14 zile — verifică dacă mai este actual`,
         link: '/clients',
-        created_at: d.created_at,
+        created_at: l.received_at,
       });
     });
 

@@ -107,7 +107,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
     if (reassignToUserId) {
       await admin.from('properties').update({ agent_id: reassignToUserId }).eq('agency_id', caller.agency_id).eq('agent_id', target.user_id);
-      await admin.from('demands').update({ agent_id: reassignToUserId }).eq('agency_id', caller.agency_id).eq('agent_id', target.user_id);
+      await admin.from('leads').update({ agent_id: reassignToUserId }).eq('agency_id', caller.agency_id).eq('agent_id', target.user_id);
     }
 
     await admin.from('profiles').delete().eq('id', id);

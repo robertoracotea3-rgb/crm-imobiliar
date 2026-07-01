@@ -24,14 +24,13 @@ interface DashData {
     recent: { id: string; internal_code: string; title: string; status: string; category: string; city: string; price: number; currency: string; created_at: string }[];
     quality_alerts: { type: string; id: string; code: string; title: string; message: string; severity: string }[];
   };
-  demands: {
-    total: number; active: number; this_month: number; last_month: number; old_uncontacted: number;
-    today: number; finalized_today: number; waiting: number; without_agent: number;
-    by_status: { activa: number; indeplinita: number; anulata: number };
-  };
   contacts: { total: number; this_month: number; last_month: number; by_month: { month: string; count: number }[] };
-  leads: { total: number; new: number; in_progress: number; lost: number; this_week: number; by_source: { source: string; count: number }[] };
-  team: { total: number; leaderboard: { user_id: string; name: string; role: string; active: number; sold: number; demands: number; leads: number; activities: number; score: number }[] };
+  clients: {
+    total: number; noi: number; resunat: number; retrasi: number; won: number; lost: number;
+    today: number; this_week: number; this_month: number; last_month: number;
+    without_agent: number; old_uncontacted: number; by_source: { source: string; count: number }[];
+  };
+  team: { total: number; leaderboard: { user_id: string; name: string; role: string; active: number; sold: number; clients: number; activities: number; score: number }[] };
   activities: {
     total: number; today: number; completed_today: number; overdue: number; upcoming: number; pending: number;
     by_type: { type: string; count: number }[];
@@ -253,7 +252,7 @@ export default function DashboardPage() {
 
   if (!data) return null;
 
-  const { properties: p, demands, contacts, leads, team, activities, notifications, activity } = data;
+  const { properties: p, contacts, clients, team, activities, notifications, activity } = data;
 
   const donutData = p.by_category.map((c, i) => ({
     label: CAT_LABELS[c.category] || c.category,
@@ -272,15 +271,13 @@ export default function DashboardPage() {
     warning: <AlertTriangle size={14} className="text-amber-600" />,
     info: <Bell size={14} className="text-blue-600" />,
     alert: <AlertTriangle size={14} className="text-red-600" />,
-    demand: <Search size={14} className="text-blue-600" />,
-    lead: <MessageSquare size={14} className="text-purple-600" />,
+    client: <MessageSquare size={14} className="text-purple-600" />,
   };
 
   const actIcon: Record<string, React.ReactNode> = {
     property: <Home size={14} className="text-emerald-600" />,
-    demand: <Search size={14} className="text-blue-600" />,
     contact: <Users size={14} className="text-purple-600" />,
-    lead: <MessageSquare size={14} className="text-orange-500" />,
+    client: <MessageSquare size={14} className="text-orange-500" />,
   };
 
   return (
@@ -306,8 +303,8 @@ export default function DashboardPage() {
                 <p className="text-xs text-emerald-100">Active</p>
               </div>
               <div className="bg-white/20 rounded-xl px-4 py-3 text-center min-w-[90px]">
-                <p className="text-2xl font-black">{demands.total}</p>
-                <p className="text-xs text-emerald-100">Cereri</p>
+                <p className="text-2xl font-black">{clients.noi}</p>
+                <p className="text-xs text-emerald-100">Clienți noi</p>
               </div>
               <button onClick={refresh} className="p-2.5 bg-white/20 hover:bg-white/30 rounded-xl transition-colors" title="Reîmprospătează">
                 <RefreshCw size={18} />
@@ -320,43 +317,43 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
           <KpiCard icon={<Home size={20} className="text-emerald-600" />} label="Proprietăți active" value={p.active} prev={p.last_month} color="bg-emerald-50" sub={`${p.this_month} luna aceasta`} />
           <KpiCard icon={<CheckCircle size={20} className="text-blue-600" />} label="Tranzacționate" value={p.sold} color="bg-blue-50" sub="toate timpurile" />
-          <KpiCard icon={<Target size={20} className="text-purple-600" />} label="Cereri active" value={demands.active} prev={demands.last_month} color="bg-purple-50" sub={`${demands.this_month} luna aceasta`} />
+          <KpiCard icon={<Target size={20} className="text-purple-600" />} label="Clienți NOI" value={clients.noi} prev={clients.last_month} color="bg-purple-50" sub={`${clients.this_month} luna aceasta`} />
           <KpiCard icon={<Users size={20} className="text-orange-600" />} label="Contacte" value={contacts.total} prev={contacts.last_month} color="bg-orange-50" sub={`+${contacts.this_month} luna aceasta`} />
-          <KpiCard icon={<MessageSquare size={20} className="text-pink-600" />} label="Lead-uri" value={leads.total} color="bg-pink-50" sub={`${leads.new} noi`} />
+          <KpiCard icon={<MessageSquare size={20} className="text-pink-600" />} label="De resunat" value={clients.resunat} color="bg-pink-50" sub="urmărire zilnică" />
           <KpiCard icon={<DollarSign size={20} className="text-teal-600" />} label="Valoare portofoliu" value={p.total_value} color="bg-teal-50" sub={`${p.active} prop. active`} />
         </div>
 
-        {/* ── Cereri — Contor Zilnic ── */}
+        {/* ── Clienți — Contor Zilnic ── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Target size={18} className="text-purple-600" />
-              <h3 className="font-bold text-gray-900">Cereri — Contor Zilnic</h3>
+              <h3 className="font-bold text-gray-900">Clienți — Contor Zilnic</h3>
             </div>
             <span className="text-xs text-gray-400">{new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-purple-700">{demands.today}</p>
-              <p className="text-xs font-medium text-purple-600 mt-1">Introduse azi</p>
+              <p className="text-3xl font-black text-purple-700">{clients.today}</p>
+              <p className="text-xs font-medium text-purple-600 mt-1">Noi azi</p>
             </div>
             <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-emerald-700">{demands.active}</p>
-              <p className="text-xs font-medium text-emerald-600 mt-1">Active</p>
+              <p className="text-3xl font-black text-emerald-700">{clients.total}</p>
+              <p className="text-xs font-medium text-emerald-600 mt-1">Total clienți</p>
             </div>
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-blue-700">{demands.finalized_today}</p>
-              <p className="text-xs font-medium text-blue-600 mt-1">Finalizate azi</p>
+              <p className="text-3xl font-black text-blue-700">{clients.won}</p>
+              <p className="text-xs font-medium text-blue-600 mt-1">Câștigați</p>
             </div>
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-amber-700">{demands.waiting}</p>
-              <p className="text-xs font-medium text-amber-600 mt-1">În așteptare</p>
+              <p className="text-3xl font-black text-amber-700">{clients.resunat}</p>
+              <p className="text-xs font-medium text-amber-600 mt-1">De resunat</p>
             </div>
           </div>
-          {demands.without_agent > 0 && (
+          {clients.without_agent > 0 && (
             <div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               <AlertTriangle size={14} className="flex-shrink-0" />
-              <span>{demands.without_agent} cereri fără agent responsabil</span>
+              <span>{clients.without_agent} clienți fără agent responsabil</span>
               <Link href="/clients" className="ml-auto font-medium underline hover:text-amber-900">Alocă</Link>
             </div>
           )}
@@ -424,7 +421,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Quick Alerts ── */}
-        {(p.no_photos > 0 || p.no_description > 0 || demands.old_uncontacted > 0) && (
+        {(p.no_photos > 0 || p.no_description > 0 || clients.old_uncontacted > 0) && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {p.no_photos > 0 && (
               <Link href="/properties" className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 hover:bg-amber-100 transition-colors">
@@ -438,10 +435,10 @@ export default function DashboardPage() {
                 <div><p className="font-bold text-blue-800 text-sm">{p.no_description} fără descriere</p><p className="text-xs text-blue-600">Completează descrierile pentru SEO mai bun</p></div>
               </Link>
             )}
-            {demands.old_uncontacted > 0 && (
+            {clients.old_uncontacted > 0 && (
               <Link href="/clients" className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4 hover:bg-red-100 transition-colors">
                 <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0"><Clock size={18} className="text-red-600" /></div>
-                <div><p className="font-bold text-red-800 text-sm">{demands.old_uncontacted} cereri vechi</p><p className="text-xs text-red-600">Cereri active mai vechi de 14 zile</p></div>
+                <div><p className="font-bold text-red-800 text-sm">{clients.old_uncontacted} clienți neatinși</p><p className="text-xs text-red-600">Clienți noi mai vechi de 14 zile, fără răspuns</p></div>
               </Link>
             )}
           </div>
@@ -509,7 +506,7 @@ export default function DashboardPage() {
                       <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
                         <span><span className="font-medium text-gray-600">{agent.active}</span> active</span>
                         <span><span className="font-medium text-gray-600">{agent.sold}</span> vândate</span>
-                        <span><span className="font-medium text-gray-600">{agent.demands}</span> cereri</span>
+                        <span><span className="font-medium text-gray-600">{agent.clients}</span> clienți</span>
                         <span><span className="font-medium text-blue-600">{agent.activities || 0}</span> activit.</span>
                       </div>
                     </div>
@@ -629,13 +626,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Lead Stats ── */}
+        {/* ── Clienți — Rezumat ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
-            { label: 'Lead-uri noi', value: leads.new, color: 'bg-emerald-500', icon: <MessageSquare size={16} className="text-white" /> },
-            { label: 'În lucru', value: leads.in_progress, color: 'bg-blue-500', icon: <Activity size={16} className="text-white" /> },
-            { label: 'Pierdute', value: leads.lost, color: 'bg-red-400', icon: <AlertTriangle size={16} className="text-white" /> },
-            { label: 'Această săptămână', value: leads.this_week, color: 'bg-purple-500', icon: <Calendar size={16} className="text-white" /> },
+            { label: 'Clienți noi', value: clients.noi, color: 'bg-emerald-500', icon: <MessageSquare size={16} className="text-white" /> },
+            { label: 'De resunat', value: clients.resunat, color: 'bg-blue-500', icon: <Activity size={16} className="text-white" /> },
+            { label: 'Câștigați', value: clients.won, color: 'bg-teal-500', icon: <CheckCircle size={16} className="text-white" /> },
+            { label: 'Pierduți', value: clients.lost, color: 'bg-red-400', icon: <AlertTriangle size={16} className="text-white" /> },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
               <div className={`w-9 h-9 ${s.color} rounded-xl flex items-center justify-center flex-shrink-0`}>{s.icon}</div>

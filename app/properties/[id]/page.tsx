@@ -13,6 +13,7 @@ import {
 import { PropertyMapView } from '@/components/PropertyMapView';
 import { PropertyDocuments } from '@/components/PropertyDocuments';
 import { PropertyHistory } from '@/components/PropertyHistory';
+import { parseLeadMessage } from '@/lib/clients';
 
 interface Property {
   id: string;
@@ -79,12 +80,6 @@ function storiaFreshness(lastSync?: string): {
   return { days, dot: '#10b981', text: '#047857', label: `Actualizat ${ago}`, stale: false };
 }
 
-const SOURCE_LABEL: Record<string, string> = {
-  facebook: 'Facebook', olx: 'OLX', storia: 'Storia',
-  imobiliare: 'Imobiliare.ro', banner: 'Banner',
-  site_propriu: 'Site propriu', recomandare: 'Recomandare', altul: 'Altul',
-};
-
 const STATUS_LABELS: Record<string, string> = {
   activa: 'Activă', rezervata: 'Rezervată', tranzactionata: 'Tranzacționată',
   inchiriata: 'Închiriată', retrasa: 'Retrasă', expirata: 'Expirată',
@@ -105,7 +100,7 @@ export default function PropertyDetailPage() {
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [matchedDemands, setMatchedDemands] = useState<any[] | null>(null);
+  const [matchedClients, setMatchedClients] = useState<any[] | null>(null);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
@@ -368,11 +363,11 @@ export default function PropertyDetailPage() {
   const fetchMatchedDemands = async (token: string) => {
     try {
       setLoadingMatches(true);
-      const res = await fetch(`/api/demands/match-for-property?property_id=${params.id}`, {
+      const res = await fetch(`/api/leads/match-for-property?property_id=${params.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const d = await res.json();
-      if (res.ok) setMatchedDemands(d.matches || []);
+      if (res.ok) setMatchedClients(d.matches || []);
     } catch {
       // non-blocking — just don't show
     } finally {
@@ -913,68 +908,68 @@ export default function PropertyDetailPage() {
           </div>
         )}
 
-        {/* Cereri potrivite */}
+        {/* Clienți potriviți */}
         <div className="bg-white rounded-xl border-2 border-emerald-200 overflow-hidden">
           <div className="flex items-center gap-3 px-5 py-3.5 bg-emerald-50 border-b border-emerald-200">
             <Target size={17} className="text-emerald-600" />
-            <span className="font-semibold text-emerald-800 text-sm flex-1">Cereri potrivite</span>
-            {loadingMatches && <span className="text-xs text-emerald-600 animate-pulse">Se cauta...</span>}
-            {!loadingMatches && matchedDemands !== null && (
+            <span className="font-semibold text-emerald-800 text-sm flex-1">Clienți potriviți</span>
+            {loadingMatches && <span className="text-xs text-emerald-600 animate-pulse">Se caută...</span>}
+            {!loadingMatches && matchedClients !== null && (
               <span className="text-xs font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-                {matchedDemands.length}
+                {matchedClients.length}
               </span>
             )}
           </div>
 
           <div className="px-5 py-3">
             {loadingMatches && (
-              <p className="text-sm text-gray-400 py-3 text-center">Se cauta cereri compatibile...</p>
+              <p className="text-sm text-gray-400 py-3 text-center">Se caută clienți compatibili...</p>
             )}
-            {!loadingMatches && matchedDemands !== null && matchedDemands.length === 0 && (
-              <p className="text-sm text-gray-400 py-3 text-center">Nicio cerere compatibila gasita (scor minim 30%)</p>
+            {!loadingMatches && matchedClients !== null && matchedClients.length === 0 && (
+              <p className="text-sm text-gray-400 py-3 text-center">Niciun client compatibil găsit (scor minim 30%)</p>
             )}
-            {!loadingMatches && matchedDemands && matchedDemands.length > 0 && (
+            {!loadingMatches && matchedClients && matchedClients.length > 0 && (
               <div className="space-y-2 pt-1">
-                {matchedDemands.map((d) => {
-                  const c = d.criteria || {};
-                  const scoreColor = d.score >= 80
+                {matchedClients.map((cl) => {
+                  const scoreColor = cl.score >= 80
                     ? 'text-emerald-700 bg-emerald-50 border-emerald-300'
-                    : d.score >= 55
+                    : cl.score >= 55
                     ? 'text-yellow-700 bg-yellow-50 border-yellow-300'
                     : 'text-gray-600 bg-gray-50 border-gray-300';
 
-                  const okDetails = Object.entries(d.details as Record<string, string>)
-                    .filter(([, v]) => v.startsWith('✓') || v === 'Nespecificat');
-                  const badDetails = Object.entries(d.details as Record<string, string>)
-                    .filter(([, v]) => !v.startsWith('✓') && v !== 'Nespecificat');
+                  const isOk = (v: string) => v.toLowerCase().includes('potrivit') || v.toLowerCase().includes('in range') || v === 'Nespecificat';
+                  const detailEntries = Object.entries(cl.details as Record<string, string>);
+                  const okDetails = detailEntries.filter(([, v]) => isOk(v));
+                  const badDetails = detailEntries.filter(([, v]) => !isOk(v));
+                  const msg = parseLeadMessage(cl.message, cl.source).text;
 
                   return (
-                    <div key={d.id} className={`rounded-lg border p-3 ${scoreColor}`}>
+                    <div key={cl.id} className={`rounded-lg border p-3 ${scoreColor}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xl font-black">{d.score}%</span>
+                            <span className="text-xl font-black">{cl.score}%</span>
                             <span className="text-xs opacity-70">compatibilitate</span>
-                            {c.source && (
+                            {cl.source && (
                               <span className="text-xs bg-white/70 px-2 py-0.5 rounded-full border border-current/20">
-                                {SOURCE_LABEL[c.source] || c.source}
+                                {cl.source}
                               </span>
                             )}
                           </div>
-                          <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate">{d.title}</p>
+                          <p className="text-sm font-semibold text-gray-900 mt-0.5 truncate">{cl.contact_name || 'Client fără nume'}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            {[c.city, c.county].filter(Boolean).join(', ')}
-                            {(d.min_price || d.max_price) && ` · ${d.min_price?.toLocaleString() ?? '0'}–${d.max_price?.toLocaleString() ?? '∞'} ${c.currency || 'EUR'}`}
-                            {c.nr_camere_min && ` · ${c.nr_camere_min}${c.nr_camere_max ? `-${c.nr_camere_max}` : '+'} cam`}
+                            {[cl.city, cl.county].filter(Boolean).join(', ')}
+                            {(cl.budget_min || cl.budget_max) && ` · ${cl.budget_min?.toLocaleString() ?? '0'}–${cl.budget_max?.toLocaleString() ?? '∞'} ${cl.currency || 'EUR'}`}
+                            {cl.criteria?.nr_camere_min && ` · ${cl.criteria.nr_camere_min}${cl.criteria.nr_camere_max ? `-${cl.criteria.nr_camere_max}` : '+'} cam`}
                           </p>
-                          {c.notes && (
+                          {msg && (
                             <p className="text-xs italic text-gray-600 mt-1 bg-white/60 rounded px-2 py-1">
-                              💬 {c.notes}
+                              💬 {msg}
                             </p>
                           )}
                           {/* Detalii potrivire */}
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {okDetails.map(([k, v]) => (
+                            {okDetails.map(([k]) => (
                               <span key={k} className="text-xs flex items-center gap-0.5 bg-white/60 px-1.5 py-0.5 rounded border border-current/10">
                                 <CheckCircle size={10} className="text-emerald-600" />
                                 {k}

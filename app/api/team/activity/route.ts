@@ -22,16 +22,16 @@ export async function GET(request: Request) {
     const memberMap: Record<string, { full_name: string; role: string }> = {};
     (profiles || []).forEach(p => { memberMap[p.user_id] = { full_name: p.full_name || 'Agent', role: p.role }; });
 
-    const [{ data: recentProps }, { data: recentDemands }] = await Promise.all([
+    const [{ data: recentProps }, { data: recentClients }] = await Promise.all([
       admin.from('properties')
         .select('id, internal_code, title, agent_id, created_at, updated_at, status, category')
         .eq('agency_id', profile.agency_id)
         .order('created_at', { ascending: false })
         .limit(30),
-      admin.from('demands')
-        .select('id, internal_code, agent_id, created_at, category, status')
+      admin.from('leads')
+        .select('id, contact_name, agent_id, received_at, category, status')
         .eq('agency_id', profile.agency_id)
-        .order('created_at', { ascending: false })
+        .order('received_at', { ascending: false })
         .limit(20),
     ]);
 
@@ -52,18 +52,18 @@ export async function GET(request: Request) {
       });
     });
 
-    (recentDemands || []).forEach(d => {
+    (recentClients || []).forEach(l => {
       events.push({
-        id: `dem-${d.id}`,
-        type: 'demand',
+        id: `client-${l.id}`,
+        type: 'client',
         action: 'create',
-        label: `Cerere adaugata: ${d.internal_code}`,
-        entity_id: d.id,
-        entity_code: d.internal_code,
-        user_id: d.agent_id,
-        agent_name: memberMap[d.agent_id]?.full_name || 'Necunoscut',
-        created_at: d.created_at,
-        meta: { category: d.category, status: d.status },
+        label: `Client nou: ${l.contact_name || 'fără nume'}`,
+        entity_id: l.id,
+        entity_code: '',
+        user_id: l.agent_id,
+        agent_name: memberMap[l.agent_id]?.full_name || 'Necunoscut',
+        created_at: l.received_at,
+        meta: { category: l.category, status: l.status },
       });
     });
 

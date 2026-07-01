@@ -45,7 +45,6 @@ export async function GET(request: Request) {
     // Fetch all data in parallel
     const [
       { data: allProps },
-      { data: allDemands },
       { data: allContacts },
       { data: allLeads },
       { data: allProfiles },
@@ -55,15 +54,13 @@ export async function GET(request: Request) {
       admin.from('properties')
         .select('id, internal_code, title, status, category, transaction, price, currency, description, attributes, created_at, agent_id, city, county')
         .eq('agency_id', agencyId).limit(500),
-      admin.from('demands')
-        .select('id, status, category, source, created_at, agent_id, budget_min, budget_max')
-        .eq('agency_id', agencyId).limit(500),
       admin.from('contacts')
         .select('id, type, source, created_at, agent_id')
         .eq('agency_id', agencyId).limit(500),
+      // `leads` = modulul unificat Clienți (fost Lead-uri + Cereri & Potriviri)
       admin.from('leads')
-        .select('id, status, received_at')
-        .eq('agency_id', agencyId).limit(500),
+        .select('id, contact_name, status, received_at, agent_id, city, category, source')
+        .eq('agency_id', agencyId).limit(1000),
       admin.from('profiles')
         .select('user_id, full_name, role')
         .eq('agency_id', agencyId).limit(100),
@@ -83,7 +80,6 @@ export async function GET(request: Request) {
     ]);
 
     const props = allProps || [];
-    const demands = allDemands || [];
     const contacts = allContacts || [];
     const leads = allLeads || [];
     const profiles = allProfiles || [];
@@ -147,36 +143,29 @@ export async function GET(request: Request) {
       }));
     }
 
-    // Demands AI suggestions (old without contact)
-    const oldDemands = demands.filter(d => {
-      const age = (Date.now() - new Date(d.created_at).getTime()) / 86400000;
-      return age > 14 && d.status === 'activa';
-    }).slice(0, 3);
-
-    // ── Daily demand stats ──
+    // ── Clienți (fost Lead-uri + Cereri & Potriviri, unificate pe tabela leads) ──
     const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
-    const demandsToday = demands.filter(d => {
-      const t = new Date(d.created_at).getTime();
+
+    const RESUNAT_STATUSES = new Set(['no_answer', 'to_send_offers', 'upcoming_viewing']);
+    const clientsNew = leads.filter(l => l.status === 'new' || !l.status);
+    const clientsResunat = leads.filter(l => RESUNAT_STATUSES.has(l.status));
+    const clientsRetrasi = leads.filter(l => l.status === 'withdrawn');
+    const clientsWon = leads.filter(l => l.status === 'won');
+    const clientsLost = leads.filter(l => l.status === 'lost');
+    const clientsToday = leads.filter(l => {
+      const t = new Date(l.received_at).getTime();
       return t >= todayStart.getTime() && t <= todayEnd.getTime();
     });
-    const demandsActive = demands.filter(d => d.status === 'activa');
-    const demandsFinalized = demands.filter(d => d.status === 'indeplinita' || d.status === 'anulata');
-    const demandsFinalizedToday = demandsFinalized.filter(d => {
-      const t = new Date(d.created_at).getTime();
-      return t >= todayStart.getTime();
-    });
-    const demandsWaiting = demands.filter(d => d.status === 'activa' && !d.agent_id);
-    const demandsWithoutAgent = demands.filter(d => !d.agent_id);
+    const clientsThisWeek = leads.filter(l => new Date(l.received_at) >= thisWeekStart);
+    const clientsThisMonth = leads.filter(l => monthKey(l.received_at) === thisMonth);
+    const clientsLastMonth = leads.filter(l => monthKey(l.received_at) === lastMonth);
+    const clientsWithoutAgent = leads.filter(l => !l.agent_id);
+    // Clienți NOI (necontactați) mai vechi de 14 zile — merită atenție.
+    const oldUncontactedClients = clientsNew.filter(l => (Date.now() - new Date(l.received_at).getTime()) / 86400000 > 14).slice(0, 3);
 
-    // ── Leads ──
-    const leadsNew = leads.filter(l => l.status === 'new' || !l.status);
-    const leadsInProgress = leads.filter(l => l.status === 'in_progress');
-    const leadsLost = leads.filter(l => l.status === 'lost');
-    const leadsThisWeek = leads.filter(l => new Date(l.received_at) >= thisWeekStart);
-
-    // Lead sources (not available in current schema)
-    const leadSrcMap: Record<string, number> = {};
+    const clientSrcMap: Record<string, number> = {};
+    leads.forEach(l => { if (l.source) clientSrcMap[l.source] = (clientSrcMap[l.source] || 0) + 1; });
 
     // ── Contacts ──
     const contactsThisMonth = contacts.filter(c => monthKey(c.created_at) === thisMonth);
@@ -199,28 +188,24 @@ export async function GET(request: Request) {
     const actsByType = Object.entries(actTypeMap).map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count);
 
     // ── Agent leaderboard ──
-    const agentPropMap: Record<string, { active: number; sold: number; demands: number; leads: number; activities: number }> = {};
-    const initAgent = (uid: string) => { if (!agentPropMap[uid]) agentPropMap[uid] = { active: 0, sold: 0, demands: 0, leads: 0, activities: 0 }; };
+    const agentPropMap: Record<string, { active: number; sold: number; clients: number; activities: number }> = {};
+    const initAgent = (uid: string) => { if (!agentPropMap[uid]) agentPropMap[uid] = { active: 0, sold: 0, clients: 0, activities: 0 }; };
     props.forEach(p => { if (p.agent_id) { initAgent(p.agent_id); if (p.status === 'activa') agentPropMap[p.agent_id].active++; if (SOLD_STATUSES.has(p.status)) agentPropMap[p.agent_id].sold++; } });
-    demands.forEach(d => { if (d.agent_id) { initAgent(d.agent_id); agentPropMap[d.agent_id].demands++; } });
-    // leads table has no agent_id column — skip leaderboard count for leads
+    leads.forEach(l => { if (l.agent_id) { initAgent(l.agent_id); agentPropMap[l.agent_id].clients++; } });
     acts.forEach(a => { if (a.agent_id) { initAgent(a.agent_id); agentPropMap[a.agent_id].activities++; } });
 
     const leaderboard = profiles.map(p => ({
       user_id: p.user_id,
       name: p.full_name || 'Agent',
       role: p.role,
-      ...agentPropMap[p.user_id] || { active: 0, sold: 0, demands: 0, leads: 0, activities: 0 },
-      score: (agentPropMap[p.user_id]?.active || 0) * 2 + (agentPropMap[p.user_id]?.sold || 0) * 5 + (agentPropMap[p.user_id]?.demands || 0),
+      ...agentPropMap[p.user_id] || { active: 0, sold: 0, clients: 0, activities: 0 },
+      score: (agentPropMap[p.user_id]?.active || 0) * 2 + (agentPropMap[p.user_id]?.sold || 0) * 5 + (agentPropMap[p.user_id]?.clients || 0),
     })).sort((a, b) => b.score - a.score);
 
     // ── Notifications ──
     const notifications: unknown[] = [];
-    demands.filter(d => monthKey(d.created_at) === thisMonth).slice(0, 3).forEach(d =>
-      notifications.push({ type: 'demand', message: `Cerere nouă ${d.category?.replace(/_/g, ' ')}`, created_at: d.created_at, severity: 'info' })
-    );
-    leadsThisWeek.slice(0, 3).forEach(l =>
-      notifications.push({ type: 'lead', message: `Lead nou primit`, created_at: l.received_at, severity: 'success' })
+    clientsThisWeek.slice(0, 3).forEach(l =>
+      notifications.push({ type: 'client', message: `Client nou: ${l.contact_name || 'fără nume'}`, created_at: l.received_at, severity: 'success' })
     );
     noPhotos.slice(0, 2).forEach(p =>
       notifications.push({ type: 'alert', message: `${p.internal_code}: Proprietate fără fotografii`, created_at: p.created_at, severity: 'warning' })
@@ -235,11 +220,11 @@ export async function GET(request: Request) {
         sub: `${p.category?.replace(/_/g, ' ')} · ${p.city}`,
         created_at: p.created_at,
       })),
-      ...demands.slice(0, 4).map(d => ({
-        type: 'demand', id: d.id, code: '',
-        label: `Cerere nouă: ${d.category?.replace(/_/g, ' ')}`,
-        sub: d.source || '',
-        created_at: d.created_at,
+      ...leads.slice(0, 4).map(l => ({
+        type: 'client', id: l.id, code: '',
+        label: `Client nou: ${l.contact_name || 'fără nume'}`,
+        sub: l.source || l.city || '',
+        created_at: l.received_at,
       })),
       ...contacts.slice(0, 4).map(c => ({
         type: 'contact', id: c.id, code: '',
@@ -269,35 +254,26 @@ export async function GET(request: Request) {
         recent: props.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5),
         quality_alerts: qualityAlerts,
       },
-      demands: {
-        total: demands.length,
-        active: demandsActive.length,
-        this_month: demands.filter(d => monthKey(d.created_at) === thisMonth).length,
-        last_month: demands.filter(d => monthKey(d.created_at) === lastMonth).length,
-        old_uncontacted: oldDemands.length,
-        today: demandsToday.length,
-        finalized_today: demandsFinalizedToday.length,
-        waiting: demandsWaiting.length,
-        without_agent: demandsWithoutAgent.length,
-        by_status: {
-          activa: demandsActive.length,
-          indeplinita: demandsFinalized.filter(d => d.status === 'indeplinita').length,
-          anulata: demandsFinalized.filter(d => d.status === 'anulata').length,
-        },
-      },
       contacts: {
         total: contacts.length,
         this_month: contactsThisMonth.length,
         last_month: contactsLastMonth.length,
         by_month: contactsByMonth,
       },
-      leads: {
+      clients: {
         total: leads.length,
-        new: leadsNew.length,
-        in_progress: leadsInProgress.length,
-        lost: leadsLost.length,
-        this_week: leadsThisWeek.length,
-        by_source: Object.entries(leadSrcMap).map(([source, count]) => ({ source, count })),
+        noi: clientsNew.length,
+        resunat: clientsResunat.length,
+        retrasi: clientsRetrasi.length,
+        won: clientsWon.length,
+        lost: clientsLost.length,
+        today: clientsToday.length,
+        this_week: clientsThisWeek.length,
+        this_month: clientsThisMonth.length,
+        last_month: clientsLastMonth.length,
+        without_agent: clientsWithoutAgent.length,
+        old_uncontacted: oldUncontactedClients.length,
+        by_source: Object.entries(clientSrcMap).map(([source, count]) => ({ source, count })),
       },
       team: {
         total: profiles.length,

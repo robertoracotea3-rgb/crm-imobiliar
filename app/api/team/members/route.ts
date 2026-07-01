@@ -33,14 +33,14 @@ export async function GET(request: Request) {
     const userIds = profiles.map(p => p.user_id);
 
     // Batch all data in parallel — no N+1
-    const [authResults, { data: allProps }, { data: allDemands }] = await Promise.all([
+    const [authResults, { data: allProps }, { data: allLeads }] = await Promise.all([
       Promise.all(userIds.map(uid => admin.auth.admin.getUserById(uid))),
       admin.from('properties')
         .select('agent_id, status')
         .eq('agency_id', agencyId)
         .in('agent_id', userIds)
         .limit(2000),
-      admin.from('demands')
+      admin.from('leads')
         .select('agent_id')
         .eq('agency_id', agencyId)
         .in('agent_id', userIds)
@@ -65,8 +65,8 @@ export async function GET(request: Request) {
       if (p.status === 'activa') propActiveMap[p.agent_id] = (propActiveMap[p.agent_id] || 0) + 1;
       if (SOLD_STATUSES.has(p.status)) propSoldMap[p.agent_id] = (propSoldMap[p.agent_id] || 0) + 1;
     });
-    const demandsMap: Record<string, number> = {};
-    (allDemands || []).forEach(d => { demandsMap[d.agent_id] = (demandsMap[d.agent_id] || 0) + 1; });
+    const clientsMap: Record<string, number> = {};
+    (allLeads || []).forEach(l => { clientsMap[l.agent_id] = (clientsMap[l.agent_id] || 0) + 1; });
 
     const members = profiles.map(p => {
       const auth = authMap[p.user_id] || { email: '', last_sign_in_at: null, user_metadata: {} };
@@ -95,7 +95,7 @@ export async function GET(request: Request) {
         stats: {
           properties_active: propActiveMap[p.user_id] || 0,
           properties_sold: propSoldMap[p.user_id] || 0,
-          demands: demandsMap[p.user_id] || 0,
+          clients: clientsMap[p.user_id] || 0,
         },
       };
     });

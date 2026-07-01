@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const { agency_id } = await auth(request);
     const { data, error } = await admin
       .from('calendar_events')
-      .select('id, title, start_at, end_at, description, contact_name, contact_phone, contact_id, demand_id, property_id, agent_id, completed, status, outcome')
+      .select('id, title, start_at, end_at, description, contact_name, contact_phone, contact_id, demand_id, lead_id, property_id, agent_id, completed, status, outcome')
       .eq('agency_id', agency_id)
       .eq('type', 'vizionare')
       .order('start_at', { ascending: false })
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     const { user, agency_id } = await auth(request);
     const body = await request.json();
     let { contact_name, contact_phone } = body;
-    const { property_id, contact_id, demand_id, start_at, description, agent_id, title } = body;
+    const { property_id, contact_id, demand_id, lead_id, start_at, description, agent_id, title } = body;
     if (!start_at) return Response.json({ error: 'Data și ora sunt obligatorii' }, { status: 400 });
     if (!property_id) return Response.json({ error: 'Selectează o proprietate' }, { status: 400 });
     if (!contact_id) return Response.json({ error: 'Selectează un contact (client)' }, { status: 400 });
@@ -99,15 +99,20 @@ export async function POST(request: Request) {
       contact_id: contact_id || null,
       property_id: property_id || null,
       demand_id: demand_id || null,
+      lead_id: lead_id || null,
       agent_id: agent_id || user.id,
       status: 'programata',
       completed: false,
     };
 
     let { data, error } = await admin.from('calendar_events').insert(insert).select().single();
-    // If the demand_id column hasn't been migrated yet, retry without it (keeps the viewing).
+    // If demand_id / lead_id columns haven't been migrated yet, retry without them (keeps the viewing).
     if (error && colMissing(error.message, 'demand_id')) {
       delete insert.demand_id;
+      ({ data, error } = await admin.from('calendar_events').insert(insert).select().single());
+    }
+    if (error && colMissing(error.message, 'lead_id')) {
+      delete insert.lead_id;
       ({ data, error } = await admin.from('calendar_events').insert(insert).select().single());
     }
     if (error) {
@@ -133,7 +138,7 @@ export async function PATCH(request: Request) {
     const { data: ev } = await admin.from('calendar_events').select('id, agency_id').eq('id', id).single();
     if (!ev || ev.agency_id !== agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
-    const allowed = ['status', 'outcome', 'start_at', 'description', 'contact_name', 'contact_phone', 'contact_id', 'demand_id', 'property_id', 'agent_id'];
+    const allowed = ['status', 'outcome', 'start_at', 'description', 'contact_name', 'contact_phone', 'contact_id', 'demand_id', 'lead_id', 'property_id', 'agent_id'];
     const safe: Record<string, unknown> = {};
     for (const k of allowed) if (patch[k] !== undefined) safe[k] = patch[k];
     if (safe.status && !VALID_STATUS.includes(safe.status as string)) return Response.json({ error: 'Status invalid' }, { status: 400 });
@@ -149,6 +154,10 @@ export async function PATCH(request: Request) {
     let { data, error } = await admin.from('calendar_events').update(safe).eq('id', id).select().single();
     if (error && colMissing(error.message, 'demand_id')) {
       delete safe.demand_id;
+      ({ data, error } = await admin.from('calendar_events').update(safe).eq('id', id).select().single());
+    }
+    if (error && colMissing(error.message, 'lead_id')) {
+      delete safe.lead_id;
       ({ data, error } = await admin.from('calendar_events').update(safe).eq('id', id).select().single());
     }
     if (error) return Response.json({ error: error.message }, { status: 500 });

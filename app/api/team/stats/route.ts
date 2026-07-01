@@ -21,11 +21,11 @@ export async function GET(request: Request) {
     const [
       { count: totalMembers },
       { data: allProps },
-      { count: demandsTotal },
+      { count: clientsTotal },
     ] = await Promise.all([
       admin.from('profiles').select('id', { count: 'exact', head: true }).eq('agency_id', profile.agency_id),
       admin.from('properties').select('agent_id, status').eq('agency_id', profile.agency_id),
-      admin.from('demands').select('id', { count: 'exact', head: true }).eq('agency_id', profile.agency_id),
+      admin.from('leads').select('id', { count: 'exact', head: true }).eq('agency_id', profile.agency_id),
     ]);
 
     const SOLD_STATUSES = new Set(['tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata']);
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
       total_members: totalMembers || 0,
       active_properties: activeProps,
       sold_properties: soldProps,
-      total_demands: demandsTotal || 0,
+      total_clients: clientsTotal || 0,
       avg_properties_per_agent: avgProps,
     });
   } catch (err) {
