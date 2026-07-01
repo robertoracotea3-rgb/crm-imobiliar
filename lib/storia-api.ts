@@ -193,12 +193,15 @@ export function propertyToAdvert(
     ? OLX_TEST_DESCRIPTION
     : (a.descriere || property.description || '') as string;
 
-  // Photos live in attributes.photos as an array of public URL strings.
+  // Photos live in attributes.photos as an array of public URL strings (varianta medium, 800px).
+  // Trimitem varianta LARGE (1600px), nu medium — altfel pozele apar neclare când sunt
+  // deschise pe mare pe Storia/OLX. Pentru URL-uri legacy (fără /medium.webp) înlocuirea
+  // e no-op și trimitem originalul.
   const photoUrls = Array.isArray(a.photos) ? a.photos as string[] : [];
   const images = photoUrls
     .slice(0, 24) // OLX max 24 photos
     .filter(u => typeof u === 'string' && u.startsWith('http'))
-    .map(url => ({ url }));
+    .map(url => ({ url: url.replace('/medium.webp', '/large.webp') }));
 
   const advert: Record<string, unknown> = {
     site_urn:     testMode ? OTODOM_SITE_URN : STORIA_SITE_URN,

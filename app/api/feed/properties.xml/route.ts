@@ -39,8 +39,10 @@ export async function GET(request: Request) {
     const items = props.map(p => {
       const attrs = (p.attributes || {}) as Record<string, unknown>;
       const photos = (attrs.photos as string[] | null) || [];
+      // Feed-ul livrează varianta LARGE (1600px), nu medium (800px), ca portalurile care
+      // importă din feed să afișeze poze clare pe mare. Legacy fără /medium.webp → no-op.
       const photoXml = photos.slice(0, 10).map((ph: string) =>
-        `      <photo><url>${esc(ph)}</url></photo>`
+        `      <photo><url>${esc(ph.replace('/medium.webp', '/large.webp'))}</url></photo>`
       ).join('\n');
 
       return `  <property>
