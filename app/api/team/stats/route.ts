@@ -15,8 +15,10 @@ export async function GET(request: Request) {
     const { data: { user } } = await admin.auth.getUser(token);
     if (!user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
 
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
+    const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
     if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    // Statistici agregate pe echipă — doar owner/admin.
+    if (!['owner', 'admin'].includes(profile.role)) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
     const [
       { count: totalMembers },

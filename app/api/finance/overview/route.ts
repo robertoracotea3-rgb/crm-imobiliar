@@ -36,8 +36,10 @@ export async function GET(request: Request) {
     if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
     const { data: { user }, error: userErr } = await admin.auth.getUser(token);
     if (userErr || !user) return Response.json({ error: 'Sesiune invalidă' }, { status: 401 });
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
+    const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
     if (!profile?.agency_id) return Response.json({ error: 'Agenție negăsită' }, { status: 400 });
+    // Date financiare (comisioane agenție + câștiguri per agent) — doar owner/admin.
+    if (!['owner', 'admin'].includes(profile.role)) return Response.json({ error: 'Acces interzis' }, { status: 403 });
     const agencyId = profile.agency_id;
 
     const [txRes, propRes, profRes] = await Promise.all([

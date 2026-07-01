@@ -22,6 +22,8 @@ export async function GET(request: Request) {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
     const { profile } = await getCallerProfile(token);
+    // Setările agenției (nume, cod agenție, watermark) — doar owner/admin.
+    if (!['owner', 'admin'].includes(profile.role)) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
     const { data: agency } = await admin.from('agencies')
       .select('id, name, created_at, settings')

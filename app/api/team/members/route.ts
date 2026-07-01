@@ -18,8 +18,10 @@ export async function GET(request: Request) {
     if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
 
     const { data: myProfile } = await admin
-      .from('profiles').select('agency_id').eq('user_id', user.id).single();
+      .from('profiles').select('agency_id, role').eq('user_id', user.id).single();
     if (!myProfile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    // Lista completă a echipei (email, permisiuni, stats individuale) — doar owner/admin.
+    if (!['owner', 'admin'].includes(myProfile.role)) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
     const { data: profiles } = await admin
       .from('profiles')

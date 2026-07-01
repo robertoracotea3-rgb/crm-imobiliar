@@ -20,6 +20,17 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const { searchParams } = new URL(request.url);
+  const propertyId = searchParams.get('property_id');
+
+  // Vederea agregată pe toată agenția (fără property_id, folosită în pagina Portaluri)
+  // e date de management → doar owner/admin. Statusul unei singure proprietăți
+  // (cu property_id) rămâne accesibil agenților din pagina proprietății.
+  const { data: callerProfile } = await supabase.from('profiles').select('role').eq('user_id', user.id).single();
+  if (!propertyId && !['owner', 'admin'].includes(callerProfile?.role || '')) {
+    return NextResponse.json({ error: 'Acces interzis' }, { status: 403 });
+  }
+
   const { data: agency } = await supabase.from('agencies').select('id').single();
   if (!agency) return NextResponse.json({ error: 'No agency' }, { status: 400 });
 
@@ -34,9 +45,6 @@ export async function GET(request: Request) {
   const connected = !!tokenRow;
   const token = connected ? await getValidToken(supabase, agency.id) : null;
   const tokenValid = !!token;
-
-  const { searchParams } = new URL(request.url);
-  const propertyId = searchParams.get('property_id');
 
   let listing = null;
   let listings: unknown[] = [];
