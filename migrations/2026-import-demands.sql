@@ -57,16 +57,18 @@ begin
 
     if existing_lead_id is not null then
       -- Client deja existent (venit ca lead) — completăm criteriile de căutare lipsă + istoric
+      -- Cast ::text pe coloanele din demands care pot fi enum (category/transaction/source/currency),
+      -- la fel ca la properties — coalesce() cere tipuri identice.
       update leads set
         city        = coalesce(city, d_city),
         county      = coalesce(county, d_county),
-        category    = coalesce(category, d.category),
-        transaction = coalesce(transaction, d.transaction),
+        category    = coalesce(category, d.category::text),
+        transaction = coalesce(transaction, d.transaction::text),
         budget_min  = coalesce(budget_min, d.budget_min),
         budget_max  = coalesce(budget_max, d.budget_max),
-        currency    = coalesce(currency, d.currency),
+        currency    = coalesce(currency, d.currency::text),
         agent_id    = coalesce(agent_id, d.agent_id),
-        source      = coalesce(source, d.source),
+        source      = coalesce(source, d.source::text),
         criteria    = coalesce(criteria, '{}'::jsonb) || coalesce(d.criteria, '{}'::jsonb)
                         || jsonb_build_object('imported_demand_id', d.id::text)
        where id = existing_lead_id;
@@ -81,8 +83,8 @@ begin
         budget_min, budget_max, currency, criteria, agent_id
       ) values (
         d.agency_id, d.full_name, d.phone, d.email, coalesce(d.notes, ''), mapped_status,
-        d.created_at, d.source, d_city, d_county, d.category, d.transaction,
-        d.budget_min, d.budget_max, d.currency,
+        d.created_at, d.source::text, d_city, d_county, d.category::text, d.transaction::text,
+        d.budget_min, d.budget_max, d.currency::text,
         coalesce(d.criteria, '{}'::jsonb) || jsonb_build_object('imported_demand_id', d.id::text),
         d.agent_id
       )
