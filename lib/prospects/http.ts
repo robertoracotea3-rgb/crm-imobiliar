@@ -26,3 +26,27 @@ export async function fetchHtml(url: string, timeoutMs = 25000): Promise<string>
     clearTimeout(timer);
   }
 }
+
+/** Ca fetchHtml, dar cere JSON și întoarce răspunsul parsat. */
+export async function fetchJson<T = unknown>(url: string, timeoutMs = 20000): Promise<T> {
+  const proxy = process.env.PROSPECTS_PROXY_URL;
+  const target = proxy ? proxy + encodeURIComponent(url) : url;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(target, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: {
+        'User-Agent': UA,
+        'Accept': 'application/json',
+        'Accept-Language': 'ro-RO,ro;q=0.9,en;q=0.8',
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}

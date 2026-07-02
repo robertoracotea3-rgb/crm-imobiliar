@@ -1,56 +1,89 @@
-// Adaptor OLX — cea mai bogată sursă. OLX înglobează în pagină un state JSON
-// (__PRERENDERED_STATE__) cu anunțurile structurate; îl parsăm (robust) în loc de
-// scraping HTML fragil. `isBusiness === false` = persoană fizică (particular).
-import { fetchHtml } from '../http';
+// Adaptor OLX — folosește API-ul JSON public al OLX (mult mai ușor decât HTML-ul
+// de 3.4MB/pagină) cu paginare, ca să aducă TOT județul Brașov (nu doar prima pagină).
+// URL-ul + parametrii sunt exact cei folosiți de site-ul OLX:
+//   category_id=3 (imobiliare) · region_id=4 (județul Brașov) · owner_type=private (particulari)
+// NU trimitem city_id (acela ar limita la orașul Brașov) — vrem tot județul.
+import { fetchJson } from '../http';
 import { guessCategory, guessTransaction, type RawProspect, type SourceAdapter } from '../types';
 
-// Imobiliare, județul Brașov, doar particulari.
-const SEARCH_URL = 'https://www.olx.ro/imobiliare/brasov/?search%5Bprivate_business%5D=private';
+const API = 'https://www.olx.ro/api/v1/offers';
+const BASE = 'category_id=3&region_id=4&owner_type=private';
+const LIMIT = 50;
+const MAX_PAGES = 40;       // ~2000 anunțuri — acoperă tot județul cu margine
+const PAGE_DELAY_MS = 120;  // pauză mică între pagini (politețe / evită rate-limit)
 
-interface OlxAd {
+interface OlxParam { key: string; value?: { value?: number; currency?: string } }
+interface OlxOffer {
   id: number;
-  title?: string;
-  isBusiness?: boolean;
   url?: string;
-  createdTime?: string;
-  price?: { regularPrice?: { value?: number; currencyCode?: string } };
-  location?: { cityName?: string; districtName?: string | null };
+  title?: string;
+  created_time?: string;
+  business?: boolean;
+  params?: OlxParam[];
+  location?: { city?: { name?: string }; region?: { name?: string }; district?: { name?: string } };
   contact?: { name?: string };
   user?: { name?: string };
+}
+interface OlxResp { data?: OlxOffer[]; metadata?: { total_elements?: number } }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function mapOffer(a: OlxOffer): RawProspect {
+  const priceParam = (a.params || []).find((p) => p.key === 'price');
+  const pv = priceParam?.value;
+  return {
+    source: 'olx',
+    external_id: String(a.id),
+    url: a.url!,
+    title: a.title || '',
+    price: typeof pv?.value === 'number' ? pv.value : undefined,
+    currency: pv?.currency || 'EUR',
+    category: guessCategory(a.title),
+    transaction: guessTransaction(a.title),
+    city: a.location?.city?.name || 'Brașov',
+    zone: a.location?.district?.name || undefined,
+    phone: undefined, // OLX nu expune numărul în API — agentul dă clic pe link
+    seller_name: a.contact?.name || a.user?.name || undefined,
+    posted_at: a.created_time || undefined,
+  };
 }
 
 export const olxAdapter: SourceAdapter = {
   key: 'olx',
   label: 'OLX',
   async fetchBrasov(): Promise<RawProspect[]> {
-    const html = await fetchHtml(SEARCH_URL);
-    const m = html.match(/window\.__PRERENDERED_STATE__\s*=\s*"([\s\S]*?)";/);
-    if (!m) throw new Error('OLX: nu am găsit datele în pagină (posibil blocat / captcha)');
+    const out: RawProspect[] = [];
+    const seen = new Set<string>();
 
-    let state: unknown;
-    try {
-      state = JSON.parse(JSON.parse('"' + m[1] + '"'));
-    } catch {
-      throw new Error('OLX: nu am putut interpreta datele paginii');
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const offset = page * LIMIT;
+      const url = `${API}?offset=${offset}&limit=${LIMIT}&${BASE}`;
+
+      let resp: OlxResp;
+      try {
+        resp = await fetchJson<OlxResp>(url);
+      } catch (e) {
+        if (page === 0) throw new Error('OLX: API inaccesibil (posibil blocat) — ' + (e instanceof Error ? e.message : ''));
+        break; // pagini ulterioare eșuate: păstrăm ce am adunat
+      }
+
+      const data = resp.data || [];
+      if (!data.length) break;
+
+      for (const a of data) {
+        if (a?.business === true) continue;        // doar particulari
+        if (!a?.url) continue;
+        const id = String(a.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(mapOffer(a));
+      }
+
+      const total = resp.metadata?.total_elements ?? 0;
+      if (total && offset + LIMIT >= total) break;  // am ajuns la capăt
+      await sleep(PAGE_DELAY_MS);
     }
 
-    const ads = (state as { listing?: { listing?: { ads?: OlxAd[] } } })?.listing?.listing?.ads || [];
-    return ads
-      .filter((a) => a && a.isBusiness === false && a.url) // doar particulari
-      .map((a): RawProspect => ({
-        source: 'olx',
-        external_id: String(a.id),
-        url: a.url!,
-        title: a.title || '',
-        price: typeof a.price?.regularPrice?.value === 'number' ? a.price.regularPrice.value : undefined,
-        currency: a.price?.regularPrice?.currencyCode || 'EUR',
-        category: guessCategory(a.title),
-        transaction: guessTransaction(a.title),
-        city: a.location?.cityName || 'Brașov',
-        zone: a.location?.districtName || undefined,
-        phone: undefined, // OLX nu expune numărul în lista de căutare — agentul dă clic pe link
-        seller_name: a.contact?.name || a.user?.name || undefined,
-        posted_at: a.createdTime || undefined,
-      }));
+    return out;
   },
 };
