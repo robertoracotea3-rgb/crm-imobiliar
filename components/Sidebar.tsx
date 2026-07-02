@@ -19,6 +19,7 @@ import {
   CalendarDays,
   Eye,
   Wallet,
+  Target,
 } from 'lucide-react';
 
 const menuItems = [
@@ -26,6 +27,7 @@ const menuItems = [
   { href: '/properties', label: 'Proprietăți', icon: Building2 },
   { href: '/contacts', label: 'Contacte', icon: BookUser },
   { href: '/clients', label: 'Clienți', icon: MessageSquare },
+  { href: '/prospects', label: 'Particulari', icon: Target },
   { href: '/viewings', label: 'Vizionări', icon: Eye },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
   { href: '/finance', label: 'Finanțe', icon: Wallet },
