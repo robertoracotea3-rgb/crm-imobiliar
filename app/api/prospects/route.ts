@@ -25,28 +25,38 @@ export async function GET(request: Request) {
     const { agency_id } = await auth(request);
     const p = new URL(request.url).searchParams;
 
-    let q = admin
-      .from('prospects')
-      .select('id, source, external_id, url, title, price, currency, category, transaction, city, zone, phone, seller_name, alt_sources, posted_at, status, assigned_to, notes, first_seen_at, last_seen_at')
-      .eq('agency_id', agency_id);
+    // Construim query-ul de bază (cu filtre) de fiecare dată — se refolosește per bucată.
+    const buildQuery = () => {
+      let q = admin
+        .from('prospects')
+        .select('id, source, external_id, url, title, price, currency, category, transaction, city, zone, phone, seller_name, alt_sources, posted_at, status, assigned_to, notes, first_seen_at, last_seen_at')
+        .eq('agency_id', agency_id);
+      if (p.get('status')) q = q.eq('status', p.get('status'));
+      if (p.get('source')) q = q.eq('source', p.get('source'));
+      if (p.get('category')) q = q.eq('category', p.get('category'));
+      if (p.get('city')) q = q.ilike('city', `%${p.get('city')}%`);
+      if (p.get('phone') === '1') q = q.not('phone', 'is', null);
+      if (p.get('q')) q = q.ilike('title', `%${p.get('q')}%`);
+      return q.order('last_seen_at', { ascending: false });
+    };
 
-    if (p.get('status')) q = q.eq('status', p.get('status'));
-    if (p.get('source')) q = q.eq('source', p.get('source'));
-    if (p.get('category')) q = q.eq('category', p.get('category'));
-    if (p.get('city')) q = q.ilike('city', `%${p.get('city')}%`);
-    if (p.get('phone') === '1') q = q.not('phone', 'is', null);
-    if (p.get('q')) q = q.ilike('title', `%${p.get('q')}%`);
-
-    // Județul Brașov are ~1500-2000 anunțuri de particulari — afișăm tot (cel mai
-    // recent văzute primele). Filtrele de mai sus reduc lista când e nevoie.
-    q = q.order('last_seen_at', { ascending: false }).limit(2000);
-
-    const { data, error } = await q;
-    if (error) {
-      if (/relation|does not exist/i.test(error.message)) return Response.json({ prospects: [], needsMigration: true });
-      return Response.json({ error: error.message }, { status: 500 });
+    // Supabase/PostgREST plafonează rezultatele la max-rows (implicit 1000) per
+    // interogare — deci un simplu .limit(2000) tot întoarce max 1000. Paginăm cu
+    // .range() în bucăți sub plafon ca să livrăm TOATE anunțurile (județul are ~1500+).
+    const CHUNK = 500;
+    const MAX = 8000;
+    const all: Record<string, unknown>[] = [];
+    for (let from = 0; from < MAX; from += CHUNK) {
+      const { data, error } = await buildQuery().range(from, from + CHUNK - 1);
+      if (error) {
+        if (/relation|does not exist/i.test(error.message)) return Response.json({ prospects: [], needsMigration: true });
+        return Response.json({ error: error.message }, { status: 500 });
+      }
+      if (!data || data.length === 0) break;
+      all.push(...(data as Record<string, unknown>[]));
+      if (data.length < CHUNK) break; // ultima bucată
     }
-    return Response.json({ prospects: data || [] });
+    return Response.json({ prospects: all });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 401 });
   }
