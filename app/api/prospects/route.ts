@@ -37,7 +37,9 @@ export async function GET(request: Request) {
     if (p.get('phone') === '1') q = q.not('phone', 'is', null);
     if (p.get('q')) q = q.ilike('title', `%${p.get('q')}%`);
 
-    q = q.order('last_seen_at', { ascending: false }).limit(500);
+    // Județul Brașov are ~1500-2000 anunțuri de particulari — afișăm tot (cel mai
+    // recent văzute primele). Filtrele de mai sus reduc lista când e nevoie.
+    q = q.order('last_seen_at', { ascending: false }).limit(2000);
 
     const { data, error } = await q;
     if (error) {
