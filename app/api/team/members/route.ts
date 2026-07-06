@@ -129,6 +129,7 @@ export async function POST(request: Request) {
     const { email, username, password, first_name, last_name, phone, job_title, department, role, hired_at, permissions } = body;
 
     if (!username?.trim() || !password) return Response.json({ error: 'Nume utilizator și parolă sunt obligatorii' }, { status: 400 });
+    if (typeof password !== 'string' || password.length < 12) return Response.json({ error: 'Parola trebuie să aibă cel puțin 12 caractere' }, { status: 400 });
 
     const uname = normalizeUsername(username);
     const loginEmail = usernameToEmail(username);  // ex: "robert" → "robert@fortis.crm"

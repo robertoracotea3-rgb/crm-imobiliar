@@ -6,6 +6,8 @@ const securityHeaders = [
   { key: 'X-XSS-Protection', value: '1; mode=block' },
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  // HSTS — forțează HTTPS (2 ani, subdomenii, preload).
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
   {
     key: 'Content-Security-Policy',
     value: [
@@ -14,7 +16,8 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://unpkg.com",
       "img-src 'self' data: blob: https://*.supabase.co https://*.tile.openstreetmap.org https://unpkg.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://*.tile.openstreetmap.org https://nominatim.openstreetmap.org",
+      // api.anthropic.com scos — apelurile AI se fac DOAR server-side (nu din browser).
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.tile.openstreetmap.org https://nominatim.openstreetmap.org",
       "frame-ancestors 'none'",
     ].join('; '),
   },

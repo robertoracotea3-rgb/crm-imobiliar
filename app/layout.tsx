@@ -23,6 +23,8 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: "KIRA Imobiliare — CRM",
   description: "Platforma de management imobiliar KIRA Imobiliare",
+  // CRM privat — niciodată indexat/arhivat (inclusiv login/register).
+  robots: 'noindex, nofollow, noarchive, nosnippet',
 };
 
 export default function RootLayout({

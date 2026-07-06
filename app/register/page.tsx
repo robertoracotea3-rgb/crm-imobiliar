@@ -28,8 +28,8 @@ export default function RegisterPage() {
         return;
       }
 
-      if (password.length < 6) {
-        setError('Parola trebuie sa aiba cel putin 6 caractere');
+      if (password.length < 12) {
+        setError('Parola trebuie să aibă cel puțin 12 caractere');
         return;
       }
 
@@ -62,7 +62,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8 flex flex-col items-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/logo-kira.png" alt="KIRA Imobiliare" className="h-24 w-auto mb-3" />
+          <img src="/images/logo-kira.webp" alt="KIRA Imobiliare" width={360} height={240} className="h-24 w-auto mb-3" />
           <p className="text-gray-600">Creează contul tău de agenție</p>
         </div>
 
@@ -114,6 +114,8 @@ export default function RegisterPage() {
                 <User className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="text"
+                  name="username"
+                  autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="ex: roberto"
@@ -129,13 +131,17 @@ export default function RegisterPage() {
                 <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="password"
+                  name="new-password"
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minim 6 caractere"
+                  placeholder="Minim 12 caractere"
+                  minLength={12}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />
               </div>
+              <p className="text-xs text-gray-500 mt-1">Minimum 12 caractere. Recomandat: litere mari și mici, cifre și simboluri.</p>
             </div>
 
             <div>
@@ -144,9 +150,12 @@ export default function RegisterPage() {
                 <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="password"
+                  name="confirm-password"
+                  autoComplete="new-password"
                   value={passwordConfirm}
                   onChange={(e) => setPasswordConfirm(e.target.value)}
-                  placeholder="Repeta parola"
+                  placeholder="Repetă parola"
+                  minLength={12}
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900"
                   required
                 />

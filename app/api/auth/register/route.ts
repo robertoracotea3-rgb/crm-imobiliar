@@ -40,8 +40,8 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Numele de utilizator poate conține doar litere, cifre, punct și underscore (3-30 caractere)' }, { status: 400 });
     }
 
-    if (typeof password !== 'string' || password.length < 8) {
-      return Response.json({ error: 'Parola trebuie să aibă cel puțin 8 caractere' }, { status: 400 });
+    if (typeof password !== 'string' || password.length < 12) {
+      return Response.json({ error: 'Parola trebuie să aibă cel puțin 12 caractere' }, { status: 400 });
     }
 
     if (typeof agencyName !== 'string' || agencyName.trim().length < 2) {

@@ -35,7 +35,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8 flex flex-col items-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/logo-kira.png" alt="KIRA Imobiliare" className="h-24 w-auto mb-3" />
+          <img src="/images/logo-kira.webp" alt="KIRA Imobiliare" width={360} height={240} className="h-24 w-auto mb-3" />
           <p className="text-gray-600">Platforma pentru agențiile imobiliare</p>
         </div>
 
@@ -59,6 +59,8 @@ export default function LoginPage() {
                 <User className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="text"
+                  name="username"
+                  autoComplete="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="ex: robert"
@@ -76,6 +78,8 @@ export default function LoginPage() {
                 <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
                   type="password"
+                  name="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Parola ta"
@@ -85,10 +89,16 @@ export default function LoginPage() {
               </div>
             </div>
 
+            <div className="text-right">
+              <Link href="/recuperare-parola" className="text-sm hover:underline" style={{ color: '#0E6B54' }}>
+                Am uitat parola
+              </Link>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 text-white rounded-lg font-medium transition-colors hover:opacity-90 disabled:opacity-50 mt-6"
+              className="w-full py-2.5 text-white rounded-lg font-medium transition-colors hover:opacity-90 disabled:opacity-50 mt-2"
               style={{ backgroundColor: '#0E6B54' }}
             >
               {loading ? 'Se incarca...' : 'Logare'}
