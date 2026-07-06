@@ -98,7 +98,7 @@ export function Sidebar() {
       <aside className="hidden md:flex fixed left-0 top-0 h-screen w-64 flex-col bg-white border-r border-gray-200 z-30">
         <div className="px-4 py-4 border-b border-gray-100 flex items-center justify-center bg-white flex-shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/images/logo-kira.png" alt="KIRA Imobiliare" className="h-16 w-auto" />
+          <img src="/images/logo-kira.webp" alt="KIRA Imobiliare" width={360} height={240} className="h-16 w-auto" />
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
