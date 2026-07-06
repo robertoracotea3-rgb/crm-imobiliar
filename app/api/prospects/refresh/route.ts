@@ -1,5 +1,5 @@
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // scraping mai multor surse poate dura
+export const maxDuration = 90; // scraping mai multor surse (OLX + Publi24) poate dura
 
 import { createClient } from '@supabase/supabase-js';
 import { getSources } from '@/lib/prospects';
