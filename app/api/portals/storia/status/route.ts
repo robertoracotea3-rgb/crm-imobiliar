@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getValidToken, fetchAdvertStatus } from '@/lib/storia-api';
+import { extractStoriaAdvertIdentity } from '@/lib/server/storia-ad-identity.mjs';
 
 // Statuses that are worth re-syncing from OLX.
 // Includes 'error' because an error may reflect a failed update attempt on our side
@@ -66,9 +67,20 @@ export async function GET(request: Request) {
         const liveReason = live?.reason || null;
         const statusChanged = live && live.status !== listing.status;
         const reasonChanged = live && liveReason !== (listing.error_message || null);
-        if (statusChanged || reasonChanged) {
+        const identity = live ? extractStoriaAdvertIdentity(live.raw) : null;
+        const identityChanged = Boolean(
+          identity && (
+            (identity.portalAdId && identity.portalAdId !== listing.portal_ad_id)
+            || (identity.externalId && identity.externalId !== listing.external_id)
+            || (identity.advertUrl && identity.advertUrl !== listing.advert_url)
+          )
+        );
+        if (statusChanged || reasonChanged || identityChanged) {
           const patch = {
             ...(statusChanged ? { status: live!.status } : {}),
+            ...(identity?.portalAdId ? { portal_ad_id: identity.portalAdId } : {}),
+            ...(identity?.externalId ? { external_id: identity.externalId } : {}),
+            ...(identity?.advertUrl ? { advert_url: identity.advertUrl } : {}),
             error_message: liveReason,
             raw_response:  live!.raw as Record<string, unknown>,
             last_sync_at:  new Date().toISOString(),
@@ -130,9 +142,20 @@ export async function GET(request: Request) {
           const liveReason = live?.reason || null;
           const statusChanged = live && live.status !== l.status;
           const reasonChanged = live && liveReason !== ((l.error_message as string) || null);
-          if (statusChanged || reasonChanged) {
+          const identity = live ? extractStoriaAdvertIdentity(live.raw) : null;
+          const identityChanged = Boolean(
+            identity && (
+              (identity.portalAdId && identity.portalAdId !== l.portal_ad_id)
+              || (identity.externalId && identity.externalId !== l.external_id)
+              || (identity.advertUrl && identity.advertUrl !== l.advert_url)
+            )
+          );
+          if (statusChanged || reasonChanged || identityChanged) {
             const patch = {
               ...(statusChanged ? { status: live!.status } : {}),
+              ...(identity?.portalAdId ? { portal_ad_id: identity.portalAdId } : {}),
+              ...(identity?.externalId ? { external_id: identity.externalId } : {}),
+              ...(identity?.advertUrl ? { advert_url: identity.advertUrl } : {}),
               error_message: liveReason,
               raw_response:  live!.raw as Record<string, unknown>,
               last_sync_at:  new Date().toISOString(),

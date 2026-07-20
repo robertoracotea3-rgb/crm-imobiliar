@@ -1,17 +1,12 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
 import { statusLabel } from '@/lib/clients';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 const VALID_STATUSES = [
   'new', 'contacted', 'viewing', 'negotiation', 'precontract', 'won', 'lost',
   'no_answer', 'to_send_offers', 'upcoming_viewing', 'in_progress', 'withdrawn',
-  'replied', // legacy
+  'replied',
 ];
 
 function num(v: unknown): number | null {
@@ -20,34 +15,70 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+async function agentBelongsToAgency(admin: ReturnType<typeof import('@/lib/server/api-auth').getAdminClient>, agencyId: string, userId: string) {
+  const { data } = await admin
+    .from('profiles')
+    .select('user_id')
+    .eq('user_id', userId)
+    .eq('agency_id', agencyId)
+    .maybeSingle();
+
+  return Boolean(data);
+}
+
 export async function PATCH(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'leads', action: 'edit' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin
-      .from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-
+    const { admin, agencyId, user } = auth.context;
     const body = await request.json();
     const {
       id, status, contact_name, contact_phone, contact_email, message,
-      city, county, category, transaction, budget_min, budget_max, currency, criteria, source, agent_id,
+      city, county, category, transaction, budget_min, budget_max, currency, criteria, source, agent_id, property_id,
     } = body;
 
-    if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
+    if (!id) return Response.json({ error: 'ID lipsa' }, { status: 400 });
     if (status && !VALID_STATUSES.includes(status)) {
-      return Response.json({ error: `Status invalid` }, { status: 400 });
+      return Response.json({ error: 'Status invalid' }, { status: 400 });
     }
 
-    const { data: lead } = await admin.from('leads').select('id, agency_id, status').eq('id', id).single();
-    if (!lead) return Response.json({ error: 'Clientul nu există' }, { status: 404 });
-    if (lead.agency_id !== profile.agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
+    const { data: lead } = await admin
+      .from('leads')
+      .select('id, agency_id, status')
+      .eq('id', id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (!lead) return Response.json({ error: 'Clientul nu exista' }, { status: 404 });
+
+    if (agent_id && !(await agentBelongsToAgency(admin, agencyId, agent_id))) {
+      return Response.json({ error: 'Agent invalid pentru aceasta agentie' }, { status: 400 });
+    }
 
     const patch: Record<string, unknown> = {};
+    if (property_id !== undefined) {
+      if (property_id) {
+        const { data: property } = await admin
+          .from('properties')
+          .select('id, city, county, category, agent_id')
+          .eq('id', property_id)
+          .eq('agency_id', agencyId)
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (!property) return Response.json({ error: 'Proprietate negasita' }, { status: 404 });
+
+        patch.property_id = property.id;
+        patch.city = property.city || null;
+        patch.county = property.county || null;
+        patch.category = property.category || null;
+        patch.agent_id = property.agent_id || null;
+      } else {
+        patch.property_id = null;
+      }
+    }
     if (status !== undefined) patch.status = status;
     if (contact_name !== undefined) patch.contact_name = contact_name;
     if (contact_phone !== undefined) patch.contact_phone = contact_phone;
@@ -63,25 +94,32 @@ export async function PATCH(request: Request) {
     if (criteria !== undefined) patch.criteria = criteria || {};
     if (source !== undefined) patch.source = source || null;
     if (agent_id !== undefined) patch.agent_id = agent_id || null;
-    if (status === 'replied' || status === 'contacted') {
-      patch.first_response_at = new Date().toISOString();
-    }
+    if (status === 'replied' || status === 'contacted') patch.first_response_at = new Date().toISOString();
 
-    const { data, error } = await admin.from('leads').update(patch).eq('id', id).select().single();
+    const { data, error } = await admin
+      .from('leads')
+      .update(patch)
+      .eq('id', id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .select()
+      .single();
+
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
-    // Timeline: notează schimbarea de status (best-effort)
     if (status && status !== lead.status) {
       try {
         await admin.from('activities').insert({
-          agency_id: profile.agency_id,
+          agency_id: agencyId,
           type: 'status',
           title: 'Status schimbat',
-          description: `Status schimbat în „${statusLabel(status)}"`,
+          description: `Status schimbat in "${statusLabel(status)}"`,
           lead_id: id,
           user_id: user.id,
         });
-      } catch { /* tabela activities poate lipsi încă */ }
+      } catch {
+        // Tabela de activitati poate lipsi in instalari vechi.
+      }
     }
 
     return Response.json({ lead: data });

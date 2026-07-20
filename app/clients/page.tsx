@@ -5,9 +5,10 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { ReplyLeadDialog } from '@/components/ReplyLeadDialog';
+import { UnmatchedStoriaMessages } from '@/components/UnmatchedStoriaMessages';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 import {
-  STATUS_META, STATUS_ORDER, CLIENT_TABS, statusLabel, statusColor,
+  STATUS_ORDER, CLIENT_TABS, statusLabel, statusColor,
   initials, avatarColor, parseLeadMessage,
 } from '@/lib/clients';
 import {
@@ -24,6 +25,7 @@ interface Client {
   message?: string;
   property_id?: string;
   property_title?: string;
+  property_code?: string;
   status: string;
   received_at: string;
   first_response_at?: string;
@@ -37,6 +39,27 @@ interface Client {
   currency?: string;
   criteria?: Record<string, unknown>;
   agent_id?: string;
+}
+
+interface PropertyOption {
+  id: string;
+  internal_code?: string | null;
+  title?: string | null;
+  city?: string | null;
+  category?: string | null;
+  price?: number | null;
+  currency?: string | null;
+}
+
+interface PropertyMatch {
+  id: string;
+  score: number;
+  title?: string | null;
+  city?: string | null;
+  county?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  attributes?: { photos?: string[] } | null;
 }
 
 const CATEGORIES = ['apartament', 'casa_vila', 'teren', 'spatiu_comercial', 'spatiu_industrial', 'birou', 'pensiune_hotel', 'garaj'];
@@ -281,7 +304,7 @@ function HistoryModal({ client, onClose }: { client: Client; onClose: () => void
 
 // ─────────────────────────────────────────────────────────── Match modal
 function MatchModal({ client, onClose }: { client: Client; onClose: () => void }) {
-  const [matches, setMatches] = useState<any[] | null>(null);
+  const [matches, setMatches] = useState<PropertyMatch[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     (async () => {
@@ -316,6 +339,7 @@ function MatchModal({ client, onClose }: { client: Client; onClose: () => void }
                   <p className="font-semibold text-gray-900 text-sm truncate">{m.title}</p>
                   <p className="text-xs text-gray-600 mt-0.5">{[m.city, m.county].filter(Boolean).join(', ')} — {(m.price ?? 0).toLocaleString('ro-RO')} {m.currency || 'EUR'}</p>
                 </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 {m.attributes?.photos?.[0] && <img src={m.attributes.photos[0]} alt="" className="w-20 h-16 object-cover rounded-lg flex-shrink-0" />}
               </div>
             </a>
@@ -394,6 +418,19 @@ export default function ClientsPage() {
   const [noteClient, setNoteClient] = useState<Client | null>(null);
   const [replyClient, setReplyClient] = useState<Client | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [linkClient, setLinkClient] = useState<Client | null>(null);
+  const [propertyOptions, setPropertyOptions] = useState<PropertyOption[]>([]);
+  const [propertySearch, setPropertySearch] = useState('');
+  const [propertyLinkLoading, setPropertyLinkLoading] = useState(false);
+  const [propertyLinkError, setPropertyLinkError] = useState('');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (role === 'owner' || role === 'admin') setOnlyMine(false);
+      if (role === 'agent') setOnlyMine(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [role]);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -407,7 +444,10 @@ export default function ClientsPage() {
     } catch { setError('Nu am putut încărca clienții'); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchClients(); }, [fetchClients]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchClients(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchClients]);
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return;
@@ -415,7 +455,10 @@ export default function ClientsPage() {
         .then((r) => r.json()).then((d) => setAgents(d.agents || [])).catch(() => {});
     });
   }, []);
-  useEffect(() => { setSelected(new Set()); }, [tab, search, fCity, fCategory, fSource, fStatus, onlyMine, selectedAgent]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSelected(new Set()), 0);
+    return () => window.clearTimeout(timer);
+  }, [tab, search, fCity, fCategory, fSource, fStatus, onlyMine, selectedAgent]);
 
   // distinct cities for filter
   const cities = useMemo(() => [...new Set(clients.map((c) => c.city).filter(Boolean))].sort() as string[], [clients]);
@@ -429,7 +472,7 @@ export default function ClientsPage() {
     if (fSource && (c.source || '') !== fSource) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
-      const hay = `${c.contact_name || ''} ${c.contact_phone || ''} ${c.contact_email || ''} ${c.message || ''} ${c.property_title || ''}`.toLowerCase();
+      const hay = `${c.contact_name || ''} ${c.contact_phone || ''} ${c.contact_email || ''} ${c.message || ''} ${c.property_code || ''} ${c.property_title || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -476,6 +519,62 @@ export default function ClientsPage() {
     } finally { setBulkLoading(false); }
   };
 
+  const loadPropertyOptions = useCallback(async () => {
+    if (propertyOptions.length) return;
+    setPropertyLinkLoading(true);
+    setPropertyLinkError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/properties/list', { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Nu am putut incarca proprietatile');
+      setPropertyOptions(d.properties || []);
+    } catch (e) {
+      setPropertyLinkError(e instanceof Error ? e.message : 'Nu am putut incarca proprietatile');
+    } finally {
+      setPropertyLinkLoading(false);
+    }
+  }, [propertyOptions.length]);
+
+  const openLinkProperty = (client: Client) => {
+    setLinkClient(client);
+    setPropertySearch('');
+    setPropertyLinkError('');
+    void loadPropertyOptions();
+  };
+
+  const linkPropertyToClient = async (property: PropertyOption) => {
+    if (!linkClient) return;
+    setPropertyLinkLoading(true);
+    setPropertyLinkError('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/leads/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ id: linkClient.id, property_id: property.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'Nu am putut lega proprietatea');
+      setLinkClient(null);
+      await fetchClients();
+    } catch (e) {
+      setPropertyLinkError(e instanceof Error ? e.message : 'Nu am putut lega proprietatea');
+    } finally {
+      setPropertyLinkLoading(false);
+    }
+  };
+
+  const filteredPropertyOptions = useMemo(() => {
+    const q = propertySearch.trim().toLowerCase();
+    const rows = q
+      ? propertyOptions.filter((p) => `${p.internal_code || ''} ${p.title || ''} ${p.city || ''} ${p.category || ''}`.toLowerCase().includes(q))
+      : propertyOptions;
+    return rows.slice(0, 30);
+  }, [propertyOptions, propertySearch]);
+
   return (
     <ProtectedLayout>
       <div className="p-6 max-w-7xl mx-auto" onClick={() => menuOpen && setMenuOpen(null)}>
@@ -487,6 +586,8 @@ export default function ClientsPage() {
             <Plus size={18} /> Adaugă client
           </button>
         </div>
+
+        <UnmatchedStoriaMessages onResolved={fetchClients} />
 
         {/* Tabs */}
         <div className="flex gap-2 mb-4 flex-wrap">
@@ -585,8 +686,27 @@ export default function ClientsPage() {
                         {c.category && <span className="flex items-center gap-1 text-gray-600 capitalize"><Tag size={11} />{CAT_LABEL(c.category)}</span>}
                         {parsed.source && <span className="flex items-center gap-1 text-gray-500"><Globe size={11} />{parsed.source}</span>}
                         {agentName && <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium"><User size={11} />{agentName}</span>}
-                        {c.property_title && <span className="text-emerald-700 truncate max-w-[240px]">🏠 {c.property_title}</span>}
                       </div>
+
+                      {c.property_id && c.property_title ? (
+                        <a
+                          href={`/properties/${c.property_id}`}
+                          title="Deschide proprietatea"
+                          className="mt-2 inline-flex max-w-full items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:border-emerald-400 hover:bg-emerald-100"
+                        >
+                          <span>🏠</span>
+                          <span className="truncate">
+                            {c.property_code ? `${c.property_code} · ` : ''}{c.property_title}
+                          </span>
+                        </a>
+                      ) : parsed.source === 'Storia' ? (
+                        <button
+                          onClick={() => openLinkProperty(c)}
+                          className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-100"
+                        >
+                          🏠 Proprietate neidentificată · Leagă proprietatea
+                        </button>
+                      ) : null}
 
                       {parsed.text && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{parsed.text}</p>}
 
@@ -627,6 +747,64 @@ export default function ClientsPage() {
       {historyClient && <HistoryModal client={historyClient} onClose={() => setHistoryClient(null)} />}
       {matchClient && <MatchModal client={matchClient} onClose={() => setMatchClient(null)} />}
       {noteClient && <NoteModal client={noteClient} onClose={() => setNoteClient(null)} onSaved={fetchClients} />}
+      {linkClient && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl max-h-[86vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-gray-900">Leagă proprietatea</h3>
+                <p className="text-xs text-gray-500">Client: {linkClient.contact_name}</p>
+              </div>
+              <button onClick={() => setLinkClient(null)} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-3 overflow-y-auto">
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
+                <input
+                  value={propertySearch}
+                  onChange={(e) => setPropertySearch(e.target.value)}
+                  placeholder="Caută după cod, titlu, oraș..."
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  autoFocus
+                />
+              </div>
+              {propertyLinkError && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">{propertyLinkError}</div>}
+              {propertyLinkLoading && propertyOptions.length === 0 ? (
+                <div className="text-center py-8 text-gray-400"><Loader2 className="animate-spin mx-auto mb-2" size={24} />Se încarcă proprietățile...</div>
+              ) : filteredPropertyOptions.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">Nu am găsit proprietăți pentru căutarea asta.</div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredPropertyOptions.map((property) => (
+                    <button
+                      key={property.id}
+                      onClick={() => linkPropertyToClient(property)}
+                      disabled={propertyLinkLoading}
+                      className="w-full text-left rounded-xl border border-gray-200 p-3 hover:border-emerald-400 hover:bg-emerald-50 disabled:opacity-60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm text-gray-900 truncate">
+                            {property.internal_code ? `${property.internal_code} · ` : ''}{property.title || 'Proprietate fără titlu'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {[property.city, property.category ? CAT_LABEL(property.category) : null].filter(Boolean).join(' · ') || 'Fără localitate'}
+                          </p>
+                        </div>
+                        {typeof property.price === 'number' && (
+                          <span className="text-xs font-semibold text-emerald-700 flex-shrink-0">
+                            {property.price.toLocaleString('ro-RO')} {property.currency || 'EUR'}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <ReplyLeadDialog
         lead={replyClient ? {
           id: replyClient.id,

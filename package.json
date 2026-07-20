@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test"
+    "test": "node --test",
+    "backfill:storia-ad-ids": "node scripts/backfill-storia-ad-ids.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",

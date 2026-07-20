@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getValidToken, olxFetch, propertyToAdvert, missingAdvertFields, mapOlxStatus } from '@/lib/storia-api';
+import { extractStoriaAdvertIdentity } from '@/lib/server/storia-ad-identity.mjs';
 
 // POST /api/portals/storia/publish
 // Body: { property_id: string }
@@ -121,8 +122,10 @@ export async function POST(request: Request) {
   // OLX wraps the result: { message, data: { uuid, last_action_status } }.
   // Fall back to top-level keys for safety across endpoints.
   const data = (result.data || result) as Record<string, unknown>;
-  const externalId = (data.uuid || data.id || data.advert_id || existing?.external_id) as string | undefined;
-  const advertUrl  = (data.url || data.advert_url || existing?.advert_url) as string | undefined;
+  const identity = extractStoriaAdvertIdentity(result);
+  const externalId = identity.externalId || existing?.external_id || undefined;
+  const portalAdId = identity.portalAdId || existing?.portal_ad_id || undefined;
+  const advertUrl  = identity.advertUrl || existing?.advert_url || undefined;
   // Canonical status mapping (TO_POST/TO_PUT → pending, POSTED → active, etc.).
   const rawStatus  = (data.last_action_status || data.status || 'pending') as string;
   const status     = mapOlxStatus(rawStatus);
@@ -141,6 +144,7 @@ export async function POST(request: Request) {
       property_id,
       portal:        'storia',
       external_id:   externalId,
+      portal_ad_id:  portalAdId,
       status,
       advert_url:    advertUrl,
       last_sync_at:  new Date().toISOString(),
@@ -157,6 +161,7 @@ export async function POST(request: Request) {
     success:     true,
     method,
     external_id: externalId,
+    portal_ad_id: portalAdId,
     advert_url:  advertUrl,
     status,
   });
