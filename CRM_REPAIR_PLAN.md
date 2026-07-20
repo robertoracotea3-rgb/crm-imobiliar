@@ -435,11 +435,12 @@ Numele finale vor primi timestamp complet la creare.
    - politici separate pentru owner/admin/manager/agent;
    - conturile se dezactivează, nu se șterg fizic.
 
-6. `20260720_060_feed_security.sql`
-   - configurări feed pe agenție/portal;
-   - token stocat numai ca hash, rotire/revocare;
-   - utilizarea tabelei `property_publications` ca selecție explicită;
-   - log export fără date sensibile inutile.
+6. `20260720_060_secure_property_feeds.sql` — implementată și testată local
+   - token separat pe agenție/portal, stocat numai ca SHA-256, cu rotire și revocare;
+   - selecție explicită din `properties.attributes.publicare` (`site` pentru feedul standard, `storia` pentru feedul Storia), adaptată structurii reale a bazei;
+   - feed standard cu URL public Kira și feed Storia conform structurii oficiale OLX Group;
+   - jurnal de export cu proprietăți incluse/excluse, motive și rezultat de validare;
+   - rollback nedistructiv în `migrations/rollback/20260720_060_secure_property_feeds.down.sql`.
 
 7. `20260720_070_status_source_catalogs.sql`
    - cataloage pentru statusuri, surse și tranziții;

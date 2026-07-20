@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import {
   Globe, Zap, Copy, CheckCircle, Info, ExternalLink, Link2, Link2Off,
-  RefreshCw, Loader2, AlertCircle, Building2,
+  RefreshCw, Loader2, AlertCircle, Building2, KeyRound, RotateCcw, ShieldCheck,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 
 interface StoriaListing {
   id: string;
@@ -26,6 +27,32 @@ interface StoriaStatus {
   connected_at: string | null;
   credentials_configured: boolean;
   listings: StoriaListing[];
+}
+
+interface FeedToken {
+  id: string;
+  portal: 'generic' | 'storia';
+  label: string;
+  token_prefix: string;
+  is_active: boolean;
+  generation: number;
+  created_at: string;
+  expires_at?: string | null;
+  last_used_at?: string | null;
+  last_success_at?: string | null;
+  last_error_at?: string | null;
+}
+
+interface FeedLog {
+  id: string;
+  token_id: string | null;
+  portal: string;
+  status: 'success' | 'invalid_xml' | 'error';
+  included_count: number;
+  excluded_count: number;
+  error_count: number;
+  duration_ms?: number | null;
+  generated_at: string;
 }
 
 const LISTING_STATUS_LABEL: Record<string, string> = {
@@ -52,9 +79,13 @@ const LISTING_STATUS_COLOR: Record<string, string> = {
 };
 
 export default function PortalsPage() {
+  const { can } = useAuth();
   const [token, setToken] = useState('');
-  const [agencyId, setAgencyId] = useState('');
-  const [feedUrl, setFeedUrl] = useState('');
+  const [feedTokens, setFeedTokens] = useState<FeedToken[]>([]);
+  const [feedLogs, setFeedLogs] = useState<FeedLog[]>([]);
+  const [feedLoading, setFeedLoading] = useState(true);
+  const [feedBusy, setFeedBusy] = useState('');
+  const [revealedFeedUrl, setRevealedFeedUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [storia, setStoria] = useState<StoriaStatus | null>(null);
   const [loadingStoria, setLoadingStoria] = useState(true);
@@ -66,41 +97,43 @@ export default function PortalsPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    let message: { type: 'success' | 'error'; text: string } | null = null;
     if (params.get('storia_connected')) {
-      setFlashMsg({ type: 'success', text: 'Contul Storia a fost conectat cu succes!' });
-      window.history.replaceState({}, '', '/portals');
+      message = { type: 'success', text: 'Contul Storia a fost conectat cu succes!' };
     } else if (params.get('storia_error')) {
-      setFlashMsg({ type: 'error', text: `Eroare la conectare: ${decodeURIComponent(params.get('storia_error')!)}` });
-      window.history.replaceState({}, '', '/portals');
+      message = { type: 'error', text: `Eroare la conectare: ${decodeURIComponent(params.get('storia_error')!)}` };
     }
+    if (!message) return;
+    window.history.replaceState({}, '', '/portals');
+    const timer = window.setTimeout(() => setFlashMsg(message), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
-  const fetchData = useCallback(async (tok: string, aid: string) => {
+  const fetchData = useCallback(async (tok: string) => {
     setLoadingStoria(true);
+    setFeedLoading(true);
     try {
-      const res = await fetch('/api/portals/storia/status', {
-        headers: { Authorization: `Bearer ${tok}` },
-      });
-      if (res.ok) setStoria(await res.json());
+      const [storiaRes, feedsRes] = await Promise.all([
+        fetch('/api/portals/storia/status', { headers: { Authorization: `Bearer ${tok}` } }),
+        fetch('/api/feed/tokens', { headers: { Authorization: `Bearer ${tok}` } }),
+      ]);
+      if (storiaRes.ok) setStoria(await storiaRes.json());
+      if (feedsRes.ok) {
+        const data = await feedsRes.json();
+        setFeedTokens(data.tokens || []);
+        setFeedLogs(data.recent_logs || []);
+      }
     } finally {
       setLoadingStoria(false);
+      setFeedLoading(false);
     }
-
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://crm.kiraimobiliare.ro';
-    setFeedUrl(`${origin}/api/feed/properties.xml?agency_id=${aid}`);
   }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return;
       setToken(session.access_token);
-      fetch('/api/settings', { headers: { Authorization: `Bearer ${session.access_token}` } })
-        .then(r => r.json())
-        .then(d => {
-          const aid = d.agency?.id || '';
-          setAgencyId(aid);
-          fetchData(session.access_token, aid);
-        });
+      fetchData(session.access_token);
     });
   }, [fetchData]);
 
@@ -125,23 +158,78 @@ export default function PortalsPage() {
     if (!confirm('Deconectezi contul Storia? Nu vei mai putea publica anunțuri automat.')) return;
     setDisconnecting(true);
     // Remove token from DB
-    const res = await fetch('/api/portals/storia/status', {
+    await fetch('/api/portals/storia/status', {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
     // Even if it fails, refresh status
-    await fetchData(token, agencyId);
+    await fetchData(token);
     setDisconnecting(false);
   };
 
-  const copyFeed = () => {
-    navigator.clipboard.writeText(feedUrl);
+  const copyFeed = (url: string) => {
+    navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleCreateFeed = async (portal: 'generic' | 'storia') => {
+    let ownerEmail = '';
+    if (portal === 'storia') {
+      ownerEmail = window.prompt('E-mailul agenției folosit în contul Storia:')?.trim() || '';
+      if (!ownerEmail) return;
+    }
+    setFeedBusy(`create:${portal}`);
+    try {
+      const res = await fetch('/api/feed/tokens', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ portal, owner_email: ownerEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFlashMsg({ type: 'error', text: data.error || 'Feedul nu a putut fi creat' });
+        return;
+      }
+      setRevealedFeedUrl(data.feed_url || '');
+      setFlashMsg({ type: 'success', text: 'Feed securizat creat. Copiază URL-ul înainte să închizi pagina.' });
+      await fetchData(token);
+    } finally {
+      setFeedBusy('');
+    }
+  };
+
+  const handleFeedAction = async (id: string, action: 'rotate' | 'revoke') => {
+    const question = action === 'rotate'
+      ? 'Rotești tokenul? URL-ul vechi nu va mai funcționa.'
+      : 'Revoci feedul? Portalul nu îl va mai putea descărca.';
+    if (!window.confirm(question)) return;
+    setFeedBusy(`${action}:${id}`);
+    try {
+      const res = await fetch('/api/feed/tokens', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setFlashMsg({ type: 'error', text: data.error || 'Acțiunea asupra feedului a eșuat' });
+        return;
+      }
+      if (data.feed_url) setRevealedFeedUrl(data.feed_url);
+      setFlashMsg({
+        type: 'success',
+        text: action === 'rotate' ? 'Token rotit. Copiază noul URL acum.' : 'Feed revocat.',
+      });
+      await fetchData(token);
+    } finally {
+      setFeedBusy('');
+    }
+  };
+
   const activeListings = storia?.listings.filter(l => l.status === 'active').length ?? 0;
   const totalListings  = storia?.listings.length ?? 0;
+  const activeFeeds = feedTokens.filter(feed => feed.is_active).length;
 
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
   return (
@@ -180,8 +268,8 @@ export default function PortalsPage() {
             <p className="text-xs text-gray-500 mt-1">Total publicate</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-2xl font-bold text-purple-600">XML</p>
-            <p className="text-xs text-gray-500 mt-1">Feed activ</p>
+            <p className="text-2xl font-bold text-purple-600">{activeFeeds}</p>
+            <p className="text-xs text-gray-500 mt-1">Feeduri XML active</p>
           </div>
         </div>
 
@@ -209,7 +297,7 @@ export default function PortalsPage() {
                   <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                     <CheckCircle size={12} /> Conectat
                   </span>
-                  <button onClick={() => fetchData(token, agencyId)}
+                  <button onClick={() => fetchData(token)}
                     className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Reîncarcă">
                     <RefreshCw size={14} />
                   </button>
@@ -335,7 +423,7 @@ export default function PortalsPage() {
                     <Building2 size={32} className="mx-auto text-gray-300 mb-2" />
                     <p className="text-sm text-gray-500 font-medium">Niciun anunț publicat încă</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Deschide o proprietate → secțiunea „Storia / OLX" → Publică
+                      Deschide o proprietate → secțiunea „Storia / OLX” → Publică
                     </p>
                   </div>
                 )}
@@ -366,31 +454,113 @@ export default function PortalsPage() {
           </p>
         </div>
 
-        {/* XML Feed */}
+        {/* XML feeds */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-start gap-3 mb-3">
-            <Zap size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-gray-900 text-sm">Feed XML proprietăți active</h3>
-              <p className="text-xs text-gray-500 mt-0.5">Export XML standard — pentru integrări manuale sau prin conectori terți.</p>
+          <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <ShieldCheck size={20} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm">Feeduri XML securizate</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Fiecare portal primește un token separat, revocabil. Proprietățile sunt incluse numai dacă sunt active și bifate pentru canalul respectiv.
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs bg-gray-100 px-3 py-2 rounded-lg overflow-auto min-w-0">
-              {feedUrl || 'Se încarcă...'}
-            </code>
-            <button onClick={copyFeed} disabled={!feedUrl}
-              className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0 disabled:opacity-40">
-              {copied ? <><CheckCircle size={14} className="text-emerald-600" /> Copiat</> : <><Copy size={14} /> Copiează</>}
-            </button>
-            {feedUrl && (
-              <button onClick={() => window.open(feedUrl, '_blank')}
-                className="px-3 py-2 text-white rounded-lg text-sm font-medium hover:opacity-90 flex-shrink-0"
-                style={{ backgroundColor: '#0E6B54' }}>
-                Deschide
-              </button>
+            {can('feed', 'create') && (
+              <div className="flex flex-wrap gap-2 sm:justify-end">
+                <button type="button" onClick={() => handleCreateFeed('generic')} disabled={Boolean(feedBusy)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+                  {feedBusy === 'create:generic' ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+                  Feed standard
+                </button>
+                <button type="button" onClick={() => handleCreateFeed('storia')} disabled={Boolean(feedBusy)}
+                  className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40"
+                  style={{ backgroundColor: '#0E6B54' }}>
+                  {feedBusy === 'create:storia' ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
+                  Feed Storia
+                </button>
+              </div>
             )}
           </div>
+
+          {revealedFeedUrl && (
+            <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-900">Copiază URL-ul acum</p>
+              <p className="mt-1 text-xs text-amber-700">Din motive de securitate, tokenul complet nu va mai fi afișat după reîncărcarea paginii.</p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <code className="min-w-0 flex-1 overflow-auto rounded-lg bg-white px-3 py-2 text-xs text-gray-700">{revealedFeedUrl}</code>
+                <button type="button" onClick={() => copyFeed(revealedFeedUrl)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900">
+                  {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
+                  {copied ? 'Copiat' : 'Copiază'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {feedLoading ? (
+            <div className="flex items-center justify-center py-8 text-gray-400"><Loader2 size={20} className="animate-spin" /></div>
+          ) : feedTokens.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-gray-200 px-4 py-8 text-center">
+              <KeyRound size={28} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-sm font-medium text-gray-600">Nu există încă niciun feed securizat</p>
+              <p className="mt-1 text-xs text-gray-400">Vechiul link bazat doar pe ID-ul agenției este dezactivat.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {feedTokens.map(feed => (
+                <div key={feed.id} className="rounded-xl border border-gray-200 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900">{feed.label}</p>
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold uppercase text-gray-600">{feed.portal}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${feed.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {feed.is_active ? 'Activ' : 'Revocat'}
+                        </span>
+                      </div>
+                      <p className="mt-1 font-mono text-xs text-gray-500">{feed.token_prefix} · generația {feed.generation}</p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Ultimul succes: {feed.last_success_at ? new Date(feed.last_success_at).toLocaleString('ro-RO') : 'niciodată'}
+                        {feed.last_error_at ? ' · ultima încercare a avut eroare' : ''}
+                      </p>
+                    </div>
+                    {can('feed', 'edit') && (
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => handleFeedAction(feed.id, 'rotate')} disabled={Boolean(feedBusy)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40">
+                          {feedBusy === `rotate:${feed.id}` ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                          Rotește
+                        </button>
+                        {feed.is_active && (
+                          <button type="button" onClick={() => handleFeedAction(feed.id, 'revoke')} disabled={Boolean(feedBusy)}
+                            className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40">
+                            Revocă
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {feedLogs.length > 0 && (
+            <div className="mt-5 border-t border-gray-100 pt-4">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Ultimele exporturi</h4>
+              <div className="space-y-2">
+                {feedLogs.slice(0, 5).map(log => (
+                  <div key={log.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs">
+                    <span className="font-medium text-gray-700">{log.portal} · {new Date(log.generated_at).toLocaleString('ro-RO')}</span>
+                    <span className={log.status === 'success' ? 'text-emerald-700' : 'text-red-700'}>
+                      {log.status === 'success' ? 'Valid' : 'Eroare'} · {log.included_count} incluse · {log.excluded_count} excluse
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </ProtectedLayout>
