@@ -1,30 +1,20 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
 import { scoreMatch } from '@/lib/match-score';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 // Potriviri proprietăți pentru un client (după criteriile lui de căutare).
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'leads', action: 'view' });
+  if (!auth.ok) return auth.response;
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    const { admin, agencyId } = auth.context;
 
     const clientId = new URL(request.url).searchParams.get('client_id');
     if (!clientId) return Response.json({ error: 'client_id lipsă' }, { status: 400 });
 
     const { data: client } = await admin
-      .from('leads').select('*').eq('id', clientId).eq('agency_id', profile.agency_id).single();
+      .from('leads').select('*').eq('id', clientId).eq('agency_id', agencyId).single();
     if (!client) return Response.json({ error: 'Client negăsit' }, { status: 404 });
 
     const criteria = {
@@ -40,7 +30,7 @@ export async function GET(request: Request) {
     const { data: properties } = await admin
       .from('properties')
       .select('id, internal_code, title, city, county, price, currency, category, transaction, attributes, status')
-      .eq('agency_id', profile.agency_id)
+      .eq('agency_id', agencyId)
       .eq('status', 'activa');
 
     if (!properties || properties.length === 0) return Response.json({ matches: [] });

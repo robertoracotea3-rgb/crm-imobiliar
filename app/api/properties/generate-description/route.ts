@@ -1,19 +1,11 @@
 export const dynamic = 'force-dynamic';
 
 import Anthropic from '@anthropic-ai/sdk';
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function POST(request: Request) {
-  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-  if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-  const { data: { user } } = await admin.auth.getUser(token);
-  if (!user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
+  const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
+  if (!auth.ok) return auth.response;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {

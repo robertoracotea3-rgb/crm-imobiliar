@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
 const PUBLIC_SITE = process.env.FB_PUBLIC_SITE_URL || 'https://kiraimobiliare.ro';
@@ -34,15 +34,9 @@ function fbErr(e: FbError | undefined): string {
 
 // POST /api/portals/facebook/publish  Body: { property_id }
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return NextResponse.json({ error: 'Neautentificat' }, { status: 401 });
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-  const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-  if (!user) return NextResponse.json({ error: 'Sesiune invalidă' }, { status: 401 });
+  const auth = await requireApiAuth(request, { module: 'portals', action: 'create' });
+  if (!auth.ok) return auth.response;
+  const { serviceAdmin: supabase, agencyId } = auth.context;
 
   const SYSTEM_TOKEN = process.env.FB_PAGE_TOKEN;
   if (!SYSTEM_TOKEN) {
@@ -80,7 +74,7 @@ export async function POST(request: Request) {
   if (!property_id) return NextResponse.json({ error: 'property_id obligatoriu' }, { status: 400 });
 
   const { data: property } = await supabase
-    .from('properties').select('*').eq('id', property_id).single();
+    .from('properties').select('*').eq('id', property_id).eq('agency_id', agencyId).single();
   if (!property) return NextResponse.json({ error: 'Proprietatea nu a fost găsită' }, { status: 404 });
 
   const a = (property.attributes as Record<string, unknown>) || {};
@@ -156,7 +150,7 @@ export async function POST(request: Request) {
     // Salvează id-ul postării
     await supabase.from('properties').update({
       attributes: { ...a, publicare: { ...pub, fb_post_id: postId, fb_published_at: new Date().toISOString() } },
-    }).eq('id', property_id);
+    }).eq('id', property_id).eq('agency_id', agencyId);
 
     return NextResponse.json({ success: true, post_id: postId, url: `https://facebook.com/${postId}` });
   } catch (err) {

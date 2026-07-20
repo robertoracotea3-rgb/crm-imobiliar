@@ -1,40 +1,37 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-// Istoric (timeline) pentru un client — din tabela activities.
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'leads', action: 'view' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-
+    const { admin, agencyId } = auth.context;
     const id = new URL(request.url).searchParams.get('id');
-    if (!id) return Response.json({ error: 'id lipsă' }, { status: 400 });
+    if (!id) return Response.json({ error: 'id lipsa' }, { status: 400 });
 
-    const { data: lead } = await admin.from('leads').select('id, agency_id, received_at').eq('id', id).single();
-    if (!lead) return Response.json({ error: 'Client negăsit' }, { status: 404 });
-    if (lead.agency_id !== profile.agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
+    const { data: lead } = await admin
+      .from('leads')
+      .select('id, received_at')
+      .eq('id', id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!lead) return Response.json({ error: 'Client negasit' }, { status: 404 });
 
     let events: { type: string; title?: string; description: string; created_at: string }[] = [];
     try {
       const { data } = await admin
         .from('activities')
         .select('type, title, description, created_at')
+        .eq('agency_id', agencyId)
         .eq('lead_id', id)
         .order('created_at', { ascending: false });
       events = data || [];
-    } catch { /* tabela activities poate lipsi */ }
+    } catch {
+      // Tabela activities poate lipsi in instalari vechi.
+    }
 
     return Response.json({ events, received_at: lead.received_at });
   } catch (err) {

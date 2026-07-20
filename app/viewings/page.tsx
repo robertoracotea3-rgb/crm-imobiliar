@@ -308,7 +308,7 @@ export default function ViewingsPage() {
     : viewings.filter(v => (v.status || 'programata') === 'programata' && new Date(v.start_at).getTime() > clockNow).length;
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="viewings">
       <div className="p-6 max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>

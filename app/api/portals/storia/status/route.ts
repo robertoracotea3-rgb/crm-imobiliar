@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getValidToken, fetchAdvertStatus } from '@/lib/storia-api';
 import { extractStoriaAdvertIdentity } from '@/lib/server/storia-ad-identity.mjs';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 // Statuses that are worth re-syncing from OLX.
 // Includes 'error' because an error may reflect a failed update attempt on our side
@@ -11,29 +11,27 @@ const NON_TERMINAL = new Set(['pending', 'not_posted', 'to_post', 'to_put', 'pro
 // GET /api/portals/storia/status?property_id=<optional>
 // Returns: connection status + listings for a specific property (or all listings).
 export async function GET(request: Request) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-  const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
   const { searchParams } = new URL(request.url);
   const propertyId = searchParams.get('property_id');
+  const auth = await requireApiAuth(request, propertyId
+    ? { module: 'properties', action: 'view' }
+    : { module: 'portals', action: 'view' });
+  if (!auth.ok) return auth.response;
+  const { admin, serviceAdmin: supabase, agencyId } = auth.context;
 
   // Vederea agregată pe toată agenția (fără property_id, folosită în pagina Portaluri)
   // e date de management → doar owner/admin. Statusul unei singure proprietăți
   // (cu property_id) rămâne accesibil agenților din pagina proprietății.
-  const { data: callerProfile } = await supabase.from('profiles').select('role').eq('user_id', user.id).single();
-  if (!propertyId && !['owner', 'admin'].includes(callerProfile?.role || '')) {
-    return NextResponse.json({ error: 'Acces interzis' }, { status: 403 });
+  const agency = { id: agencyId };
+  if (propertyId) {
+    const { data: accessibleProperty } = await admin
+      .from('properties')
+      .select('id')
+      .eq('id', propertyId)
+      .eq('agency_id', agencyId)
+      .maybeSingle();
+    if (!accessibleProperty) return NextResponse.json({ error: 'Proprietatea nu este accesibilă' }, { status: 404 });
   }
-
-  const { data: agency } = await supabase.from('agencies').select('id').single();
-  if (!agency) return NextResponse.json({ error: 'No agency' }, { status: 400 });
 
   // Check connection
   const { data: tokenRow } = await supabase
@@ -54,6 +52,7 @@ export async function GET(request: Request) {
     const { data } = await supabase
       .from('portal_listings')
       .select('*')
+      .eq('agency_id', agencyId)
       .eq('property_id', propertyId)
       .eq('portal', 'storia')
       .single();
@@ -88,13 +87,15 @@ export async function GET(request: Request) {
           };
           await supabase.from('portal_listings')
             .update(patch)
-            .eq('id', listing.id);
+            .eq('id', listing.id)
+            .eq('agency_id', agencyId);
           listing = { ...listing, ...patch };
         } else if (live) {
           // Always update last_sync_at so we know the OLX check ran successfully.
           await supabase.from('portal_listings')
             .update({ last_sync_at: new Date().toISOString() })
-            .eq('id', listing.id);
+            .eq('id', listing.id)
+            .eq('agency_id', agencyId);
           listing = { ...listing, last_sync_at: new Date().toISOString() };
         }
       } catch (e) {
@@ -119,6 +120,7 @@ export async function GET(request: Request) {
       const { data: props } = await supabase
         .from('properties')
         .select('id, title, internal_code')
+        .eq('agency_id', agencyId)
         .in('id', propIds);
       for (const p of (props || []) as { id: string; title: string; internal_code: string }[]) {
         propMap.set(p.id, { title: p.title, internal_code: p.internal_code });
@@ -161,12 +163,13 @@ export async function GET(request: Request) {
               last_sync_at:  new Date().toISOString(),
               updated_at:    new Date().toISOString(),
             };
-            await supabase.from('portal_listings').update(patch).eq('id', l.id as string);
+            await supabase.from('portal_listings').update(patch).eq('id', l.id as string).eq('agency_id', agencyId);
             return { ...l, ...patch };
           } else if (live) {
             await supabase.from('portal_listings')
               .update({ last_sync_at: new Date().toISOString() })
-              .eq('id', l.id as string);
+              .eq('id', l.id as string)
+              .eq('agency_id', agencyId);
             return { ...l, last_sync_at: new Date().toISOString() };
           }
         } catch (e) {

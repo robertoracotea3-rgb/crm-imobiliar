@@ -221,7 +221,7 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <ProtectedLayout>
+      <ProtectedLayout module="dashboard">
         <div className="p-6 max-w-7xl mx-auto">
           <div className="animate-pulse space-y-4">
             <div className="h-24 bg-gray-100 rounded-2xl" />
@@ -239,7 +239,7 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <ProtectedLayout>
+      <ProtectedLayout module="dashboard">
         <div className="p-6 text-center">
           <p className="text-red-600 font-medium">{error}</p>
           <button onClick={refresh} className="mt-3 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0E6B54' }}>
@@ -281,7 +281,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="dashboard">
       <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
 
         {/* ── Welcome Banner ── */}

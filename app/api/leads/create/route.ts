@@ -1,11 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
@@ -13,111 +8,175 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function text(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+async function agentBelongsToAgency(admin: ReturnType<typeof import('@/lib/server/api-auth').getAdminClient>, agencyId: string, userId: string) {
+  const { data } = await admin
+    .from('profiles')
+    .select('user_id')
+    .eq('user_id', userId)
+    .eq('agency_id', agencyId)
+    .maybeSingle();
+
+  return Boolean(data);
+}
+
 export async function POST(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'leads', action: 'create' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin
-      .from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-    const agencyId = profile.agency_id;
-
+    const { admin, agencyId, user } = auth.context;
     const body = await request.json();
     const {
       contact_name, contact_phone, contact_email, message, property_id, source, agent_id,
       city, county, category, transaction, budget_min, budget_max, currency, criteria,
     } = body;
 
-    if (!contact_name?.trim()) return Response.json({ error: 'Numele contactului este obligatoriu' }, { status: 400 });
-    if (!contact_phone?.trim()) return Response.json({ error: 'Telefonul este obligatoriu' }, { status: 400 });
+    const contactName = text(contact_name);
+    const phone = text(contact_phone);
+    const email = text(contact_email);
 
-    const phone = String(contact_phone).trim();
-    const email = contact_email?.trim() || null;
+    if (!contactName) return Response.json({ error: 'Numele contactului este obligatoriu' }, { status: 400 });
+    if (!phone) return Response.json({ error: 'Telefonul este obligatoriu' }, { status: 400 });
 
-    // Derivă info din proprietatea legată (oraș/categorie/agent)
-    let propCity: string | null = null, propCounty: string | null = null, propCategory: string | null = null, propAgent: string | null = null;
+    let propCity: string | null = null;
+    let propCounty: string | null = null;
+    let propCategory: string | null = null;
+    let propAgent: string | null = null;
+
     if (property_id) {
       const { data: prop } = await admin
-        .from('properties').select('city, county, category, agent_id').eq('id', property_id).eq('agency_id', agencyId).maybeSingle();
-      propCity = prop?.city || null; propCounty = prop?.county || null;
-      propCategory = prop?.category || null; propAgent = prop?.agent_id || null;
-    }
-    const finalCity = city || propCity || null;
-    const finalCounty = county || propCounty || null;
-    const finalCategory = category || propCategory || null;
-    const assignedAgent = agent_id || propAgent || null;
+        .from('properties')
+        .select('city, county, category, agent_id')
+        .eq('id', property_id)
+        .eq('agency_id', agencyId)
+        .is('deleted_at', null)
+        .maybeSingle();
 
-    // ── Dedup: același telefon SAU email în aceeași agenție ──
+      if (!prop) return Response.json({ error: 'Proprietate negasita' }, { status: 404 });
+
+      propCity = prop.city || null;
+      propCounty = prop.county || null;
+      propCategory = prop.category || null;
+      propAgent = prop.agent_id || null;
+    }
+
+    let assignedAgent = text(agent_id) || propAgent || null;
+    if (assignedAgent && !(await agentBelongsToAgency(admin, agencyId, assignedAgent))) {
+      return Response.json({ error: 'Agent invalid pentru aceasta agentie' }, { status: 400 });
+    }
+
+    const finalCity = text(city) || propCity || null;
+    const finalCounty = text(county) || propCounty || null;
+    const finalCategory = text(category) || propCategory || null;
+    assignedAgent = assignedAgent || user.id;
+
     let existing: Record<string, unknown> | null = null;
-    {
-      const { data: byPhone } = await admin.from('leads').select('*').eq('agency_id', agencyId).eq('contact_phone', phone).limit(1);
-      existing = byPhone?.[0] || null;
-      if (!existing && email) {
-        const { data: byEmail } = await admin.from('leads').select('*').eq('agency_id', agencyId).eq('contact_email', email).limit(1);
-        existing = byEmail?.[0] || null;
-      }
+    const { data: byPhone } = await admin
+      .from('leads')
+      .select('*')
+      .eq('agency_id', agencyId)
+      .eq('contact_phone', phone)
+      .is('deleted_at', null)
+      .limit(1);
+    existing = byPhone?.[0] || null;
+
+    if (!existing && email) {
+      const { data: byEmail } = await admin
+        .from('leads')
+        .select('*')
+        .eq('agency_id', agencyId)
+        .eq('contact_email', email)
+        .is('deleted_at', null)
+        .limit(1);
+      existing = byEmail?.[0] || null;
     }
 
     if (existing) {
-      // Nu dublăm — completăm câmpurile lipsă și adăugăm solicitarea în istoric.
       const upd: Record<string, unknown> = {};
       if (!existing.property_id && property_id) upd.property_id = property_id;
       if (!existing.contact_email && email) upd.contact_email = email;
-      try {
-        if (!existing.city && finalCity) upd.city = finalCity;
-        if (!existing.county && finalCounty) upd.county = finalCounty;
-        if (!existing.category && finalCategory) upd.category = finalCategory;
-        if (!existing.agent_id && assignedAgent) upd.agent_id = assignedAgent;
-        if (!existing.source && source) upd.source = source;
-      } catch { /* coloane noi pot lipsi */ }
-      if (Object.keys(upd).length) { try { await admin.from('leads').update(upd).eq('id', existing.id); } catch { /* best-effort */ } }
+      if (!existing.city && finalCity) upd.city = finalCity;
+      if (!existing.county && finalCounty) upd.county = finalCounty;
+      if (!existing.category && finalCategory) upd.category = finalCategory;
+      if (!existing.agent_id && assignedAgent) upd.agent_id = assignedAgent;
+      if (!existing.source && source) upd.source = source;
+
+      if (Object.keys(upd).length) {
+        await admin
+          .from('leads')
+          .update(upd)
+          .eq('id', existing.id)
+          .eq('agency_id', agencyId)
+          .is('deleted_at', null);
+      }
+
       try {
         await admin.from('activities').insert({
           agency_id: agencyId,
           type: 'request',
-          title: 'Solicitare nouă',
-          description: message?.trim() ? String(message).trim().slice(0, 300) : null,
-          lead_id: existing.id, user_id: user.id,
+          title: 'Solicitare noua',
+          description: text(message)?.slice(0, 300) || null,
+          lead_id: existing.id,
+          user_id: user.id,
         });
-      } catch { /* tabela activities poate lipsi */ }
+      } catch {
+        // Tabela de activitati poate lipsi in instalari vechi.
+      }
+
       return Response.json({ lead: { ...existing, ...upd }, deduped: true }, { status: 200 });
     }
 
-    // ── Client nou ──
     const { data, error } = await admin.from('leads').insert({
       agency_id: agencyId,
-      contact_name: contact_name.trim(),
+      contact_name: contactName,
       contact_phone: phone,
       contact_email: email,
-      message: message?.trim() || '',
+      message: text(message) || '',
       property_id: property_id || null,
       status: 'new',
       received_at: new Date().toISOString(),
+      agent_id: assignedAgent,
+      assigned_to: assignedAgent,
+      source: source || null,
     }).select().single();
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
-    // Completează coloanele noi (best-effort: sigur chiar dacă migrarea nu a fost rulată încă)
     try {
       const enrich = {
-        source: source || null, city: finalCity, county: finalCounty, category: finalCategory,
-        transaction: transaction || null, budget_min: num(budget_min), budget_max: num(budget_max),
-        currency: currency || null, criteria: criteria || {}, agent_id: assignedAgent,
+        source: source || null,
+        city: finalCity,
+        county: finalCounty,
+        category: finalCategory,
+        transaction: transaction || null,
+        budget_min: num(budget_min),
+        budget_max: num(budget_max),
+        currency: currency || null,
+        criteria: criteria || {},
+        agent_id: assignedAgent,
       };
-      await admin.from('leads').update(enrich).eq('id', data.id);
+      await admin.from('leads').update(enrich).eq('id', data.id).eq('agency_id', agencyId);
       Object.assign(data, enrich);
-    } catch { /* coloane noi pot lipsi încă */ }
+    } catch {
+      // Coloanele noi pot lipsi in instalari vechi.
+    }
 
     try {
       await admin.from('activities').insert({
-        agency_id: agencyId, type: 'created', title: 'Client creat',
-        description: 'Client adăugat în CRM', lead_id: data.id, user_id: user.id,
+        agency_id: agencyId,
+        type: 'created',
+        title: 'Client creat',
+        description: 'Client adaugat in CRM',
+        lead_id: data.id,
+        user_id: user.id,
       });
-    } catch { /* tabela activities poate lipsi */ }
+    } catch {
+      // Tabela de activitati poate lipsi in instalari vechi.
+    }
 
     return Response.json({ lead: data }, { status: 201 });
   } catch (err) {

@@ -1,42 +1,31 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'team', action: 'view' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user } } = await admin.auth.getUser(token);
-    if (!user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-    // Statistici agregate pe echipă — doar owner/admin.
-    if (!['owner', 'admin'].includes(profile.role)) return Response.json({ error: 'Acces interzis' }, { status: 403 });
+    const { admin, agencyId } = auth.context;
 
     const [
       { count: totalMembers },
       { data: allProps },
       { count: clientsTotal },
     ] = await Promise.all([
-      admin.from('profiles').select('id', { count: 'exact', head: true }).eq('agency_id', profile.agency_id),
-      admin.from('properties').select('agent_id, status').eq('agency_id', profile.agency_id),
-      admin.from('leads').select('id', { count: 'exact', head: true }).eq('agency_id', profile.agency_id),
+      admin.from('profiles').select('id', { count: 'exact', head: true }).eq('agency_id', agencyId),
+      admin.from('properties').select('agent_id, status').eq('agency_id', agencyId).is('deleted_at', null),
+      admin.from('leads').select('id', { count: 'exact', head: true }).eq('agency_id', agencyId).is('deleted_at', null),
     ]);
 
     const SOLD_STATUSES = new Set(['tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata']);
     const props = allProps || [];
-    const activeProps = props.filter(p => p.status === 'activa').length;
-    const soldProps = props.filter(p => SOLD_STATUSES.has(p.status)).length;
+    const activeProps = props.filter((p) => p.status === 'activa').length;
+    const soldProps = props.filter((p) => SOLD_STATUSES.has(p.status)).length;
 
     const agentMap: Record<string, number> = {};
-    props.forEach(p => {
+    props.forEach((p) => {
       if (p.agent_id) agentMap[p.agent_id] = (agentMap[p.agent_id] || 0) + 1;
     });
     const agentCounts = Object.values(agentMap);

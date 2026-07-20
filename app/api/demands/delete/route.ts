@@ -1,36 +1,36 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function DELETE(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'demands', action: 'delete' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+    const { admin, agencyId, user } = auth.context;
+    const id = new URL(request.url).searchParams.get('id');
+    if (!id) return Response.json({ error: 'ID lipsa' }, { status: 400 });
 
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-
-    // Doar owner/admin pot șterge cereri (vezi DEFAULT_PERMISSIONS din lib/team-roles.ts).
-    if (!['owner', 'admin'].includes(profile.role)) {
-      return Response.json({ error: 'Doar proprietarul sau administratorul poate șterge cereri' }, { status: 403 });
-    }
-
-    const url = new URL(request.url);
-    const id = url.searchParams.get('id');
-    if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
-
-    const { error } = await admin.from('demands')
-      .delete()
+    const { data: demand } = await admin
+      .from('demands')
+      .select('id')
       .eq('id', id)
-      .eq('agency_id', profile.agency_id);
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (!demand) return Response.json({ error: 'Cererea nu exista' }, { status: 404 });
+
+    const { error } = await admin
+      .from('demands')
+      .update({
+        status: 'anulata',
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id,
+      })
+      .eq('id', id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null);
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
     return Response.json({ success: true });

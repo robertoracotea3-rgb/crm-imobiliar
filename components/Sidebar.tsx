@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import type { CrmModule } from '@/lib/team-roles';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   LayoutDashboard,
   Building2,
-  Search,
   MessageSquare,
   Globe,
   Users,
@@ -22,19 +22,19 @@ import {
   Target,
 } from 'lucide-react';
 
-const menuItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/properties', label: 'Proprietăți', icon: Building2 },
-  { href: '/contacts', label: 'Contacte', icon: BookUser },
-  { href: '/clients', label: 'Clienți', icon: MessageSquare },
-  { href: '/prospects', label: 'Particulari', icon: Target },
-  { href: '/viewings', label: 'Vizionări', icon: Eye },
-  { href: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { href: '/finance', label: 'Finanțe', icon: Wallet },
-  { href: '/portals', label: 'Portaluri', icon: Globe },
-  { href: '/team', label: 'Echipă', icon: Users },
-  { href: '/notifications', label: 'Notificări', icon: Bell },
-  { href: '/settings', label: 'Setări', icon: Settings },
+const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; module: CrmModule }[] = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, module: 'dashboard' },
+  { href: '/properties', label: 'Proprietăți', icon: Building2, module: 'properties' },
+  { href: '/contacts', label: 'Contacte', icon: BookUser, module: 'contacts' },
+  { href: '/clients', label: 'Clienți', icon: MessageSquare, module: 'leads' },
+  { href: '/prospects', label: 'Particulari', icon: Target, module: 'prospects' },
+  { href: '/viewings', label: 'Vizionări', icon: Eye, module: 'viewings' },
+  { href: '/calendar', label: 'Calendar', icon: CalendarDays, module: 'calendar' },
+  { href: '/finance', label: 'Finanțe', icon: Wallet, module: 'finance' },
+  { href: '/portals', label: 'Portaluri', icon: Globe, module: 'portals' },
+  { href: '/team', label: 'Echipă', icon: Users, module: 'team' },
+  { href: '/notifications', label: 'Notificări', icon: Bell, module: 'notifications' },
+  { href: '/settings', label: 'Setări', icon: Settings, module: 'settings' },
 ];
 
 // Mobile bottom nav — only the 8 most used items (screen space limited)
@@ -42,22 +42,13 @@ const mobileMenuItems = ['/dashboard', '/properties', '/clients', '/viewings', '
   .map(href => menuItems.find(m => m.href === href)!)
   .filter(Boolean);
 
-// Pagini accesibile DOAR proprietarului (owner)
-const OWNER_ONLY = ['/finance', '/portals', '/team', '/settings'];
-
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, role, loading, signOut } = useAuth();
+  const { user, loading, signOut, can } = useAuth();
   const [notifCount, setNotifCount] = useState(0);
 
-  // Restrict owner-only items (Finance, Portals, Team, Settings) to owners only
-  const visibleItems = menuItems.filter(item => {
-    if (OWNER_ONLY.includes(item.href)) {
-      return role === 'owner';
-    }
-    return true;
-  });
+  const visibleItems = menuItems.filter(item => can(item.module, 'view'));
 
   useEffect(() => {
     if (!user) return;
@@ -151,10 +142,7 @@ export function Sidebar() {
 
       {/* Bottom nav mobile */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 flex items-center justify-around">
-        {mobileMenuItems.filter(item => {
-          if (item.href === '/finance') return role === 'owner';
-          return true;
-        }).map((item) => {
+        {mobileMenuItems.filter(item => can(item.module, 'view')).map((item) => {
           const Icon = item.icon;
           const isActive = pathname.startsWith(item.href);
           const isNotif = item.href === '/notifications';

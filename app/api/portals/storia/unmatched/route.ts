@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { requireApiAuth } from '@/lib/server/api-auth';
+import { contextCanManageAll, requireApiAuth } from '@/lib/server/api-auth';
 import {
   linkQueuedStoriaMessage,
   type IncomingStoriaLead,
@@ -40,27 +40,31 @@ const queueToLeadInput = (row: QueueRow): IncomingStoriaLead => ({
 export async function GET(request: Request) {
   const auth = await requireApiAuth(request, { module: 'leads', action: 'view' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId } = auth.context;
+  const { admin, serviceAdmin, agencyId } = auth.context;
+  const canManageAllLeads = contextCanManageAll(auth.context, 'leads');
 
-  const [queueResult, legacyResult] = await Promise.all([
-    admin
+  // Mesajele din coada tehnică nu au încă un agent. Pot conține date personale
+  // destinate altui agent, deci sunt vizibile numai rolurilor cu manage_all.
+  const queueResult = canManageAllLeads
+    ? await serviceAdmin
       .from('portal_unmatched_messages')
       .select('id, webhook_event_id, portal, portal_ad_id, external_id, conversation_id, sender_name, sender_email, sender_phone, message, property_title_hint, advert_url_hint, reason, created_at')
       .eq('agency_id', agencyId)
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
-      .limit(200),
-    admin
-      .from('leads')
-      .select('id, contact_name, contact_email, contact_phone, message, source, portal_ad_id, received_at')
-      .eq('agency_id', agencyId)
-      .is('property_id', null)
-      .is('deleted_at', null)
-      .eq('association_status', 'pending')
-      .in('source_normalized', ['storia', 'olx'])
-      .order('received_at', { ascending: false })
-      .limit(200),
-  ]);
+      .limit(200)
+    : { data: [] as QueueRow[], error: null };
+
+  const legacyResult = await admin
+    .from('leads')
+    .select('id, contact_name, contact_email, contact_phone, message, source, portal_ad_id, received_at')
+    .eq('agency_id', agencyId)
+    .is('property_id', null)
+    .is('deleted_at', null)
+    .eq('association_status', 'pending')
+    .in('source_normalized', ['storia', 'olx'])
+    .order('received_at', { ascending: false })
+    .limit(200);
 
   if (queueResult.error) {
     return Response.json({ error: 'Nu am putut încărca mesajele neasociate' }, { status: 500 });
@@ -104,7 +108,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const auth = await requireApiAuth(request, { module: 'leads', action: 'edit' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId, user } = auth.context;
+  const { admin, serviceAdmin, agencyId, user } = auth.context;
   const body = await request.json().catch(() => ({}));
   const compoundId = typeof body.id === 'string' ? body.id : '';
   const action = body.action;
@@ -192,7 +196,13 @@ export async function PATCH(request: Request) {
     return Response.json({ success: true, lead_id: id });
   }
 
-  const { data: queued, error: queueError } = await admin
+  // O intrare neasociată nu are încă proprietar/agent; numai managerii întregii
+  // agenții o pot vedea și rezolva fără să expunem date între agenți.
+  if (!contextCanManageAll(auth.context, 'leads')) {
+    return Response.json({ error: 'Acces interzis' }, { status: 403 });
+  }
+
+  const { data: queued, error: queueError } = await serviceAdmin
     .from('portal_unmatched_messages')
     .select('id, webhook_event_id, portal, portal_ad_id, external_id, conversation_id, sender_name, sender_email, sender_phone, message, property_title_hint, advert_url_hint, reason, created_at')
     .eq('id', id)
@@ -204,7 +214,7 @@ export async function PATCH(request: Request) {
   }
 
   if (action === 'ignore') {
-    const { error } = await admin.from('portal_unmatched_messages').update({
+    const { error } = await serviceAdmin.from('portal_unmatched_messages').update({
       status: 'ignored',
       resolution_note: String(body.reason).trim(),
       resolved_by: user.id,
@@ -217,10 +227,11 @@ export async function PATCH(request: Request) {
 
   const propertyId = typeof body.property_id === 'string' ? body.property_id : '';
   if (!propertyId) return Response.json({ error: 'Proprietatea este obligatorie' }, { status: 400 });
-  const { data: event, error: eventError } = await admin
+  const { data: event, error: eventError } = await serviceAdmin
     .from('webhook_events')
     .select('transaction_id')
     .eq('id', queued.webhook_event_id)
+    .eq('agency_id', agencyId)
     .eq('signature_verified', true)
     .maybeSingle();
   if (eventError || !event?.transaction_id) {
@@ -235,7 +246,7 @@ export async function PATCH(request: Request) {
       event.transaction_id as string,
       agencyId,
     );
-    const { error } = await admin.from('portal_unmatched_messages').update({
+    const { error } = await serviceAdmin.from('portal_unmatched_messages').update({
       status: 'linked',
       linked_lead_id: result.leadId,
       linked_property_id: propertyId,

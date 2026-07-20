@@ -1,13 +1,37 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+interface MatchProperty {
+  category?: string | null;
+  city?: string | null;
+  county?: string | null;
+  price?: number | null;
+  attributes?: {
+    tip_tranzactie?: string;
+    suprafata_utila?: number;
+    suprafata?: number;
+    sup_utila?: number;
+    nr_camere?: number;
+  } | null;
+}
 
-function scoreMatch(property: any, demand: any): { score: number; details: Record<string, string> } {
+interface MatchDemand {
+  category?: string | null;
+  transaction?: string | null;
+  cities?: string[] | null;
+  counties?: string[] | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  criteria?: {
+    suprafata_min?: number;
+    suprafata_max?: number;
+    nr_camere_min?: number;
+    nr_camere_max?: number;
+  } | null;
+}
+
+function scoreMatch(property: MatchProperty, demand: MatchDemand): { score: number; details: Record<string, string> } {
   let score = 0;
   const details: Record<string, string> = {};
   const c = demand.criteria || {};
@@ -110,15 +134,11 @@ function scoreMatch(property: any, demand: any): { score: number; details: Recor
 }
 
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'demands', action: 'view' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    const { admin, agencyId } = auth.context;
 
     const { searchParams } = new URL(request.url);
     const demandId = searchParams.get('demand_id');
@@ -128,15 +148,17 @@ export async function GET(request: Request) {
       .from('demands')
       .select('*')
       .eq('id', demandId)
-      .eq('agency_id', profile.agency_id)
-      .single();
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .maybeSingle();
     if (!demand) return Response.json({ error: 'Cerere negasita' }, { status: 404 });
 
     const { data: properties } = await admin
       .from('properties')
       .select('id, internal_code, title, city, county, price, currency, category, attributes, status')
-      .eq('agency_id', profile.agency_id)
-      .eq('status', 'activa');
+      .eq('agency_id', agencyId)
+      .eq('status', 'activa')
+      .is('deleted_at', null);
 
     if (!properties || properties.length === 0) return Response.json({ matches: [] });
 

@@ -128,7 +128,7 @@ export default function ProspectsPage() {
   const withPhone = prospects.filter(p => p.phone).length;
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="prospects">
       <div className="p-6 max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>

@@ -1,11 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { Anthropic } from '@anthropic-ai/sdk';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 const client = apiKey ? new Anthropic({ apiKey }) : null;
 
 export async function POST(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'properties', action: 'create' });
+  if (!auth.ok) return auth.response;
   if (!client) {
     return Response.json(
       { error: 'Asistentul AI nu este configurat. Adaugă ANTHROPIC_API_KEY în .env.local' },

@@ -79,7 +79,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="notifications">
       <div className="p-6 max-w-3xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

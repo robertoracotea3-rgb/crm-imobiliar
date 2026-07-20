@@ -1,41 +1,31 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'team', action: 'view' });
+  if (!auth.ok) return auth.response;
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+    const { admin, agencyId } = auth.context;
 
-    const { data: { user } } = await admin.auth.getUser(token);
-    if (!user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-
-    const { data: profiles } = await admin.from('profiles').select('user_id, full_name, role').eq('agency_id', profile.agency_id);
+    const { data: profiles } = await admin.from('profiles').select('user_id, full_name, role').eq('agency_id', agencyId);
     const memberMap: Record<string, { full_name: string; role: string }> = {};
     (profiles || []).forEach(p => { memberMap[p.user_id] = { full_name: p.full_name || 'Agent', role: p.role }; });
 
     const [{ data: recentProps }, { data: recentClients }] = await Promise.all([
       admin.from('properties')
         .select('id, internal_code, title, agent_id, created_at, updated_at, status, category')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agencyId)
         .order('created_at', { ascending: false })
         .limit(30),
       admin.from('leads')
         .select('id, contact_name, agent_id, received_at, category, status')
-        .eq('agency_id', profile.agency_id)
+        .eq('agency_id', agencyId)
         .order('received_at', { ascending: false })
         .limit(20),
     ]);
 
-    const events: unknown[] = [];
+    const events: ({ created_at: string } & Record<string, unknown>)[] = [];
 
     (recentProps || []).forEach(p => {
       events.push({
@@ -67,7 +57,7 @@ export async function GET(request: Request) {
       });
     });
 
-    events.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    events.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return Response.json({ events: events.slice(0, 50) });
   } catch (err) {

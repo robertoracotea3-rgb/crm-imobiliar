@@ -1,25 +1,15 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
 import { scoreMatch } from '@/lib/match-score';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 // Clienți potriviți pentru o proprietate (echivalentul „Cereri potrivite" din
 // vechiul modul Cereri & Potriviri, acum bazat pe criteriile clienților unificați).
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'properties', action: 'view' });
+  if (!auth.ok) return auth.response;
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    const { admin, agencyId } = auth.context;
 
     const propertyId = new URL(request.url).searchParams.get('property_id');
     if (!propertyId) return Response.json({ error: 'property_id lipsa' }, { status: 400 });
@@ -28,7 +18,7 @@ export async function GET(request: Request) {
       .from('properties')
       .select('id, city, county, price, currency, category, attributes, transaction')
       .eq('id', propertyId)
-      .eq('agency_id', profile.agency_id)
+      .eq('agency_id', agencyId)
       .single();
     if (!property) return Response.json({ error: 'Proprietate negasita' }, { status: 404 });
 
@@ -36,7 +26,7 @@ export async function GET(request: Request) {
     const { data: clients } = await admin
       .from('leads')
       .select('id, contact_name, city, county, category, transaction, budget_min, budget_max, currency, source, message, criteria, status')
-      .eq('agency_id', profile.agency_id)
+      .eq('agency_id', agencyId)
       .not('status', 'in', '(withdrawn,lost,won)')
       .order('received_at', { ascending: false });
 

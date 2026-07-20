@@ -1,28 +1,29 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function GET(request: Request) {
-  try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-    const { data: { user }, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !user) return Response.json({ error: 'Sesiune invalidă' }, { status: 401 });
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agenție negăsită' }, { status: 400 });
+  const auth = await requireApiAuth(request, { module: 'properties', action: 'view' });
+  if (!auth.ok) return auth.response;
 
+  try {
+    const { admin, agencyId } = auth.context;
     const propertyId = new URL(request.url).searchParams.get('property_id');
-    if (!propertyId) return Response.json({ error: 'property_id lipsă' }, { status: 400 });
+    if (!propertyId) return Response.json({ error: 'property_id lipsa' }, { status: 400 });
+
+    const { data: property } = await admin
+      .from('properties')
+      .select('id')
+      .eq('id', propertyId)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!property) return Response.json({ error: 'Proprietate negasita' }, { status: 404 });
 
     const { data, error } = await admin
       .from('activity_logs')
       .select('id, action, field, old_value, new_value, user_name, created_at')
-      .eq('agency_id', profile.agency_id)
+      .eq('agency_id', agencyId)
       .eq('entity_type', 'property')
       .eq('entity_id', propertyId)
       .order('created_at', { ascending: false })

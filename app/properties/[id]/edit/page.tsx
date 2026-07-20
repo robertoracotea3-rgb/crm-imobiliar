@@ -197,7 +197,7 @@ export default function EditPropertyPage() {
   const cities = ORASE_BY_JUDET[form.judet] || [];
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="properties" action="edit">
     <div className="p-8 max-w-3xl mx-auto pb-20">
       <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-700 mb-6 hover:text-gray-900">
         <ChevronLeft size={20} /> Inapoi

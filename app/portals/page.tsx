@@ -1,8 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
-
 import { useState, useEffect, useCallback } from 'react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import {
@@ -55,8 +52,6 @@ const LISTING_STATUS_COLOR: Record<string, string> = {
 };
 
 export default function PortalsPage() {
-  const router = useRouter();
-  const { role, loading: authLoading } = useAuth();
   const [token, setToken] = useState('');
   const [agencyId, setAgencyId] = useState('');
   const [feedUrl, setFeedUrl] = useState('');
@@ -68,13 +63,6 @@ export default function PortalsPage() {
 
   // Read URL params for OAuth callback result
   const [flashMsg, setFlashMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Owner-only page
-  useEffect(() => {
-    if (!authLoading && role !== 'owner') {
-      router.push('/dashboard');
-    }
-  }, [role, authLoading, router]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -156,12 +144,8 @@ export default function PortalsPage() {
   const totalListings  = storia?.listings.length ?? 0;
 
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
-  if (role !== 'owner') {
-    return null;
-  }
-
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="portals">
       <div className="p-6 max-w-4xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <Globe size={26} style={{ color: '#0E6B54' }} />

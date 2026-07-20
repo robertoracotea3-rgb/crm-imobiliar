@@ -1,30 +1,24 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { getValidToken, olxFetch } from '@/lib/storia-api';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 // POST /api/portals/storia/unpublish
 // Body: { property_id: string }
 // Deletes the Storia listing for this property.
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-  const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireApiAuth(request, { module: 'portals', action: 'delete' });
+  if (!auth.ok) return auth.response;
+  const { serviceAdmin: supabase, agencyId } = auth.context;
 
   const { property_id } = await request.json();
   if (!property_id) return NextResponse.json({ error: 'property_id obligatoriu' }, { status: 400 });
 
-  const { data: agency } = await supabase.from('agencies').select('id').single();
-  if (!agency) return NextResponse.json({ error: 'No agency' }, { status: 400 });
+  const agency = { id: agencyId };
 
   const { data: listing } = await supabase
     .from('portal_listings')
     .select('*')
+    .eq('agency_id', agencyId)
     .eq('property_id', property_id)
     .eq('portal', 'storia')
     .single();
@@ -51,7 +45,7 @@ export async function POST(request: Request) {
     status:       'deleted',
     last_sync_at: new Date().toISOString(),
     updated_at:   new Date().toISOString(),
-  }).eq('id', listing.id);
+  }).eq('id', listing.id).eq('agency_id', agencyId);
 
   return NextResponse.json({ success: true });
 }

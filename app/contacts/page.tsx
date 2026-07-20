@@ -150,7 +150,7 @@ export default function ContactsPage() {
   const sf = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="contacts">
       <div className="p-6 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

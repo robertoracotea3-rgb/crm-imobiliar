@@ -30,7 +30,7 @@ export default function AIAssistantPage() {
   };
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="properties" action="create">
       <div className="p-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">

@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { requireApiAuth } from '@/lib/server/api-auth';
+import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 
 const TRANSITIONS = ['confirm', 'reschedule', 'cancel', 'complete'] as const;
 type ViewingTransition = typeof TRANSITIONS[number];
@@ -21,7 +21,7 @@ const friendlyError = (message: string) => {
 };
 
 export async function GET(request: Request) {
-  const auth = await requireApiAuth(request);
+  const auth = await requireApiAuth(request, { module: 'viewings', action: 'view' });
   if (!auth.ok) return auth.response;
   const { admin, agencyId } = auth.context;
 
@@ -58,9 +58,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiAuth(request);
+  const auth = await requireApiAuth(request, { module: 'viewings', action: 'create' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId, user } = auth.context;
+  const { admin, serviceAdmin, agencyId, user } = auth.context;
   const body = await request.json().catch(() => ({}));
   const startAt = body.start_at ? new Date(body.start_at) : null;
   if (!startAt || Number.isNaN(startAt.getTime())) {
@@ -72,13 +72,44 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Reminder invalid' }, { status: 400 });
   }
 
-  const { data: viewingId, error } = await admin.rpc('create_crm_viewing', {
+  const { data: property } = await admin
+    .from('properties')
+    .select('id, agent_id')
+    .eq('id', body.property_id || '')
+    .eq('agency_id', agencyId)
+    .maybeSingle();
+  if (!property) return Response.json({ error: 'Proprietatea nu este accesibilă' }, { status: 404 });
+
+  const { data: contact } = await admin
+    .from('contacts')
+    .select('id')
+    .eq('id', body.contact_id || '')
+    .eq('agency_id', agencyId)
+    .maybeSingle();
+  if (!contact) return Response.json({ error: 'Clientul nu este accesibil' }, { status: 404 });
+
+  if (body.lead_id) {
+    const { data: lead } = await admin
+      .from('leads')
+      .select('id')
+      .eq('id', body.lead_id)
+      .eq('agency_id', agencyId)
+      .maybeSingle();
+    if (!lead) return Response.json({ error: 'Leadul nu este accesibil' }, { status: 404 });
+  }
+
+  const requestedAgent = body.agent_id || property.agent_id || user.id;
+  if (requestedAgent !== user.id && !contextHasPermission(auth.context, 'viewings', 'assign')) {
+    return Response.json({ error: 'Nu poți programa vizionarea pentru alt agent' }, { status: 403 });
+  }
+
+  const { data: viewingId, error } = await serviceAdmin.rpc('create_crm_viewing', {
     p_agency_id: agencyId,
     p_user_id: user.id,
     p_lead_id: body.lead_id || null,
     p_contact_id: body.contact_id || null,
     p_property_id: body.property_id || null,
-    p_agent_id: body.agent_id || null,
+    p_agent_id: requestedAgent,
     p_start_at: startAt.toISOString(),
     p_duration_minutes: duration,
     p_location: body.location || null,
@@ -98,18 +129,27 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const auth = await requireApiAuth(request);
+  const auth = await requireApiAuth(request, { module: 'viewings', action: 'edit' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId, user } = auth.context;
+  const { admin, serviceAdmin, agencyId, user } = auth.context;
   const body = await request.json().catch(() => ({}));
   const action = body.action as ViewingTransition;
   if (!body.id || !TRANSITIONS.includes(action)) {
     return Response.json({ error: 'Tranziție de vizionare invalidă' }, { status: 400 });
   }
 
+
+  const { data: accessibleViewing } = await admin
+    .from('calendar_events')
+    .select('id')
+    .eq('id', body.id)
+    .eq('agency_id', agencyId)
+    .maybeSingle();
+  if (!accessibleViewing) return Response.json({ error: 'Vizionarea nu este accesibilă' }, { status: 404 });
+
   const startAt = body.start_at ? new Date(body.start_at) : null;
   const nextActionAt = body.next_action_at ? new Date(body.next_action_at) : null;
-  const { data, error } = await admin.rpc('transition_crm_viewing', {
+  const { data, error } = await serviceAdmin.rpc('transition_crm_viewing', {
     p_agency_id: agencyId,
     p_user_id: user.id,
     p_viewing_id: body.id,

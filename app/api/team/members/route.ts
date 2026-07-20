@@ -1,50 +1,37 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-import { DEFAULT_PERMISSIONS } from '@/lib/team-roles';
+import { effectivePermissions } from '@/lib/team-roles';
 import { usernameToEmail, normalizeUsername, emailToUsername } from '@/lib/username';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'team', action: 'view' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: myProfile } = await admin
-      .from('profiles').select('agency_id, role').eq('user_id', user.id).single();
-    if (!myProfile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-    // Lista completă a echipei (email, permisiuni, stats individuale) — doar owner/admin.
-    if (!['owner', 'admin'].includes(myProfile.role)) return Response.json({ error: 'Acces interzis' }, { status: 403 });
+    const { admin, serviceAdmin, agencyId } = auth.context;
 
     const { data: profiles } = await admin
       .from('profiles')
       .select('*')
-      .eq('agency_id', myProfile.agency_id)
+      .eq('agency_id', agencyId)
       .order('created_at', { ascending: true });
 
     if (!profiles) return Response.json({ members: [] });
 
-    const agencyId = myProfile.agency_id;
-    const userIds = profiles.map(p => p.user_id);
-
-    // Batch all data in parallel — no N+1
+    const userIds = profiles.map((p) => p.user_id);
     const [authResults, { data: allProps }, { data: allLeads }] = await Promise.all([
-      Promise.all(userIds.map(uid => admin.auth.admin.getUserById(uid))),
+      Promise.all(userIds.map((uid) => serviceAdmin.auth.admin.getUserById(uid))),
       admin.from('properties')
         .select('agent_id, status')
         .eq('agency_id', agencyId)
+        .is('deleted_at', null)
         .in('agent_id', userIds)
         .limit(2000),
       admin.from('leads')
         .select('agent_id')
         .eq('agency_id', agencyId)
+        .is('deleted_at', null)
         .in('agent_id', userIds)
         .limit(2000),
     ]);
@@ -63,22 +50,24 @@ export async function GET(request: Request) {
     const SOLD_STATUSES = new Set(['tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata']);
     const propActiveMap: Record<string, number> = {};
     const propSoldMap: Record<string, number> = {};
-    (allProps || []).forEach(p => {
+    (allProps || []).forEach((p) => {
       if (p.status === 'activa') propActiveMap[p.agent_id] = (propActiveMap[p.agent_id] || 0) + 1;
       if (SOLD_STATUSES.has(p.status)) propSoldMap[p.agent_id] = (propSoldMap[p.agent_id] || 0) + 1;
     });
     const clientsMap: Record<string, number> = {};
-    (allLeads || []).forEach(l => { clientsMap[l.agent_id] = (clientsMap[l.agent_id] || 0) + 1; });
+    (allLeads || []).forEach((l) => {
+      clientsMap[l.agent_id] = (clientsMap[l.agent_id] || 0) + 1;
+    });
 
-    const members = profiles.map(p => {
-      const auth = authMap[p.user_id] || { email: '', last_sign_in_at: null, user_metadata: {} };
-      const meta = auth.user_metadata;
+    const members = profiles.map((p) => {
+      const authUser = authMap[p.user_id] || { email: '', last_sign_in_at: null, user_metadata: {} };
+      const meta = authUser.user_metadata;
       return {
         id: p.id,
         user_id: p.user_id,
         agency_id: p.agency_id,
-        email: auth.email,
-        username: (meta.username as string) || emailToUsername(auth.email),
+        email: authUser.email,
+        username: (meta.username as string) || emailToUsername(authUser.email),
         contact_email: (meta.contact_email as string) || '',
         full_name: p.full_name || (meta.full_name as string) || '',
         first_name: (meta.first_name as string) || '',
@@ -87,13 +76,13 @@ export async function GET(request: Request) {
         job_title: (meta.job_title as string) || '',
         department: (meta.department as string) || '',
         role: p.role || 'agent',
-        status: (meta.status as string) || 'activ',
+        status: p.status === 'active' ? 'activ' : 'inactiv',
         hired_at: (meta.hired_at as string) || null,
         avatar_url: (meta.avatar_url as string) || null,
         notes: (meta.notes as string) || '',
-        permissions: meta.permissions || DEFAULT_PERMISSIONS[p.role] || DEFAULT_PERMISSIONS.agent,
+        permissions: effectivePermissions(p.role, p.permissions),
         created_at: p.created_at,
-        last_sign_in_at: auth.last_sign_in_at,
+        last_sign_in_at: authUser.last_sign_in_at,
         stats: {
           properties_active: propActiveMap[p.user_id] || 0,
           properties_sold: propSoldMap[p.user_id] || 0,
@@ -109,33 +98,29 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'team', action: 'create' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: myProfile } = await admin
-      .from('profiles').select('agency_id, role').eq('user_id', user.id).single();
-    if (!myProfile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
-
-    const allowed = ['owner', 'admin', 'manager'];
-    if (!allowed.includes(myProfile.role)) {
-      return Response.json({ error: 'Acces interzis' }, { status: 403 });
-    }
+    const { serviceAdmin, agencyId, role: myRole } = auth.context;
 
     const body = await request.json();
     const { email, username, password, first_name, last_name, phone, job_title, department, role, hired_at, permissions } = body;
 
-    if (!username?.trim() || !password) return Response.json({ error: 'Nume utilizator și parolă sunt obligatorii' }, { status: 400 });
-    if (typeof password !== 'string' || password.length < 12) return Response.json({ error: 'Parola trebuie să aibă cel puțin 12 caractere' }, { status: 400 });
+    if (!username?.trim() || !password) return Response.json({ error: 'Nume utilizator si parola sunt obligatorii' }, { status: 400 });
+    if (typeof password !== 'string' || password.length < 12) return Response.json({ error: 'Parola trebuie sa aiba cel putin 12 caractere' }, { status: 400 });
+
+    const allowedRoles = ['admin', 'manager', 'agent_senior', 'agent', 'assistant', 'accountant', 'viewer'];
+    const finalRole = allowedRoles.includes(role) ? role : 'agent';
+    if (myRole === 'manager' && ['owner', 'admin', 'manager'].includes(finalRole)) {
+      return Response.json({ error: 'Managerul poate crea doar agenti sau asistenti' }, { status: 403 });
+    }
 
     const uname = normalizeUsername(username);
-    const loginEmail = usernameToEmail(username);  // ex: "robert" → "robert@fortis.crm"
+    const loginEmail = usernameToEmail(username);
     const full_name = [first_name, last_name].filter(Boolean).join(' ') || uname;
 
-    const { data: newUser, error: createError } = await admin.auth.admin.createUser({
+    const { data: newUser, error: createError } = await serviceAdmin.auth.admin.createUser({
       email: loginEmail,
       password,
       email_confirm: true,
@@ -150,7 +135,6 @@ export async function POST(request: Request) {
         department: department || '',
         status: 'activ',
         hired_at: hired_at || null,
-        permissions: permissions || DEFAULT_PERMISSIONS[role] || DEFAULT_PERMISSIONS.agent,
       },
     });
 
@@ -161,15 +145,17 @@ export async function POST(request: Request) {
       return Response.json({ error: msg }, { status: 400 });
     }
 
-    const { data: profile, error: profileError } = await admin.from('profiles').insert([{
+    const { data: profile, error: profileError } = await serviceAdmin.from('profiles').insert([{
       user_id: newUser.user.id,
-      agency_id: myProfile.agency_id,
-      role: role || 'agent',
+      agency_id: agencyId,
+      role: finalRole,
       full_name,
+      status: 'active',
+      permissions: effectivePermissions(finalRole, permissions),
     }]).select().single();
 
     if (profileError) {
-      await admin.auth.admin.deleteUser(newUser.user.id);
+      await serviceAdmin.auth.admin.deleteUser(newUser.user.id);
       return Response.json({ error: profileError.message }, { status: 500 });
     }
 

@@ -1,31 +1,18 @@
 export const dynamic = 'force-dynamic';
 export const maxDuration = 90; // scraping mai multor surse (OLX + Publi24) poate dura
 
-import { createClient } from '@supabase/supabase-js';
 import { getSources } from '@/lib/prospects';
 import { normalizePhone, type RawProspect } from '@/lib/prospects/types';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-async function auth(request: Request) {
-  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-  if (!token) throw new Error('Neautentificat');
-  const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) throw new Error('Sesiune invalidă');
-  const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-  if (!profile?.agency_id) throw new Error('Agenție negăsită');
-  return { user, agency_id: profile.agency_id as string };
-}
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 // POST — rulează sursele (on-demand), salvează/actualizează anunțurile de particulari.
 // Body opțional: { sources: ['olx', ...] }. Fiecare sursă e izolată (o eroare pe una
 // nu blochează restul). Dedup: upsert pe (agency_id, source, external_id).
 export async function POST(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'prospects', action: 'create' });
+  if (!auth.ok) return auth.response;
   try {
-    const { agency_id } = await auth(request);
+    const { serviceAdmin, agencyId: agency_id } = auth.context;
     const body = await request.json().catch(() => ({}));
     const keys = Array.isArray(body?.sources) ? (body.sources as string[]) : undefined;
     const sources = getSources(keys);
@@ -57,7 +44,7 @@ export async function POST(request: Request) {
         }));
 
         if (rows.length) {
-          const { error } = await admin
+          const { error } = await serviceAdmin
             .from('prospects')
             .upsert(rows, { onConflict: 'agency_id,source,external_id' });
           if (error) throw new Error(error.message);
@@ -71,6 +58,6 @@ export async function POST(request: Request) {
 
     return Response.json({ ok: true, total, results });
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 401 });
+    return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 500 });
   }
 }

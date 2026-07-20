@@ -1,11 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 function errMsg(e: unknown): string {
   if (!e) return 'Eroare';
@@ -19,19 +14,15 @@ function errMsg(e: unknown): string {
 
 export async function GET(request: Request) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user }, error: userError } = await admin.auth.getUser(token);
-    if (userError || !user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    const auth = await requireApiAuth(request, { module: 'properties', action: 'view' });
+    if (!auth.ok) return auth.response;
+    const { admin, agencyId } = auth.context;
 
     const { data, error } = await admin
       .from('properties')
       .select('id, internal_code, title, city, county, zone, street, street_number, price, currency, category, created_at, updated_at, attributes, status, transaction, agent_id, owner_contact_id, latitude, longitude')
-      .eq('agency_id', profile.agency_id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(500);
 
@@ -42,7 +33,7 @@ export async function GET(request: Request) {
     const { data: listings } = await admin
       .from('portal_listings')
       .select('property_id, portal, status')
-      .eq('agency_id', profile.agency_id)
+      .eq('agency_id', agencyId)
       .in('status', ['active', 'pending', 'to_put']);
     const listingsByProp = new Map<string, { portal: string; status: string }[]>();
     for (const l of listings || []) {

@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { STORIA_AUTH_URL, OTODOM_AUTH_URL, isTestMode } from '@/lib/storia-api';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 // GET /api/portals/storia/connect
 // Initiates OAuth2 Authorization Code flow — redirects user to Storia login.
 export async function GET(request: Request) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-  const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await requireApiAuth(request, { module: 'portals', action: 'edit' });
+  if (!auth.ok) return auth.response;
+  const { user } = auth.context;
 
   const clientId = process.env.STORIA_CLIENT_ID;
   if (!clientId) {

@@ -1,11 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 function monthKey(d: string) {
   const dt = new Date(d);
@@ -19,15 +14,17 @@ function countByMonth(items: { created_at: string }[], months: string[]) {
 }
 
 export async function GET(request: Request) {
+  const auth = await requireApiAuth(request, { module: 'dashboard', action: 'view' });
+  if (!auth.ok) return auth.response;
+
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-
-    const { data: { user } } = await admin.auth.getUser(token);
-    if (!user) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: profile } = await admin.from('profiles').select('agency_id, role, full_name').eq('user_id', user.id).single();
-    if (!profile?.agency_id) return Response.json({ error: 'Agentie negasita' }, { status: 400 });
+    const { admin, agencyId, role, user } = auth.context;
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('full_name')
+      .eq('user_id', user.id)
+      .eq('agency_id', agencyId)
+      .single();
 
     const now = new Date();
     const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -40,8 +37,6 @@ export async function GET(request: Request) {
       months12.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
 
-    const agencyId = profile.agency_id;
-
     // Fetch all data in parallel
     const [
       { data: allProps },
@@ -53,14 +48,14 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       admin.from('properties')
         .select('id, internal_code, title, status, category, transaction, price, currency, description, attributes, created_at, agent_id, city, county')
-        .eq('agency_id', agencyId).limit(500),
+        .eq('agency_id', agencyId).is('deleted_at', null).limit(500),
       admin.from('contacts')
         .select('id, type, source, created_at, agent_id')
-        .eq('agency_id', agencyId).limit(500),
+        .eq('agency_id', agencyId).is('deleted_at', null).limit(500),
       // `leads` = modulul unificat Clienți (fost Lead-uri + Cereri & Potriviri)
       admin.from('leads')
         .select('id, contact_name, status, received_at, agent_id, city, category, source')
-        .eq('agency_id', agencyId).limit(1000),
+        .eq('agency_id', agencyId).is('deleted_at', null).limit(1000),
       admin.from('profiles')
         .select('user_id, full_name, role')
         .eq('agency_id', agencyId).limit(100),
@@ -212,14 +207,14 @@ export async function GET(request: Request) {
     })).sort((a, b) => b.score - a.score);
 
     // ── Notifications ──
-    const notifications: unknown[] = [];
+    const notifications: { type: string; message: string; created_at: string; severity: string }[] = [];
     clientsThisWeek.slice(0, 3).forEach(l =>
       notifications.push({ type: 'client', message: `Client nou: ${l.contact_name || 'fără nume'}`, created_at: l.received_at, severity: 'success' })
     );
     noPhotos.slice(0, 2).forEach(p =>
       notifications.push({ type: 'alert', message: `${p.internal_code}: Proprietate fără fotografii`, created_at: p.created_at, severity: 'warning' })
     );
-    notifications.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    notifications.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     // ── Recent activity ──
     const recentActivity = [
@@ -244,7 +239,7 @@ export async function GET(request: Request) {
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 12);
 
     return Response.json({
-      user: { name: profile.full_name, role: profile.role },
+      user: { name: profile?.full_name, role },
       properties: {
         total: props.length,
         active: activeProps.length,

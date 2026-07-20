@@ -8,7 +8,7 @@ type WhatsAppAction = typeof ACTIONS[number];
 export async function POST(request: Request) {
   const auth = await requireApiAuth(request, { module: 'leads', action: 'edit' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId, user } = auth.context;
+  const { admin, serviceAdmin, agencyId, user } = auth.context;
   const body = await request.json().catch(() => ({}));
   const leadId = typeof body.lead_id === 'string' ? body.lead_id : '';
   const action = body.action as WhatsAppAction;
@@ -16,6 +16,14 @@ export async function POST(request: Request) {
   if (!leadId || !ACTIONS.includes(action)) {
     return Response.json({ error: 'Acțiune WhatsApp invalidă' }, { status: 400 });
   }
+
+  const { data: accessibleLead } = await admin
+    .from('leads')
+    .select('id')
+    .eq('id', leadId)
+    .eq('agency_id', agencyId)
+    .maybeSingle();
+  if (!accessibleLead) return Response.json({ error: 'Client negăsit' }, { status: 404 });
 
   let nextActionAt: string | null = null;
   if (['confirmed_sent', 'unreachable'].includes(action)) {
@@ -26,7 +34,7 @@ export async function POST(request: Request) {
     nextActionAt = requested.toISOString();
   }
 
-  const { data, error } = await admin.rpc('record_whatsapp_outcome', {
+  const { data, error } = await serviceAdmin.rpc('record_whatsapp_outcome', {
     p_lead_id: leadId,
     p_agency_id: agencyId,
     p_user_id: user.id,

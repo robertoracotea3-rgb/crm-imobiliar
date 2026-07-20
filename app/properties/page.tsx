@@ -347,7 +347,7 @@ export default function PropertiesPage() {
   const retraseCount = properties.filter((p) => ['retrasa', 'expirata', 'arhivata'].includes(p.status)).length;
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="properties">
     <div className="p-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>

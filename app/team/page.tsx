@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
 import { useEffect, useState, useRef } from 'react';
@@ -460,13 +459,13 @@ function DeleteDialog({ member, members, token, onClose, onSuccess }: {
             <AlertTriangle size={20} className="text-red-600" />
           </div>
           <div>
-            <h3 className="font-bold text-gray-900">Șterge agent</h3>
-            <p className="text-sm text-gray-500">Această acțiune este ireversibilă.</p>
+            <h3 className="font-bold text-gray-900">Dezactivează agent</h3>
+            <p className="text-sm text-gray-500">Contul este blocat, iar istoricul este păstrat.</p>
           </div>
         </div>
 
         <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-800">
-          Vei șterge <strong>{member.full_name || member.email}</strong> cu <strong>{member.stats.properties_active} proprietăți active</strong> și <strong>{member.stats.clients} clienți</strong>.
+          Vei dezactiva <strong>{member.full_name || member.email}</strong>, cu <strong>{member.stats.properties_active} proprietăți active</strong> și <strong>{member.stats.clients} clienți</strong>.
         </div>
 
         {others.length > 0 && (
@@ -492,7 +491,7 @@ function DeleteDialog({ member, members, token, onClose, onSuccess }: {
           <button onClick={onClose} className="px-4 py-2 text-gray-600 border rounded-lg hover:bg-gray-50 text-sm">Anulează</button>
           <button onClick={handleDelete} disabled={loading || confirm !== member.email}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 text-sm font-medium">
-            {loading ? 'Se șterge...' : 'Șterge definitiv'}
+            {loading ? 'Se dezactivează...' : 'Dezactivează contul'}
           </button>
         </div>
       </div>
@@ -597,8 +596,7 @@ function ActivityTab({ token }: { token: string }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function TeamPage() {
-  const router = useRouter();
-  const { role, loading: authLoading } = useAuth();
+  const { can } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [stats, setStats] = useState<TeamStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -612,13 +610,6 @@ export default function TeamPage() {
   const [dialogMember, setDialogMember] = useState<Member | null | undefined>(undefined);
   const [profileMember, setProfileMember] = useState<Member | null>(null);
   const [deleteMember, setDeleteMember] = useState<Member | null>(null);
-
-  // Owner-only page
-  useEffect(() => {
-    if (!authLoading && role !== 'owner') {
-      router.push('/dashboard');
-    }
-  }, [role, authLoading, router]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -662,13 +653,8 @@ export default function TeamPage() {
     { id: 'permissions', label: 'Permisiuni', icon: <Shield size={16} /> },
   ] as const;
 
-  // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
-  if (role !== 'owner') {
-    return null;
-  }
-
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="team">
       <div className="p-6 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
@@ -676,12 +662,14 @@ export default function TeamPage() {
             <h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Echipă</h1>
             <p className="text-sm text-gray-500 mt-1">{members.length} membri în agenție</p>
           </div>
-          <button
-            onClick={() => setDialogMember(null)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90 transition-colors"
-            style={{ backgroundColor: '#0E6B54' }}>
-            <UserPlus size={18} />Adaugă Agent
-          </button>
+          {can('team', 'create') && (
+            <button
+              onClick={() => setDialogMember(null)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90 transition-colors"
+              style={{ backgroundColor: '#0E6B54' }}>
+              <UserPlus size={18} />Adaugă Agent
+            </button>
+          )}
         </div>
 
         {/* Stats */}
@@ -705,7 +693,7 @@ export default function TeamPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
-          {TABS.map(t => (
+          {TABS.filter(t => t.id !== 'permissions' || can('team', 'manage_permissions')).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               {t.icon}{t.label}
@@ -762,16 +750,20 @@ export default function TeamPage() {
                           </div>
                         </div>
                         <div onClick={e => e.stopPropagation()} className="flex gap-1 flex-shrink-0">
-                          <button onClick={() => setDialogMember(m)}
-                            className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                            title="Editează">
-                            <Edit2 size={15} />
-                          </button>
-                          <button onClick={() => setDeleteMember(m)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Șterge">
-                            <Trash2 size={15} />
-                          </button>
+                          {can('team', 'edit') && (
+                            <button onClick={() => setDialogMember(m)}
+                              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                              title="Editează">
+                              <Edit2 size={15} />
+                            </button>
+                          )}
+                          {can('team', 'delete') && (
+                            <button onClick={() => setDeleteMember(m)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Dezactivează">
+                              <Trash2 size={15} />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -820,7 +812,7 @@ export default function TeamPage() {
         )}
 
         {/* Permissions Tab */}
-        {tab === 'permissions' && (
+        {tab === 'permissions' && can('team', 'manage_permissions') && (
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h2 className="font-bold text-gray-900 mb-1 flex items-center gap-2"><Shield size={18} className="text-emerald-600" />Matrice permisiuni</h2>
             <p className="text-sm text-gray-500 mb-4">Permisiunile implicite per rol. Pot fi personalizate individual.</p>

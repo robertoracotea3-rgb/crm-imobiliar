@@ -574,7 +574,7 @@ export default function ClientsPage() {
   }, [propertyOptions, propertySearch]);
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="leads">
       <div className="p-6 max-w-7xl mx-auto" onClick={() => menuOpen && setMenuOpen(null)}>
         {/* Header */}
         <div className="flex justify-between items-center gap-4 mb-5">

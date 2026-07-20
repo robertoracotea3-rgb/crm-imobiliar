@@ -1,11 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+import { requireApiAuth } from '@/lib/server/api-auth';
 
 function errMsg(err: unknown): string {
   if (!err) return 'Eroare';
@@ -47,23 +42,16 @@ function toUi(c: DbContact) {
   };
 }
 
-async function getAgencyId(token: string) {
-  const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) throw new Error('Sesiune invalida');
-  const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
-  if (!profile?.agency_id) throw new Error('Agentie negasita');
-  return { user, agency_id: profile.agency_id, role: profile.role as string | null };
-}
-
 export async function GET(request: Request) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-    const { agency_id } = await getAgencyId(token);
+    const auth = await requireApiAuth(request, { module: 'contacts', action: 'view' });
+    if (!auth.ok) return auth.response;
+    const { admin, agencyId } = auth.context;
     const { data, error } = await admin
       .from('contacts')
       .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, created_at')
-      .eq('agency_id', agency_id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
       .order('full_name')
       .limit(500);
     if (error) return Response.json({ error: errMsg(error), contacts: [] });
@@ -75,15 +63,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-    const { user, agency_id } = await getAgencyId(token);
+    const auth = await requireApiAuth(request, { module: 'contacts', action: 'create' });
+    if (!auth.ok) return auth.response;
+    const { admin, user, agencyId } = auth.context;
     const body = await request.json();
     const { name, phone, phone2, email, cnp, address, type, notes } = body;
     if (!name?.trim()) return Response.json({ error: 'Numele este obligatoriu' }, { status: 400 });
 
     const { data: contact, error } = await admin.from('contacts').insert([{
-      agency_id,
+      agency_id: agencyId,
       agent_id: user.id,
       created_by: user.id,
       full_name: name.trim(),
@@ -105,10 +93,9 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-    const { user, agency_id } = await getAgencyId(token);
-    void user;
+    const auth = await requireApiAuth(request, { module: 'contacts', action: 'edit' });
+    if (!auth.ok) return auth.response;
+    const { admin, agencyId } = auth.context;
     const body = await request.json();
     const { id, name, phone, phone2, email, cnp, address, type, notes } = body;
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
@@ -125,7 +112,8 @@ export async function PATCH(request: Request) {
       notes: notes?.trim() || null,
     })
       .eq('id', id)
-      .eq('agency_id', agency_id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
       .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, created_at')
       .single();
 
@@ -138,25 +126,21 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
-    const { user, agency_id, role } = await getAgencyId(token);
-    void user;
-    // Doar owner/admin pot șterge contacte (vezi DEFAULT_PERMISSIONS din lib/team-roles.ts).
-    if (!['owner', 'admin'].includes(role || '')) {
-      return Response.json({ error: 'Doar proprietarul sau administratorul poate șterge contacte' }, { status: 403 });
-    }
+    const auth = await requireApiAuth(request, { module: 'contacts', action: 'delete' });
+    if (!auth.ok) return auth.response;
+    const { admin, user, agencyId } = auth.context;
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
 
     const { error } = await admin.from('contacts')
-      .delete()
+      .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
       .eq('id', id)
-      .eq('agency_id', agency_id);
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null);
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
-    return Response.json({ success: true });
+    return Response.json({ success: true, archived: true });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }

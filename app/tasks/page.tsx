@@ -168,7 +168,7 @@ export default function TasksPage() {
   const overdueCount = tasks.filter(isOverdue).length;
 
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="tasks">
       <div className="p-6 max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>

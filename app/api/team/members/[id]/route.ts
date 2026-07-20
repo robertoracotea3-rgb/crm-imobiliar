@@ -1,45 +1,43 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
-import { DEFAULT_PERMISSIONS } from '@/lib/team-roles';
+import { CRM_ROLES, effectivePermissions } from '@/lib/team-roles';
 import { usernameToEmail, normalizeUsername } from '@/lib/username';
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-async function getCallerProfile(token: string) {
-  const { data: { user } } = await admin.auth.getUser(token);
-  if (!user) return null;
-  const { data: profile } = await admin.from('profiles').select('*').eq('user_id', user.id).single();
-  return profile;
-}
+import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiAuth(request, { module: 'team', action: 'edit' });
+  if (!auth.ok) return auth.response;
+
   try {
     const { id } = await params;
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+    const { admin, serviceAdmin, agencyId, role: callerRole } = auth.context;
 
-    const caller = await getCallerProfile(token);
-    if (!caller) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    const { data: target } = await admin.from('profiles').select('*').eq('id', id).eq('agency_id', caller.agency_id).single();
+    const { data: target } = await admin.from('profiles').select('*').eq('id', id).eq('agency_id', agencyId).single();
     if (!target) return Response.json({ error: 'Agent negasit' }, { status: 404 });
-
-    const canEdit = ['owner', 'admin', 'manager'].includes(caller.role) || caller.id === id;
-    if (!canEdit) return Response.json({ error: 'Acces interzis' }, { status: 403 });
 
     const body = await request.json();
     const { first_name, last_name, phone, job_title, department, role, status, hired_at, avatar_url, notes, permissions, password, username, email } = body;
 
-    const { data: authUser } = await admin.auth.admin.getUserById(target.user_id);
+    if (password !== undefined && (typeof password !== 'string' || password.length < 12)) {
+      return Response.json({ error: 'Parola trebuie sa aiba cel putin 12 caractere' }, { status: 400 });
+    }
+
+    const { data: authUser } = await serviceAdmin.auth.admin.getUserById(target.user_id);
     const existingMeta = authUser?.user?.user_metadata || {};
     const full_name = [first_name ?? existingMeta.first_name, last_name ?? existingMeta.last_name].filter(Boolean).join(' ') || target.full_name;
-
-    // Changing the username changes the login email (username@fortis.crm).
     const uname = username?.trim() ? normalizeUsername(username) : (existingMeta.username as string) || '';
+
+    const canChangeRole = contextHasPermission(auth.context, 'team', 'manage_permissions');
+    if ((role !== undefined || permissions !== undefined) && !canChangeRole) {
+      return Response.json({ error: 'Nu poți modifica roluri sau permisiuni' }, { status: 403 });
+    }
+    if (role && !(CRM_ROLES as readonly string[]).includes(role)) {
+      return Response.json({ error: 'Rol invalid' }, { status: 400 });
+    }
+    if (role === 'owner' && callerRole !== 'owner') {
+      return Response.json({ error: 'Numai proprietarul poate acorda rolul de proprietar' }, { status: 403 });
+    }
+    const finalRole = canChangeRole && role ? role : target.role;
 
     const updatePayload: Record<string, unknown> = {
       user_metadata: {
@@ -52,21 +50,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         phone: phone ?? existingMeta.phone ?? '',
         job_title: job_title ?? existingMeta.job_title ?? '',
         department: department ?? existingMeta.department ?? '',
-        status: status ?? existingMeta.status ?? 'activ',
+        status: status ?? (target.status === 'active' ? 'activ' : 'inactiv'),
         hired_at: hired_at ?? existingMeta.hired_at ?? null,
         avatar_url: avatar_url ?? existingMeta.avatar_url ?? null,
         notes: notes ?? existingMeta.notes ?? '',
-        permissions: permissions ?? existingMeta.permissions ?? DEFAULT_PERMISSIONS[role ?? target.role] ?? DEFAULT_PERMISSIONS.agent,
       },
     };
     if (password) updatePayload.password = password;
-    // Update the login email only when the username actually changed.
     if (username?.trim() && usernameToEmail(username) !== (authUser?.user?.email || '')) {
       updatePayload.email = usernameToEmail(username);
       updatePayload.email_confirm = true;
     }
 
-    const { error: authUpdateErr } = await admin.auth.admin.updateUserById(target.user_id, updatePayload);
+    const { error: authUpdateErr } = await serviceAdmin.auth.admin.updateUserById(target.user_id, updatePayload);
     if (authUpdateErr) {
       const msg = /already (been )?registered|exists|duplicate/i.test(authUpdateErr.message)
         ? `Numele de utilizator "${uname}" este deja folosit.`
@@ -75,9 +71,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
 
     const profileUpdate: Record<string, unknown> = { full_name };
-    if (role && ['owner', 'admin'].includes(caller.role)) profileUpdate.role = role;
+    if (canChangeRole && role) profileUpdate.role = role;
+    if (canChangeRole && (role !== undefined || permissions !== undefined)) {
+      profileUpdate.permissions = effectivePermissions(
+        finalRole,
+        permissions !== undefined ? permissions : (role !== undefined ? undefined : target.permissions),
+      );
+    }
 
-    await admin.from('profiles').update(profileUpdate).eq('id', id);
+    await serviceAdmin.from('profiles').update(profileUpdate).eq('id', id).eq('agency_id', agencyId);
 
     return Response.json({ ok: true });
   } catch (err) {
@@ -86,32 +88,56 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiAuth(request, { module: 'team', action: 'delete' });
+  if (!auth.ok) return auth.response;
+
   try {
     const { id } = await params;
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return Response.json({ error: 'Neautentificat' }, { status: 401 });
+    const { admin, serviceAdmin, agencyId, user } = auth.context;
 
-    const caller = await getCallerProfile(token);
-    if (!caller) return Response.json({ error: 'Sesiune invalida' }, { status: 401 });
-
-    if (!['owner', 'admin'].includes(caller.role)) {
-      return Response.json({ error: 'Acces interzis' }, { status: 403 });
-    }
-
-    const { data: target } = await admin.from('profiles').select('*').eq('id', id).eq('agency_id', caller.agency_id).single();
+    const { data: target } = await admin.from('profiles').select('*').eq('id', id).eq('agency_id', agencyId).single();
     if (!target) return Response.json({ error: 'Agent negasit' }, { status: 404 });
-    if (target.user_id === caller.user_id) return Response.json({ error: 'Nu te poti sterge pe tine' }, { status: 400 });
+    if (target.user_id === user.id) return Response.json({ error: 'Nu te poti sterge pe tine' }, { status: 400 });
 
     const body = await request.json().catch(() => ({}));
     const reassignToUserId = body.reassign_to_user_id || null;
 
     if (reassignToUserId) {
-      await admin.from('properties').update({ agent_id: reassignToUserId }).eq('agency_id', caller.agency_id).eq('agent_id', target.user_id);
-      await admin.from('leads').update({ agent_id: reassignToUserId }).eq('agency_id', caller.agency_id).eq('agent_id', target.user_id);
+      const { data: reassignTarget } = await admin
+        .from('profiles')
+        .select('user_id')
+        .eq('user_id', reassignToUserId)
+        .eq('agency_id', agencyId)
+        .single();
+      if (!reassignTarget) return Response.json({ error: 'Agentul de reatribuire nu exista in aceasta agentie' }, { status: 400 });
+
+      await serviceAdmin.from('properties').update({ agent_id: reassignToUserId }).eq('agency_id', agencyId).eq('agent_id', target.user_id);
+      await serviceAdmin.from('leads').update({ agent_id: reassignToUserId, assigned_to: reassignToUserId }).eq('agency_id', agencyId).or(`agent_id.eq.${target.user_id},assigned_to.eq.${target.user_id}`);
+      await serviceAdmin.from('demands').update({ agent_id: reassignToUserId }).eq('agency_id', agencyId).eq('agent_id', target.user_id);
+      await serviceAdmin.from('tasks').update({ assigned_to: reassignToUserId }).eq('agency_id', agencyId).eq('assigned_to', target.user_id);
+      await serviceAdmin.from('calendar_events').update({ agent_id: reassignToUserId }).eq('agency_id', agencyId).eq('agent_id', target.user_id);
     }
 
-    await admin.from('profiles').delete().eq('id', id);
-    await admin.auth.admin.deleteUser(target.user_id);
+    await serviceAdmin.from('profiles').update({
+      status: 'inactive',
+      disabled_at: new Date().toISOString(),
+      disabled_by: user.id,
+    }).eq('id', id).eq('agency_id', agencyId);
+    const { data: targetAuth } = await serviceAdmin.auth.admin.getUserById(target.user_id);
+    await serviceAdmin.auth.admin.updateUserById(target.user_id, {
+      user_metadata: { ...(targetAuth.user?.user_metadata || {}), status: 'inactiv' },
+    });
+    await serviceAdmin.from('security_events').insert({
+      agency_id: agencyId,
+      user_id: user.id,
+      event_type: 'account_disabled',
+      module: 'team',
+      action: 'delete',
+      entity_type: 'profile',
+      entity_id: target.id,
+      role: auth.context.role,
+      result: 'success',
+    });
 
     return Response.json({ ok: true });
   } catch (err) {

@@ -1,6 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -20,8 +19,8 @@ interface SettingsData {
 }
 
 export default function SettingsPage() {
-  const router = useRouter();
-  const { role, loading: authLoading } = useAuth();
+  const { can } = useAuth();
+  const canEditSettings = can('settings', 'edit');
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -33,13 +32,6 @@ export default function SettingsPage() {
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', job_title: '' });
   const [agencyForm, setAgencyForm] = useState({ agency_name: '' });
   const [activeTab, setActiveTab] = useState<'profile' | 'agency' | 'security'>('profile');
-
-  // Owner-only page
-  useEffect(() => {
-    if (!authLoading && role !== 'owner') {
-      router.push('/dashboard');
-    }
-  }, [role, authLoading, router]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setLoadError('');
@@ -176,12 +168,8 @@ export default function SettingsPage() {
   ] as const;
 
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
-  if (role !== 'owner') {
-    return null;
-  }
-
   return (
-    <ProtectedLayout>
+    <ProtectedLayout module="settings">
       <div className="p-6 max-w-3xl mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <Settings size={26} style={{ color: '#0E6B54' }} />
@@ -269,7 +257,7 @@ export default function SettingsPage() {
                       <p className="text-gray-500 mt-1">Creat la: <span className="text-gray-900">{new Date(data.agency.created_at).toLocaleDateString('ro-RO')}</span></p>
                     </div>
                   )}
-                  {['owner', 'admin'].includes(data?.profile.role || '') && (
+                  {canEditSettings && (
                     <div className="space-y-4">
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Nume agenție</label>
@@ -285,7 +273,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Watermark on photos */}
-                {['owner', 'admin'].includes(data?.profile.role || '') && (
+                {canEditSettings && (
                   <div className="bg-white rounded-xl border border-gray-200 p-6">
                     <div className="flex items-center gap-2 mb-1">
                       <Stamp size={18} style={{ color: '#0E6B54' }} />
