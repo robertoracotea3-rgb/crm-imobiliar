@@ -1,8 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, Send } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, ExternalLink, MessageCircle, PhoneOff, X } from 'lucide-react';
+
 import { supabase } from '@/lib/supabase';
+import {
+  buildDefaultWhatsAppMessage,
+  createWhatsAppLink,
+} from '@/lib/whatsapp.mjs';
 
 interface Lead {
   id: string;
@@ -10,6 +15,7 @@ interface Lead {
   contact_phone: string;
   message: string;
   property_title?: string;
+  property_public_url?: string;
 }
 
 interface MessageTemplate {
@@ -25,99 +31,114 @@ interface ReplyLeadDialogProps {
   onSuccess?: () => void;
 }
 
-export function ReplyLeadDialog({
-  lead,
-  isOpen,
-  onClose,
-  onSuccess,
-}: ReplyLeadDialogProps) {
+function defaultNextAction() {
+  const date = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
+export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadDialogProps) {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
   const [message, setMessage] = useState('');
+  const [step, setStep] = useState<'compose' | 'confirm'>('compose');
+  const [nextActionAt, setNextActionAt] = useState(defaultNextAction);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
 
   useEffect(() => {
-    if (isOpen) {
-      fetchTemplates();
-      setMessage('');
+    if (!isOpen || !lead) return;
+    const timer = window.setTimeout(() => {
+      setStep('compose');
       setSelectedTemplate('');
-    }
-  }, [isOpen]);
+      setError('');
+      setWarning('');
+      setNextActionAt(defaultNextAction());
+      setMessage(buildDefaultWhatsAppMessage({
+        clientName: lead.contact_name,
+        propertyTitle: lead.property_title,
+        propertyUrl: lead.property_public_url,
+      }));
+    }, 0);
 
-  const fetchTemplates = async () => {
-    try {
-      const { data } = await supabase
-        .from('message_templates')
-        .select('*')
-        .limit(5);
+    let cancelled = false;
+    void supabase
+      .from('message_templates')
+      .select('id, name, body')
+      .limit(20)
+      .then(({ data }) => { if (!cancelled) setTemplates(data || []); });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, lead]);
 
-      setTemplates(data || []);
-    } catch (err) {
-      console.error('Error fetching templates:', err);
-    }
-  };
-
-  const handleTemplateSelect = (template: MessageTemplate) => {
-    let msg = template.body;
-
-    // Replace variables cu date reale
-    if (lead) {
-      msg = msg
-        .replace('{nume_client}', lead.contact_name)
-        .replace('{titlu_proprietate}', lead.property_title || 'proprietate');
-    }
-
-    setMessage(msg);
+  const selectTemplate = (template: MessageTemplate) => {
+    if (!lead) return;
+    setMessage(template.body
+      .replaceAll('{nume_client}', lead.contact_name || '')
+      .replaceAll('{titlu_proprietate}', lead.property_title || 'proprietate')
+      .replaceAll('{link_proprietate}', lead.property_public_url || ''));
     setSelectedTemplate(template.id);
   };
 
-  const handleSendReply = async () => {
-    if (!lead || !message.trim()) {
-      setError('Mesajul este gol');
+  const recordOutcome = async (
+    action: 'opened' | 'confirmed_sent' | 'not_sent' | 'unreachable',
+  ) => {
+    if (!lead) throw new Error('Clientul lipsește');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Sesiunea a expirat');
+    const response = await fetch('/api/leads/whatsapp', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        lead_id: lead.id,
+        action,
+        next_action_at: ['confirmed_sent', 'unreachable'].includes(action)
+          ? new Date(nextActionAt).toISOString()
+          : null,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Rezultatul nu a putut fi salvat');
+  };
+
+  const openWhatsApp = () => {
+    if (!lead) return;
+    setError('');
+    const result = createWhatsAppLink({ phone: lead.contact_phone, message });
+    if (!result.ok || !result.url) {
+      setError(result.reason === 'invalid_ro_mobile' || result.reason === 'invalid_e164'
+        ? 'Numărul de telefon nu este valid pentru WhatsApp.'
+        : 'Completează mesajul și un număr de telefon valid.');
       return;
     }
 
+    const popup = window.open(result.url, '_blank');
+    if (!popup) {
+      setError('Browserul a blocat deschiderea WhatsApp. Permite ferestrele pop-up și încearcă din nou.');
+      return;
+    }
+    popup.opener = null;
+    setStep('confirm');
+    void recordOutcome('opened').catch(() => {
+      setWarning('WhatsApp s-a deschis, dar evenimentul „deschis” nu a putut fi salvat.');
+    });
+  };
+
+  const confirm = async (action: 'confirmed_sent' | 'not_sent' | 'unreachable') => {
+    setLoading(true);
+    setError('');
     try {
-      setLoading(true);
-      setError('');
-
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Nu esti autentificat');
-
-      // Mark lead as replied
-      const { error: updateError } = await supabase
-        .from('leads')
-        .update({
-          first_response_at: new Date().toISOString(),
-          status: 'replied',
-        })
-        .eq('id', lead.id);
-
-      if (updateError) throw updateError;
-
-      // Log activity
-      await supabase.from('activities').insert([
-        {
-          type: 'message_sent',
-          description: `Mesaj trimis lui ${lead.contact_name} pe WhatsApp`,
-          lead_id: lead.id,
-          user_id: user.id,
-        },
-      ]);
-
-      // TODO: Integreaza cu WhatsApp API real
-      // Pentru acum, mock success
-      console.log('📱 Mesaj trimis:', {
-        to: lead.contact_phone,
-        message: message,
-      });
-
-      onClose();
+      await recordOutcome(action);
       onSuccess?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Eroare la trimitere');
+      onClose();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Rezultatul nu a putut fi salvat');
     } finally {
       setLoading(false);
     }
@@ -126,115 +147,133 @@ export function ReplyLeadDialog({
   if (!isOpen || !lead) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="border-b border-gray-200 p-6 flex justify-between items-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+        <header className="flex items-center justify-between border-b border-gray-200 p-5">
           <div>
-            <h2 className="text-2xl font-bold" style={{ color: '#0E6B54' }}>
-              Raspunde Lead-ului
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              {lead.contact_name} • {lead.contact_phone}
-            </p>
+            <h2 className="text-xl font-bold text-emerald-800">Contactează pe WhatsApp</h2>
+            <p className="mt-1 text-sm text-gray-600">{lead.contact_name} · {lead.contact_phone}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded transition-colors"
-          >
-            <X size={24} />
-          </button>
-        </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-gray-100"><X size={22} /></button>
+        </header>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* Original Message */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs font-medium text-gray-600 mb-2">
-              MESAJ INITIAL
-            </p>
-            <p className="text-gray-700">{lead.message}</p>
-          </div>
+        {step === 'compose' ? (
+          <div className="space-y-5 p-5">
+            <div className="rounded-lg bg-gray-50 p-4">
+              <p className="mb-1 text-xs font-semibold text-gray-500">MESAJUL CLIENTULUI</p>
+              <p className="text-sm text-gray-700">{lead.message || 'Fără mesaj inițial'}</p>
+            </div>
 
-          {/* Templates */}
-          {templates.length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">
-                Alege sablon rapid
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {templates.map((template) => (
-                  <button
-                    key={template.id}
-                    onClick={() => handleTemplateSelect(template)}
-                    className={`text-left p-3 rounded-lg border transition-colors text-sm ${
-                      selectedTemplate === template.id
-                        ? 'border-emerald-500 bg-emerald-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <p className="font-medium text-gray-900">{template.name}</p>
-                    <p className="text-gray-600 text-xs line-clamp-1 mt-1">
-                      {template.body}
-                    </p>
-                  </button>
-                ))}
+            {templates.length > 0 && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Șablon rapid</label>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {templates.map((template) => (
+                    <button
+                      type="button"
+                      key={template.id}
+                      onClick={() => selectTemplate(template)}
+                      className={`rounded-lg border p-3 text-left text-sm ${
+                        selectedTemplate === template.id
+                          ? 'border-emerald-500 bg-emerald-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-medium text-gray-900">{template.name}</p>
+                      <p className="mt-1 line-clamp-1 text-xs text-gray-600">{template.body}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Message Editor */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Mesajul tau
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Scrie mesajul pentru WhatsApp..."
-              rows={5}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              Lungime: {message.length} caractere
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">Mesaj precompletat</label>
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                rows={6}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              {lead.property_public_url && (
+                <a
+                  href={lead.property_public_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
+                >
+                  <ExternalLink size={12} /> Verifică linkul public al proprietății
+                </a>
+              )}
+            </div>
+            <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">
+              CRM-ul va înregistra doar că WhatsApp a fost deschis. Mesajul devine „confirmat trimis” numai după confirmarea ta.
             </p>
           </div>
-
-          {/* Variables Helper */}
-          <div className="bg-blue-50 rounded-lg p-3 text-sm">
-            <p className="font-medium text-blue-900 mb-2">
-              Variabile disponibile:
-            </p>
-            <code className="text-blue-800 text-xs">
-              {'{{'}nume_client{'}}'}• {'{{'}titlu_proprietate{'}}'}
-            </code>
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-sm">
-              {error}
+        ) : (
+          <div className="space-y-5 p-6">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
+              <MessageCircle size={34} className="mx-auto mb-2 text-emerald-700" />
+              <h3 className="font-bold text-emerald-950">Ai trimis mesajul?</h3>
+              <p className="mt-1 text-sm text-emerald-800">Nu putem confirma automat livrarea sau citirea.</p>
             </div>
-          )}
-        </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Următoarea acțiune</label>
+              <input
+                type="datetime-local"
+                value={nextActionAt}
+                onChange={(event) => setNextActionAt(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void confirm('confirmed_sent')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              >
+                <Check size={16} /> Da, mesaj trimis
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void confirm('not_sent')}
+                className="rounded-lg border border-gray-300 px-3 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Nu
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void confirm('unreachable')}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+              >
+                <PhoneOff size={16} /> Nu am putut contacta
+              </button>
+            </div>
+          </div>
+        )}
 
-        {/* Footer */}
-        <div className="border-t border-gray-200 p-6 flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            Anuleaza
-          </button>
-          <button
-            onClick={handleSendReply}
-            disabled={loading || !message.trim()}
-            className="flex-1 px-4 py-2 text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 font-medium"
-            style={{ backgroundColor: '#0E6B54' }}
-          >
-            <Send size={18} />
-            {loading ? 'Se trimite...' : 'Trimite pe WhatsApp'}
-          </button>
-        </div>
+        {(error || warning) && (
+          <div className={`mx-5 mb-4 rounded-lg border p-3 text-sm ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+            {error || warning}
+          </div>
+        )}
+
+        {step === 'compose' && (
+          <footer className="flex gap-3 border-t border-gray-200 p-5">
+            <button type="button" onClick={onClose} className="flex-1 rounded-lg border border-gray-300 px-4 py-2 hover:bg-gray-50">Anulează</button>
+            <button
+              type="button"
+              onClick={openWhatsApp}
+              disabled={!message.trim()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+            >
+              <MessageCircle size={18} /> Deschide WhatsApp
+            </button>
+          </footer>
+        )}
       </div>
     </div>
   );

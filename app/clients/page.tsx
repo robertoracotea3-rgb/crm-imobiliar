@@ -26,6 +26,7 @@ interface Client {
   property_id?: string;
   property_title?: string;
   property_code?: string;
+  property_public_url?: string;
   status: string;
   received_at: string;
   first_response_at?: string;
@@ -67,11 +68,6 @@ const CAT_LABEL = (c?: string) => (c ? c.replace(/_/g, ' ') : '');
 const SOURCES = ['Website', 'OLX', 'Storia', 'Imobiliare.ro', 'Facebook', 'Recomandare', 'Evaluare gratuită', 'Contact', 'Manual'];
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
 
-function waLink(phone?: string) {
-  let d = (phone || '').replace(/\D/g, '');
-  if (d.startsWith('0')) d = '4' + d;
-  return `https://wa.me/${d}`;
-}
 function relativeTime(date?: string): string {
   if (!date) return '';
   const diff = Date.now() - new Date(date).getTime();
@@ -713,7 +709,7 @@ export default function ClientsPage() {
                       {/* Actions */}
                       <div className="flex items-center gap-1.5 mt-3 pt-2 border-t border-gray-100 flex-wrap">
                         <a href={`tel:${c.contact_phone}`} title="Sună" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-emerald-700"><Phone size={16} /></a>
-                        <a href={waLink(c.contact_phone)} target="_blank" rel="noreferrer" title="WhatsApp" className="p-1.5 rounded-lg text-gray-500 hover:bg-green-50 hover:text-green-600"><MessageCircle size={16} /></a>
+                        <button onClick={() => setReplyClient(c)} title="WhatsApp" className="p-1.5 rounded-lg text-gray-500 hover:bg-green-50 hover:text-green-600"><MessageCircle size={16} /></button>
                         {c.contact_email && <a href={`mailto:${c.contact_email}`} title="Email" className="p-1.5 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600"><Mail size={16} /></a>}
                         <button onClick={() => setReplyClient(c)} title="Răspunde" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Send size={16} /></button>
                         <select value={c.status} onChange={(e) => changeStatus(c.id, e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
@@ -812,6 +808,7 @@ export default function ClientsPage() {
           contact_phone: replyClient.contact_phone,
           message: parseLeadMessage(replyClient.message, replyClient.source).text || replyClient.message || '',
           property_title: replyClient.property_title,
+          property_public_url: replyClient.property_public_url,
         } : null}
         isOpen={!!replyClient}
         onClose={() => setReplyClient(null)}

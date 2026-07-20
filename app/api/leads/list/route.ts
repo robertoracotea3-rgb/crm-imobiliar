@@ -1,13 +1,16 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { buildPublicPropertyUrl } from '@/lib/public-property-url';
 
 type PropertySummary = {
+  id?: string | null;
   internal_code?: string | null;
   title?: string | null;
   city?: string | null;
   county?: string | null;
   category?: string | null;
+  attributes?: Record<string, unknown> | null;
 };
 
 export async function GET(request: Request) {
@@ -34,7 +37,7 @@ export async function GET(request: Request) {
     if (propIds.length) {
       const { data: props } = await admin
         .from('properties')
-        .select('id, internal_code, title, city, county, category')
+        .select('id, internal_code, title, city, county, category, attributes')
         .eq('agency_id', agencyId)
         .is('deleted_at', null)
         .in('id', propIds);
@@ -48,6 +51,13 @@ export async function GET(request: Request) {
         ...l,
         property_title: l.property_title || p.title || null,
         property_code: p.internal_code || null,
+        property_public_url: p.id ? buildPublicPropertyUrl({
+          id: p.id,
+          internal_code: p.internal_code,
+          category: p.category,
+          city: p.city,
+          attributes: p.attributes,
+        }) : null,
         city: l.city || p.city || null,
         county: l.county || p.county || null,
         category: l.category || p.category || null,
