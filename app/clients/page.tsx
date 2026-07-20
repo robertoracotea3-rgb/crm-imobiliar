@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { ReplyLeadDialog } from '@/components/ReplyLeadDialog';
 import { UnmatchedStoriaMessages } from '@/components/UnmatchedStoriaMessages';
+import { ScheduleViewingDialog } from '@/components/ScheduleViewingDialog';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 import {
   STATUS_ORDER, CLIENT_TABS, statusLabel, statusColor,
@@ -413,6 +414,7 @@ export default function ClientsPage() {
   const [matchClient, setMatchClient] = useState<Client | null>(null);
   const [noteClient, setNoteClient] = useState<Client | null>(null);
   const [replyClient, setReplyClient] = useState<Client | null>(null);
+  const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [linkClient, setLinkClient] = useState<Client | null>(null);
   const [propertyOptions, setPropertyOptions] = useState<PropertyOption[]>([]);
@@ -489,7 +491,7 @@ export default function ClientsPage() {
     if (!session) return;
     await fetch('/api/leads/update', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ id, status }) });
   };
-  const scheduleViewing = (c: Client) => { changeStatus(c.id, 'upcoming_viewing'); setMenuOpen(null); };
+  const scheduleViewing = (c: Client) => { setViewingClient(c); setMenuOpen(null); };
   const remove = async (id: string) => {
     if (!confirm('Ștergi acest client din CRM?')) return;
     const { data: { session } } = await supabase.auth.getSession();
@@ -814,6 +816,13 @@ export default function ClientsPage() {
         onClose={() => setReplyClient(null)}
         onSuccess={fetchClients}
       />
+      {viewingClient && (
+        <ScheduleViewingDialog
+          lead={viewingClient}
+          onClose={() => setViewingClient(null)}
+          onSuccess={fetchClients}
+        />
+      )}
     </ProtectedLayout>
   );
 }

@@ -11,6 +11,7 @@ interface Viewing {
   id: string;
   title: string;
   start_at: string;
+  end_at?: string | null;
   description?: string | null;
   contact_name?: string | null;
   contact_phone?: string | null;
@@ -36,6 +37,7 @@ function toLocalInput(iso?: string | null): string {
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   programata: { label: 'Programată', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  confirmata: { label: 'Confirmată', cls: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
   efectuata:  { label: 'Efectuată',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   anulata:    { label: 'Anulată',    cls: 'bg-red-50 text-red-700 border-red-200' },
   amanata:    { label: 'Amânată',    cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -69,7 +71,10 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return;
       const h = { Authorization: `Bearer ${session.access_token}` };
-      fetch('/api/properties/list', { headers: h }).then(r => r.json()).then(d => setProps((d.properties || []).map((p: any) => ({ id: p.id, title: p.title, internal_code: p.internal_code, owner_contact_id: p.owner_contact_id })))).catch(() => {});
+      fetch('/api/properties/list', { headers: h })
+        .then(r => r.json() as Promise<{ properties?: PropOpt[] }>)
+        .then(d => setProps((d.properties || []).map(p => ({ id: p.id, title: p.title, internal_code: p.internal_code, owner_contact_id: p.owner_contact_id }))))
+        .catch(() => {});
       fetch('/api/leads/list', { headers: h }).then(r => r.json()).then(d => setClients(d.leads || [])).catch(() => {});
       fetch('/api/contacts', { headers: h }).then(r => r.json()).then(d => setContacts(d.contacts || [])).catch(() => {});
       fetch('/api/agents/list', { headers: h }).then(r => r.json()).then(d => setAgents(d.agents || [])).catch(() => {});
@@ -109,8 +114,15 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
         agent_id: form.agent_id || null,
         description: form.description,
         start_at: new Date(form.start_at).toISOString(),
+        duration_minutes: editing?.end_at
+          ? Math.max(15, Math.round((new Date(editing.end_at).getTime() - new Date(editing.start_at).getTime()) / 60_000))
+          : 60,
       };
-      if (editing) payload.id = editing.id;
+      if (editing) {
+        payload.id = editing.id;
+        payload.action = 'reschedule';
+        payload.reason = 'Programare actualizată din CRM';
+      }
       const res = await fetch('/api/viewings', {
         method: editing ? 'PATCH' : 'POST',
         headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
@@ -220,6 +232,7 @@ export default function ViewingsPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editing, setEditing] = useState<Viewing | null>(null);
   const [filterStatus, setFilterStatus] = useState('');
+  const [clockNow, setClockNow] = useState(0);
 
   const token = async () => (await supabase.auth.getSession()).data.session?.access_token;
 
@@ -237,29 +250,62 @@ export default function ViewingsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchViewings(); }, [fetchViewings]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchViewings(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchViewings]);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => setClockNow(Date.now()), 0);
+    const interval = window.setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const changeStatus = async (v: Viewing, status: string) => {
     const t = await token();
     if (!t) return;
-    setViewings(prev => prev.map(x => x.id === v.id ? { ...x, status } : x));
-    await fetch('/api/viewings', {
+    if (status === 'programata' || status === 'amanata') {
+      setEditing(v);
+      return;
+    }
+    const payload: Record<string, unknown> = { id: v.id };
+    if (status === 'confirmata') payload.action = 'confirm';
+    if (status === 'anulata') {
+      const reason = window.prompt('Motivul anulării:')?.trim();
+      if (!reason) return;
+      payload.action = 'cancel';
+      payload.reason = reason;
+    }
+    if (status === 'efectuata') {
+      const outcome = window.prompt('Rezultatul vizionării:')?.trim();
+      if (!outcome) return;
+      payload.action = 'complete';
+      payload.outcome = outcome;
+    }
+    const response = await fetch('/api/viewings', {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: v.id, status }),
+      body: JSON.stringify(payload),
     });
+    if (response.ok) await fetchViewings();
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Ștergi această vizionare?')) return;
+    const reason = window.prompt('Motivul anulării vizionării:')?.trim();
+    if (!reason) return;
     const t = await token();
     if (!t) return;
-    const res = await fetch(`/api/viewings?id=${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${t}` } });
-    if (res.ok) setViewings(prev => prev.filter(x => x.id !== id));
+    const res = await fetch(`/api/viewings?id=${id}&reason=${encodeURIComponent(reason)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${t}` } });
+    if (res.ok) await fetchViewings();
   };
 
   const visible = viewings.filter(v => !filterStatus || (v.status || 'programata') === filterStatus);
-  const upcoming = viewings.filter(v => (v.status || 'programata') === 'programata' && new Date(v.start_at).getTime() > Date.now()).length;
+  const upcoming = clockNow === 0
+    ? 0
+    : viewings.filter(v => (v.status || 'programata') === 'programata' && new Date(v.start_at).getTime() > clockNow).length;
 
   return (
     <ProtectedLayout>

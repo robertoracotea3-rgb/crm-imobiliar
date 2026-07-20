@@ -1,214 +1,139 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
+import { requireApiAuth } from '@/lib/server/api-auth';
 
-// Viewings are stored as calendar_events with type='vizionare' (so they show on the
-// calendar automatically). The `status` / `outcome` columns are added by the migration.
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const TRANSITIONS = ['confirm', 'reschedule', 'cancel', 'complete'] as const;
+type ViewingTransition = typeof TRANSITIONS[number];
 
-const VALID_STATUS = ['programata', 'efectuata', 'anulata', 'amanata'];
+const friendlyError = (message: string) => {
+  if (message.includes('viewing_must_be_future')) return 'Vizionarea trebuie programată în viitor';
+  if (message.includes('invalid_duration')) return 'Durata trebuie să fie între 15 minute și 8 ore';
+  if (message.includes('property_not_found')) return 'Proprietatea nu aparține agenției';
+  if (message.includes('lead_not_found') || message.includes('contact_not_found')) return 'Clientul nu aparține agenției';
+  if (message.includes('agent_not_found')) return 'Agentul nu aparține agenției';
+  if (message.includes('client_required')) return 'Selectează un lead sau un contact';
+  if (message.includes('cancellation_reason_required')) return 'Motivul anulării este obligatoriu';
+  if (message.includes('reschedule_reason_required')) return 'Motivul reprogramării este obligatoriu';
+  if (message.includes('outcome_required')) return 'Rezultatul vizionării este obligatoriu';
+  if (message.includes('viewing_not_found')) return 'Vizionarea nu a fost găsită';
+  if (message.includes('invalid_viewing_transition')) return 'Tranziția nu este permisă din starea curentă';
+  return 'Vizionarea nu a putut fi salvată';
+};
 
-// Detects "missing column" errors in either Postgres ("... does not exist")
-// or PostgREST ("Could not find the 'X' column ... in the schema cache") wording.
-const colMissing = (msg: string, col: string) =>
-  msg.includes(col) && (msg.includes('schema cache') || msg.includes('does not exist') || msg.includes('column'));
-
-function errMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (e && typeof e === 'object') return String((e as any).message || JSON.stringify(e));
-  return String(e ?? 'Eroare');
-}
-
-async function auth(request: Request) {
-  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-  if (!token) throw new Error('Neautentificat');
-  const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) throw new Error('Sesiune invalidă');
-  const { data: profile } = await admin.from('profiles').select('agency_id, role').eq('user_id', user.id).single();
-  if (!profile?.agency_id) throw new Error('Agenție negăsită');
-  return { user, agency_id: profile.agency_id as string, role: profile.role as string };
-}
-
-interface ViewingRow {
-  id: string;
-  title: string | null;
-  start_at: string;
-  end_at: string | null;
-  description: string | null;
-  contact_name: string | null;
-  contact_phone: string | null;
-  contact_id: string | null;
-  demand_id?: string | null;
-  lead_id?: string | null;
-  property_id: string | null;
-  agent_id: string | null;
-  completed: boolean | null;
-  status: string | null;
-  outcome: string | null;
-}
-
-// ── GET: list viewings (type='vizionare'), enriched with property titles ──
 export async function GET(request: Request) {
-  try {
-    const { agency_id } = await auth(request);
+  const auth = await requireApiAuth(request);
+  if (!auth.ok) return auth.response;
+  const { admin, agencyId } = auth.context;
 
-    // demand_id / lead_id may not be migrated yet in production. Mirror the POST/PATCH
-    // resilience: try the full projection, and on a missing-column error drop those
-    // optional columns and retry (otherwise a missing column made GET return 500).
-    const FULL_COLS = 'id, title, start_at, end_at, description, contact_name, contact_phone, contact_id, demand_id, lead_id, property_id, agent_id, completed, status, outcome';
-    const runQuery = (cols: string) => admin
-      .from('calendar_events')
-      .select(cols)
-      .eq('agency_id', agency_id)
-      .eq('type', 'vizionare')
-      .order('start_at', { ascending: false })
-      .limit(300)
-      .returns<ViewingRow[]>();
+  const { data, error } = await admin
+    .from('calendar_events')
+    .select('*')
+    .eq('agency_id', agencyId)
+    .eq('type', 'vizionare')
+    .is('deleted_at', null)
+    .order('start_at', { ascending: false })
+    .limit(300);
+  if (error) return Response.json({ error: 'Vizionările nu au putut fi încărcate' }, { status: 500 });
 
-    let { data, error } = await runQuery(FULL_COLS);
-    if (error && (colMissing(error.message, 'lead_id') || colMissing(error.message, 'demand_id'))) {
-      const reduced = FULL_COLS.replace(', demand_id', '').replace(', lead_id', '');
-      ({ data, error } = await runQuery(reduced));
-    }
-
-    if (error) {
-      if (colMissing(error.message, 'status') || colMissing(error.message, 'outcome')) {
-        return Response.json({ viewings: [], needsMigration: true });
-      }
-      return Response.json({ error: error.message }, { status: 500 });
-    }
-
-    const events = data || [];
-    const propIds = [...new Set(events.map(e => e.property_id).filter(Boolean))] as string[];
-    let propMap: Record<string, { title: string; code: string }> = {};
-    if (propIds.length) {
-      const { data: props } = await admin.from('properties').select('id, title, internal_code').in('id', propIds);
-      propMap = Object.fromEntries((props || []).map(p => [p.id, { title: p.title, code: p.internal_code }]));
-    }
-
-    const viewings = events.map(e => ({
-      ...e,
-      property_title: e.property_id ? propMap[e.property_id]?.title || null : null,
-      property_code: e.property_id ? propMap[e.property_id]?.code || null : null,
-    }));
-    return Response.json({ viewings });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 401 });
+  const rows = data || [];
+  const propertyIds = [...new Set(rows.map((row) => row.property_id).filter(Boolean))] as string[];
+  const propertyMap = new Map<string, { title: string | null; internal_code: string | null }>();
+  if (propertyIds.length) {
+    const { data: properties } = await admin
+      .from('properties')
+      .select('id, title, internal_code')
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .in('id', propertyIds);
+    for (const property of properties || []) propertyMap.set(property.id, property);
   }
+
+  return Response.json({
+    viewings: rows.map((row) => ({
+      ...row,
+      property_title: propertyMap.get(row.property_id)?.title || null,
+      property_code: propertyMap.get(row.property_id)?.internal_code || null,
+    })),
+  });
 }
 
-// ── POST: schedule a viewing ──
 export async function POST(request: Request) {
-  try {
-    const { user, agency_id } = await auth(request);
-    const body = await request.json();
-    let { contact_name, contact_phone } = body;
-    const { property_id, contact_id, demand_id, lead_id, start_at, description, agent_id, title } = body;
-    if (!start_at) return Response.json({ error: 'Data și ora sunt obligatorii' }, { status: 400 });
-    if (!property_id) return Response.json({ error: 'Selectează o proprietate' }, { status: 400 });
-    if (!contact_id) return Response.json({ error: 'Selectează un contact (client)' }, { status: 400 });
-
-    // Enrich client contact name/phone from the contacts table if not supplied.
-    if (contact_id && (!contact_name || !contact_phone)) {
-      const { data: ct } = await admin.from('contacts').select('full_name, phone').eq('id', contact_id).eq('agency_id', agency_id).single();
-      if (ct) { contact_name = contact_name || ct.full_name; contact_phone = contact_phone || ct.phone; }
-    }
-
-    const insert: Record<string, unknown> = {
-      agency_id,
-      created_by: user.id,
-      type: 'vizionare',
-      title: title?.trim() || `Vizionare${contact_name ? ' — ' + contact_name : ''}`,
-      start_at,
-      description: description?.trim() || null,
-      contact_name: contact_name?.trim?.() || contact_name || null,
-      contact_phone: contact_phone?.trim?.() || contact_phone || null,
-      contact_id: contact_id || null,
-      property_id: property_id || null,
-      demand_id: demand_id || null,
-      lead_id: lead_id || null,
-      agent_id: agent_id || user.id,
-      status: 'programata',
-      completed: false,
-    };
-
-    let { data, error } = await admin.from('calendar_events').insert(insert).select().single();
-    // If demand_id / lead_id columns haven't been migrated yet, retry without them (keeps the viewing).
-    if (error && colMissing(error.message, 'demand_id')) {
-      delete insert.demand_id;
-      ({ data, error } = await admin.from('calendar_events').insert(insert).select().single());
-    }
-    if (error && colMissing(error.message, 'lead_id')) {
-      delete insert.lead_id;
-      ({ data, error } = await admin.from('calendar_events').insert(insert).select().single());
-    }
-    if (error) {
-      if (colMissing(error.message, 'status') || colMissing(error.message, 'outcome')) {
-        return Response.json({ error: 'Lipsesc coloane în calendar_events — rulează migrarea SQL în Supabase (migrations/2026-features.sql).' }, { status: 503 });
-      }
-      return Response.json({ error: error.message }, { status: 500 });
-    }
-    return Response.json({ viewing: data }, { status: 201 });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
+  const auth = await requireApiAuth(request);
+  if (!auth.ok) return auth.response;
+  const { admin, agencyId, user } = auth.context;
+  const body = await request.json().catch(() => ({}));
+  const startAt = body.start_at ? new Date(body.start_at) : null;
+  if (!startAt || Number.isNaN(startAt.getTime())) {
+    return Response.json({ error: 'Data și ora sunt obligatorii' }, { status: 400 });
   }
+  const duration = Number(body.duration_minutes || 60);
+  const reminderAt = body.reminder_at ? new Date(body.reminder_at) : null;
+  if (reminderAt && Number.isNaN(reminderAt.getTime())) {
+    return Response.json({ error: 'Reminder invalid' }, { status: 400 });
+  }
+
+  const { data: viewingId, error } = await admin.rpc('create_crm_viewing', {
+    p_agency_id: agencyId,
+    p_user_id: user.id,
+    p_lead_id: body.lead_id || null,
+    p_contact_id: body.contact_id || null,
+    p_property_id: body.property_id || null,
+    p_agent_id: body.agent_id || null,
+    p_start_at: startAt.toISOString(),
+    p_duration_minutes: duration,
+    p_location: body.location || null,
+    p_description: body.description || null,
+    p_participants: Array.isArray(body.participants) ? body.participants : [],
+    p_reminder_at: reminderAt?.toISOString() || null,
+  });
+  if (error) return Response.json({ error: friendlyError(error.message) }, { status: 400 });
+
+  const { data: viewing } = await admin
+    .from('calendar_events')
+    .select('*')
+    .eq('id', viewingId)
+    .eq('agency_id', agencyId)
+    .single();
+  return Response.json({ viewing }, { status: 201 });
 }
 
-// ── PATCH: update a viewing (status / outcome / reschedule) ──
 export async function PATCH(request: Request) {
-  try {
-    const { agency_id } = await auth(request);
-    const body = await request.json();
-    const { id, ...patch } = body;
-    if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
-
-    const { data: ev } = await admin.from('calendar_events').select('id, agency_id').eq('id', id).single();
-    if (!ev || ev.agency_id !== agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
-
-    const allowed = ['status', 'outcome', 'start_at', 'description', 'contact_name', 'contact_phone', 'contact_id', 'demand_id', 'lead_id', 'property_id', 'agent_id'];
-    const safe: Record<string, unknown> = {};
-    for (const k of allowed) if (patch[k] !== undefined) safe[k] = patch[k];
-    if (safe.status && !VALID_STATUS.includes(safe.status as string)) return Response.json({ error: 'Status invalid' }, { status: 400 });
-    if (safe.status === 'efectuata') safe.completed = true;
-    if (safe.status === 'programata' || safe.status === 'amanata') safe.completed = false;
-
-    // If the client contact changed but name/phone weren't supplied, derive them.
-    if (safe.contact_id && safe.contact_name === undefined) {
-      const { data: ct } = await admin.from('contacts').select('full_name, phone').eq('id', safe.contact_id).eq('agency_id', agency_id).single();
-      if (ct) { safe.contact_name = ct.full_name; safe.contact_phone = ct.phone; }
-    }
-
-    let { data, error } = await admin.from('calendar_events').update(safe).eq('id', id).select().single();
-    if (error && colMissing(error.message, 'demand_id')) {
-      delete safe.demand_id;
-      ({ data, error } = await admin.from('calendar_events').update(safe).eq('id', id).select().single());
-    }
-    if (error && colMissing(error.message, 'lead_id')) {
-      delete safe.lead_id;
-      ({ data, error } = await admin.from('calendar_events').update(safe).eq('id', id).select().single());
-    }
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-    return Response.json({ viewing: data });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
+  const auth = await requireApiAuth(request);
+  if (!auth.ok) return auth.response;
+  const { admin, agencyId, user } = auth.context;
+  const body = await request.json().catch(() => ({}));
+  const action = body.action as ViewingTransition;
+  if (!body.id || !TRANSITIONS.includes(action)) {
+    return Response.json({ error: 'Tranziție de vizionare invalidă' }, { status: 400 });
   }
+
+  const startAt = body.start_at ? new Date(body.start_at) : null;
+  const nextActionAt = body.next_action_at ? new Date(body.next_action_at) : null;
+  const { data, error } = await admin.rpc('transition_crm_viewing', {
+    p_agency_id: agencyId,
+    p_user_id: user.id,
+    p_viewing_id: body.id,
+    p_action: action,
+    p_start_at: startAt && !Number.isNaN(startAt.getTime()) ? startAt.toISOString() : null,
+    p_duration_minutes: body.duration_minutes ? Number(body.duration_minutes) : null,
+    p_reason: body.reason || null,
+    p_outcome: body.outcome || null,
+    p_client_feedback: body.client_feedback || null,
+    p_owner_feedback: body.owner_feedback || null,
+    p_next_action_at: nextActionAt && !Number.isNaN(nextActionAt.getTime()) ? nextActionAt.toISOString() : null,
+  });
+  if (error) return Response.json({ error: friendlyError(error.message) }, { status: 400 });
+  return Response.json(data);
 }
 
-// ── DELETE: remove a viewing (?id=) ──
 export async function DELETE(request: Request) {
-  try {
-    const { agency_id } = await auth(request);
-    const id = new URL(request.url).searchParams.get('id');
-    if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
-    const { data: ev } = await admin.from('calendar_events').select('id, agency_id').eq('id', id).single();
-    if (!ev || ev.agency_id !== agency_id) return Response.json({ error: 'Acces interzis' }, { status: 403 });
-    const { error } = await admin.from('calendar_events').delete().eq('id', id);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-    return Response.json({ success: true });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
-  }
+  const url = new URL(request.url);
+  const id = url.searchParams.get('id');
+  const reason = url.searchParams.get('reason');
+  const syntheticRequest = new Request(request.url, {
+    method: 'PATCH',
+    headers: request.headers,
+    body: JSON.stringify({ id, action: 'cancel', reason }),
+  });
+  return PATCH(syntheticRequest);
 }
