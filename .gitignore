@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local backups can contain personal data and must never be committed
+/backups/
+
 # next.js
 /.next/
 /out/
