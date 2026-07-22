@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -28,6 +29,7 @@ import {
 
 interface Client {
   id: string;
+  contact_id?: string;
   contact_name: string;
   contact_phone: string;
   contact_email?: string;
@@ -55,6 +57,9 @@ interface Client {
   status_reason?: string;
   status_note?: string;
   lost_to_competitor?: string;
+  lead_count?: number;
+  demand_count?: number;
+  profile_available?: boolean;
 }
 
 interface PropertyOption {
@@ -645,9 +650,12 @@ export default function ClientsPage() {
         <div className="flex justify-between items-center gap-4 mb-5">
           <div><h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Clienți</h1>
             <p className="text-sm text-gray-500 mt-1">{clients.length} clienți</p></div>
-          <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90" style={{ backgroundColor: '#0E6B54' }}>
-            <Plus size={18} /> Adaugă client
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {(role === 'owner' || role === 'admin' || role === 'manager') && <Link href="/clients/duplicates" className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"><History size={17} />Verifică duplicate</Link>}
+            <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90" style={{ backgroundColor: '#0E6B54' }}>
+              <Plus size={18} /> Adaugă client
+            </button>
+          </div>
         </div>
 
         <UnmatchedStoriaMessages onResolved={fetchClients} />
@@ -733,8 +741,10 @@ export default function ClientsPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-gray-900">{c.contact_name}</span>
+                            {c.contact_id ? <Link href={`/clients/${c.contact_id}`} className="font-semibold text-gray-900 hover:text-emerald-700 hover:underline">{c.contact_name}</Link> : <span className="font-semibold text-gray-900">{c.contact_name}</span>}
                             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColor(c.status)}`}>{statusLabel(c.status)}</span>
+                            {(c.lead_count || 0) > 1 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{c.lead_count} leaduri</span>}
+                            {(c.demand_count || 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{c.demand_count} cereri</span>}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500 mt-1 flex-wrap">
                             {c.contact_phone && <span className="flex items-center gap-1"><Phone size={12} />{c.contact_phone}</span>}
@@ -792,6 +802,7 @@ export default function ClientsPage() {
                               <button onClick={() => scheduleViewing(c)} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"><CalendarPlus size={14} /> Programează vizionare</button>
                               <button onClick={() => { setMatchClient(c); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"><Target size={14} /> Proprietăți potrivite</button>
                               <button onClick={() => { setHistoryClient(c); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"><History size={14} /> Vezi istoric</button>
+                              {c.contact_id && <Link href={`/clients/${c.contact_id}`} className="w-full px-3 py-2 hover:bg-emerald-50 text-emerald-800 flex items-center gap-2"><User size={14} /> Profil complet</Link>}
                               <button onClick={() => { remove(c.id); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2"><Trash2 size={14} /> Șterge</button>
                             </div>
                           )}

@@ -71,8 +71,8 @@ export default function ContactsPage() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
+    const timer = window.setTimeout(() => { void load(ctrl.signal); }, 0);
+    return () => { window.clearTimeout(timer); ctrl.abort(); };
   }, [load]);
 
   useEffect(() => {
@@ -302,7 +302,7 @@ export default function ContactsPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <p className="font-semibold text-gray-900 truncate">{c.name}</p>
+                    <a href={`/clients/${c.id}`} className="font-semibold text-gray-900 truncate hover:text-emerald-700 hover:underline">{c.name}</a>
                     {c.type && (
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${TYPE_COLOR[c.type] || 'bg-gray-100 text-gray-600'}`}>
                         {TYPE_LABEL[c.type] || c.type}

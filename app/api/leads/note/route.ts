@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     const { data: lead } = await admin
       .from('leads')
-      .select('id')
+      .select('id, contact_id')
       .eq('id', lead_id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       title: 'Notita',
       description: String(note).trim().slice(0, 1000),
       lead_id,
+      contact_id: lead.contact_id,
       user_id: user.id,
     }).select().single();
     if (error) return Response.json({ error: error.message }, { status: 500 });

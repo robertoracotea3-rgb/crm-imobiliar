@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const { admin, agencyId, user } = auth.context;
+    const { admin, serviceAdmin, agencyId, user } = auth.context;
     const body = await request.json();
     const {
       contact_name, contact_phone, contact_email, message, property_id, source, agent_id,
@@ -76,70 +76,32 @@ export async function POST(request: Request) {
     assignedAgent = assignedAgent || user.id;
     const normalizedSource = normalizeLeadSource(source) || 'manual';
 
-    let existing: Record<string, unknown> | null = null;
-    const { data: byPhone } = await admin
-      .from('leads')
-      .select('*')
-      .eq('agency_id', agencyId)
-      .eq('contact_phone', phone)
-      .is('deleted_at', null)
-      .limit(1);
-    existing = byPhone?.[0] || null;
-
-    if (!existing && email) {
-      const { data: byEmail } = await admin
-        .from('leads')
-        .select('*')
-        .eq('agency_id', agencyId)
-        .eq('contact_email', email)
-        .is('deleted_at', null)
-        .limit(1);
-      existing = byEmail?.[0] || null;
+    // A person is deduplicated as a canonical contact, not by overwriting an
+    // older lead. Every new inquiry remains a separate historical lead.
+    const { data: identityResult, error: identityError } = await serviceAdmin.rpc('resolve_crm_contact', {
+      p_agency_id: agencyId,
+      p_actor_id: user.id,
+      p_name: contactName,
+      p_phone: phone,
+      p_email: email,
+      p_agent_id: assignedAgent,
+      p_source: normalizedSource,
+      p_portal: null,
+      p_portal_client_id: null,
+    });
+    if (identityError) {
+      return Response.json({ error: 'Profilul unic al clientului nu a putut fi rezolvat' }, { status: 500 });
     }
-
-    if (existing) {
-      const upd: Record<string, unknown> = {};
-      if (!existing.property_id && property_id) upd.property_id = property_id;
-      if (!existing.contact_email && email) upd.contact_email = email;
-      if (!existing.city && finalCity) upd.city = finalCity;
-      if (!existing.county && finalCounty) upd.county = finalCounty;
-      if (!existing.category && finalCategory) upd.category = finalCategory;
-      if (!existing.agent_id && assignedAgent) upd.agent_id = assignedAgent;
-      if (!existing.source) {
-        upd.source = normalizedSource;
-        upd.source_normalized = normalizedSource;
-      }
-
-      if (Object.keys(upd).length) {
-        await admin
-          .from('leads')
-          .update(upd)
-          .eq('id', existing.id)
-          .eq('agency_id', agencyId)
-          .is('deleted_at', null);
-      }
-
-      try {
-        await admin.from('activities').insert({
-          agency_id: agencyId,
-          type: 'request',
-          title: 'Solicitare noua',
-          description: text(message)?.slice(0, 300) || null,
-          lead_id: existing.id,
-          user_id: user.id,
-        });
-      } catch {
-        // Tabela de activitati poate lipsi in instalari vechi.
-      }
-
-      return Response.json({ lead: { ...existing, ...upd }, deduped: true }, { status: 200 });
-    }
+    const canonicalContactId = typeof identityResult?.contact_id === 'string'
+      ? identityResult.contact_id
+      : null;
 
     const { data, error } = await admin.from('leads').insert({
       agency_id: agencyId,
       contact_name: contactName,
       contact_phone: phone,
       contact_email: email,
+      contact_id: canonicalContactId,
       message: text(message) || '',
       property_id: property_id || null,
       status: 'new',
@@ -181,13 +143,18 @@ export async function POST(request: Request) {
         title: 'Client creat',
         description: 'Client adaugat in CRM',
         lead_id: data.id,
+        contact_id: data.contact_id || canonicalContactId,
         user_id: user.id,
       });
     } catch {
       // Tabela de activitati poate lipsi in instalari vechi.
     }
 
-    return Response.json({ lead: data }, { status: 201 });
+    return Response.json({
+      lead: data,
+      contact_id: data.contact_id || canonicalContactId,
+      identity_status: identityResult?.status || data.identity_match_status || 'unmatched',
+    }, { status: 201 });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 500 });
   }

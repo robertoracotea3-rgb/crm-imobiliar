@@ -48,7 +48,7 @@ export async function PATCH(request: Request) {
 
     const { data: lead } = await admin
       .from('leads')
-      .select('id, agency_id, status, next_action_at, next_action_type, status_reason, status_note')
+      .select('id, agency_id, contact_id, status, next_action_at, next_action_type, status_reason, status_note')
       .eq('id', id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
@@ -138,6 +138,23 @@ export async function PATCH(request: Request) {
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
+    if (lead.contact_id && (contact_name !== undefined || contact_phone !== undefined || contact_email !== undefined)) {
+      const contactPatch: Record<string, unknown> = {};
+      if (contact_name !== undefined) contactPatch.full_name = String(contact_name || '').trim();
+      if (contact_phone !== undefined) contactPatch.phone = String(contact_phone || '').trim() || null;
+      if (contact_email !== undefined) contactPatch.email = String(contact_email || '').trim() || null;
+      const { error: contactError } = await admin
+        .from('contacts')
+        .update(contactPatch)
+        .eq('id', lead.contact_id)
+        .eq('agency_id', agencyId)
+        .eq('merge_status', 'active')
+        .is('deleted_at', null);
+      if (contactError) {
+        return Response.json({ error: 'Leadul a fost salvat, dar profilul clientului nu a putut fi sincronizat' }, { status: 409 });
+      }
+    }
+
     if (status && status !== lead.status) {
       try {
         await admin.from('activities').insert({
@@ -146,6 +163,7 @@ export async function PATCH(request: Request) {
           title: 'Status schimbat',
           description: `Status schimbat in "${statusLabel(status)}"`,
           lead_id: id,
+          contact_id: lead.contact_id,
           user_id: user.id,
         });
       } catch {

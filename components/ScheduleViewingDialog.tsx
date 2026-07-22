@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 
 type LeadForViewing = {
   id: string;
+  contact_id?: string;
   contact_name: string;
   contact_phone?: string;
   property_id?: string;
@@ -89,6 +90,7 @@ export function ScheduleViewingDialog({
         },
         body: JSON.stringify({
           lead_id: lead.id,
+          contact_id: lead.contact_id || null,
           property_id: propertyId,
           agent_id: lead.agent_id || null,
           start_at: start.toISOString(),
