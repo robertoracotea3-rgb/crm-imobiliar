@@ -1,751 +1,149 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Trash2, MapPin, DollarSign, Target, Zap, X, Home, CheckCircle, AlertCircle, Info, XCircle, Pencil, User } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleHelp, MapPin, Pencil, Target, X, Zap } from 'lucide-react';
+
+import { AddDemandDialog, type DemandView } from '@/components/AddDemandDialog';
 import { supabase } from '@/lib/supabase';
-import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 
-const SOURCE_LABEL: Record<string, string> = {
-  facebook: 'Facebook',
-  olx: 'OLX',
-  storia: 'Storia',
-  imobiliare: 'Imobiliare.ro',
-  banner: 'Banner',
-  site_propriu: 'Site propriu',
-  recomandare: 'Recomandare',
-  altul: 'Altul',
-};
-
-const SOURCE_COLOR: Record<string, string> = {
-  facebook: 'bg-blue-100 text-blue-700',
-  olx: 'bg-orange-100 text-orange-700',
-  storia: 'bg-pink-100 text-pink-700',
-  imobiliare: 'bg-yellow-100 text-yellow-800',
-  banner: 'bg-purple-100 text-purple-700',
-  site_propriu: 'bg-emerald-100 text-emerald-700',
-  recomandare: 'bg-teal-100 text-teal-700',
-  altul: 'bg-gray-100 text-gray-600',
-};
-
-interface Demand {
-  id: string;
-  internal_code: string;
-  category: string;
-  transaction?: string;
-  source?: string;
-  agent_id?: string;
-  budget_min?: number;
-  budget_max?: number;
-  currency?: string;
-  cities?: string[];
-  counties?: string[];
-  notes?: string;
-  created_at: string;
-  criteria?: {
-    suprafata_min?: number;
-    suprafata_max?: number;
-    nr_camere_min?: number;
-    nr_camere_max?: number;
-    etaj_min?: number;
-    etaj_max?: number;
-    agent_id?: string;
-    property_id?: string;
-  };
+interface ContactSummary { id: string; full_name: string; phone?: string; email?: string }
+interface DemandListItem extends DemandView {
+  created_at?: string;
+  contact?: ContactSummary | null;
 }
-
-interface Match {
+interface MatchItem {
   id: string;
-  internal_code: string;
-  title: string;
+  match_id?: string | null;
+  match_status?: string;
+  internal_code?: string;
+  title?: string;
   city?: string;
   county?: string;
-  price: number;
+  price?: number | null;
   currency?: string;
-  category: string;
   score: number;
-  details: Record<string, string>;
-  attributes?: { photos?: string[] };
+  coverage: number;
+  reason: string;
+  matched: string[];
+  unmatched: string[];
+  unknown: string[];
+  price_difference: number | null;
 }
 
-interface DemandsListProps {
-  demands: Demand[];
-  onDelete?: (id: string) => void;
-  onStatusChange?: (id: string, status: string) => void;
-  canDelete?: boolean;
-  agentNames?: Record<string, string>;
-  agents?: { id: string; email?: string; name?: string }[];
-  onChanged?: () => void;
-}
+const INTENT_LABEL: Record<string, string> = {
+  cumparare: 'Cumpărare', inchiriere: 'Închiriere', vanzare: 'Vânzare', oferire_inchiriere: 'Oferire spre închiriere',
+};
+const TYPE_LABEL: Record<string, string> = {
+  apartament: 'Apartament', casa_vila: 'Casă / Vilă', spatiu_comercial: 'Spațiu comercial',
+  spatiu_industrial: 'Spațiu industrial', teren: 'Teren', pensiune_hotel: 'Pensiune / Hotel', birou: 'Birou', garaj: 'Garaj',
+};
 
-function EditDemandModal({ demand, onClose, onSuccess }: {
-  demand: Demand; onClose: () => void; onSuccess: (updated: Demand) => void;
-}) {
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
-  const [form, setForm] = useState({
-    category: demand.category || '',
-    transaction: demand.transaction || 'vanzare',
-    budget_min: demand.budget_min?.toString() || '',
-    budget_max: demand.budget_max?.toString() || '',
-    currency: demand.currency || 'EUR',
-    county: demand.counties?.[0] || '',
-    city: demand.cities?.[0] || '',
-    nr_camere_min: demand.criteria?.nr_camere_min?.toString() || '',
-    nr_camere_max: demand.criteria?.nr_camere_max?.toString() || '',
-    suprafata_min: demand.criteria?.suprafata_min?.toString() || '',
-    suprafata_max: demand.criteria?.suprafata_max?.toString() || '',
-    notes: demand.notes || '',
-    source: demand.source || '',
-  });
+export function DemandsList({ demands, onChanged }: { demands: DemandListItem[]; onChanged?: () => void }) {
+  const [editing, setEditing] = useState<DemandListItem | null>(null);
+  const [matching, setMatching] = useState<DemandListItem | null>(null);
 
-  const cities = form.county ? (ORASE_BY_JUDET[form.county] || []) : [];
-  const f = (name: string, value: string) => setForm(prev => ({ ...prev, [name]: value }));
+  if (demands.length === 0) {
+    return <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center"><Target className="mx-auto mb-3 text-gray-300" size={38} /><p className="font-medium text-gray-600">Nu există cereri pentru filtrele alese.</p></div>;
+  }
 
-  const handleSave = async () => {
-    setSaving(true);
-    setErr('');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Neautentificat');
-      const res = await fetch('/api/demands/update', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          id: demand.id,
-          category: form.category,
-          transaction: form.transaction,
-          budget_min: form.budget_min ? +form.budget_min : null,
-          budget_max: form.budget_max ? +form.budget_max : null,
-          currency: form.currency,
-          counties: form.county ? [form.county] : [],
-          cities: form.city ? [form.city] : [],
-          notes: form.notes,
-          source: form.source,
-          criteria: {
-            ...(demand.criteria || {}),
-            nr_camere_min: form.nr_camere_min ? +form.nr_camere_min : null,
-            nr_camere_max: form.nr_camere_max ? +form.nr_camere_max : null,
-            suprafata_min: form.suprafata_min ? +form.suprafata_min : null,
-            suprafata_max: form.suprafata_max ? +form.suprafata_max : null,
-          },
-        }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Eroare la salvare');
-      onSuccess(d.demand || { ...demand, ...form });
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Eroare');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm';
-
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <div>
-            <h3 className="font-bold text-gray-900">Editează cererea</h3>
-            <p className="text-xs text-gray-500 font-mono mt-0.5">{demand.internal_code}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
-        </div>
-
-        <div className="p-5 overflow-y-auto space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Categorie</label>
-              <select value={form.category} onChange={e => f('category', e.target.value)} className={ic}>
-                {['apartament','casa_vila','teren','spatiu_comercial','birou','spatiu_industrial','pensiune_hotel','garaj'].map(c => (
-                  <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Tip tranzacție</label>
-              <select value={form.transaction} onChange={e => f('transaction', e.target.value)} className={ic}>
-                <option value="vanzare">Cumpărare</option>
-                <option value="inchiriere">Închiriere</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Buget min</label>
-              <input type="number" value={form.budget_min} onChange={e => f('budget_min', e.target.value)} placeholder="0" className={ic} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Buget max</label>
-              <input type="number" value={form.budget_max} onChange={e => f('budget_max', e.target.value)} placeholder="∞" className={ic} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Monedă</label>
-              <select value={form.currency} onChange={e => f('currency', e.target.value)} className={ic}>
-                <option>EUR</option><option>RON</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Județ</label>
-              <select value={form.county} onChange={e => { f('county', e.target.value); f('city', ''); }} className={ic}>
-                <option value="">— Oriunde —</option>
-                {JUDETE.map(j => <option key={j} value={j}>{j}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Localitate</label>
-              <select value={form.city} onChange={e => f('city', e.target.value)} disabled={!form.county} className={ic + ' disabled:bg-gray-50 disabled:text-gray-400'}>
-                <option value="">— Oriunde —</option>
-                {cities.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Nr. camere (min–max)</label>
-              <div className="flex gap-2">
-                <input type="number" value={form.nr_camere_min} onChange={e => f('nr_camere_min', e.target.value)} placeholder="min" className={ic} min="0" />
-                <input type="number" value={form.nr_camere_max} onChange={e => f('nr_camere_max', e.target.value)} placeholder="max" className={ic} min="0" />
+  return <>
+    <div className="space-y-3">
+      {demands.map((demand) => {
+        const types = demand.property_types?.length ? demand.property_types : [demand.category].filter(Boolean) as string[];
+        const budget = demand.budget_unknown
+          ? 'Buget necunoscut'
+          : `${demand.budget_min?.toLocaleString('ro-RO') || '—'} – ${demand.budget_max?.toLocaleString('ro-RO') || '—'} ${demand.currency || 'EUR'}`;
+        return <article key={demand.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-emerald-300">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs text-gray-400">{demand.internal_code || 'Cerere'}</span>
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">{INTENT_LABEL[demand.intent || ''] || demand.intent || 'Solicitare'}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs ${demand.status === 'activa' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{demand.status || 'activa'}</span>
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Suprafață mp (min–max)</label>
-              <div className="flex gap-2">
-                <input type="number" value={form.suprafata_min} onChange={e => f('suprafata_min', e.target.value)} placeholder="min" className={ic} min="0" />
-                <input type="number" value={form.suprafata_max} onChange={e => f('suprafata_max', e.target.value)} placeholder="max" className={ic} min="0" />
+              {demand.contact ? <Link href={`/clients/${demand.contact.id}`} className="mt-1 block font-bold text-gray-900 hover:text-emerald-700">{demand.contact.full_name}</Link> : <p className="mt-1 font-bold text-amber-700">Client neasociat</p>}
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                {types.map((type) => <span key={type} className="rounded bg-gray-100 px-2 py-1">{TYPE_LABEL[type] || type}</span>)}
+                {(demand.cities || []).map((city) => <span key={city} className="flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-blue-700"><MapPin size={11} />{city}</span>)}
+                <span className="rounded bg-amber-50 px-2 py-1 font-semibold text-amber-800">{budget}</span>
               </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                {(demand.rooms_min != null || demand.rooms_max != null) && <span>Camere: {demand.rooms_min ?? '—'}–{demand.rooms_max ?? '—'}</span>}
+                {(demand.usable_area_min != null || demand.usable_area_max != null) && <span>Utilă: {demand.usable_area_min ?? '—'}–{demand.usable_area_max ?? '—'} mp</span>}
+                {(demand.land_area_min != null || demand.land_area_max != null) && <span>Teren: {demand.land_area_min ?? '—'}–{demand.land_area_max ?? '—'} mp</span>}
+                {demand.parking_required && <span>Parcare obligatorie</span>}
+                {demand.financing && <span>Finanțare: {demand.financing.replace(/_/g, ' ')}</span>}
+                {demand.deadline_date && <span>Termen: {new Date(`${demand.deadline_date}T00:00:00`).toLocaleDateString('ro-RO')}</span>}
+              </div>
+              {demand.special_requirements && <p className="mt-2 rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-800">Cerințe speciale: {demand.special_requirements}</p>}
+              {demand.notes && <p className="mt-2 text-sm text-gray-600">{demand.notes}</p>}
+            </div>
+            <div className="flex gap-2">
+              {(demand.intent === 'cumparare' || demand.intent === 'inchiriere' || !demand.intent) && <button onClick={() => setMatching(demand)} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white"><Zap size={14} />Potriviri</button>}
+              <button onClick={() => setEditing(demand)} className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700"><Pencil size={14} />Editează</button>
             </div>
           </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Sursă</label>
-            <select value={form.source} onChange={e => f('source', e.target.value)} className={ic}>
-              <option value="">— Necunoscută —</option>
-              {['facebook','olx','storia','imobiliare','banner','site_propriu','recomandare','altul'].map(s => (
-                <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Observații</label>
-            <textarea value={form.notes} onChange={e => f('notes', e.target.value)} rows={3}
-              placeholder="Preferințe, detalii suplimentare..." className={ic} />
-          </div>
-
-          {err && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
-        </div>
-
-        <div className="px-5 pb-5 pt-2 flex gap-2 justify-end border-t border-gray-100 flex-shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Anulare</button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 text-sm text-white rounded-lg disabled:opacity-50 hover:opacity-90 transition-colors"
-            style={{ backgroundColor: '#0E6B54' }}
-          >
-            {saving ? 'Se salvează...' : 'Salvează modificările'}
-          </button>
-        </div>
-      </div>
+        </article>;
+      })}
     </div>
-  );
+    {editing && <AddDemandDialog key={editing.id} demand={editing} onClose={() => setEditing(null)} onSuccess={onChanged} />}
+    {matching && <MatchDialog demand={matching} onClose={() => setMatching(null)} />}
+  </>;
 }
 
-function CloseModal({ demand, onClose, onSuccess }: {
-  demand: Demand; onClose: () => void; onSuccess: (id: string, status: string) => void;
-}) {
-  const [closeStatus, setCloseStatus] = useState<'indeplinita' | 'anulata'>('indeplinita');
-  const [comment, setComment] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
-
-  const handleClose = async () => {
-    if (!comment.trim() || comment.trim().length < 5) {
-      setErr('Comentariul este obligatoriu (minim 5 caractere)');
-      return;
-    }
-    setSaving(true);
-    setErr('');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Neautentificat');
-      const res = await fetch('/api/demands/close', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ id: demand.id, close_status: closeStatus, close_comment: comment.trim() }),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || 'Eroare');
-      onSuccess(demand.id, closeStatus);
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Eroare');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h3 className="font-bold text-gray-900">Închide cererea</h3>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
-        </div>
-        <div className="p-5 space-y-4">
-          <p className="text-sm text-gray-600">
-            Cerere: <span className="font-mono text-xs text-gray-500">{demand.internal_code}</span>
-          </p>
-
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-2">Status final *</label>
-            <div className="flex gap-3">
-              <label className={`flex-1 flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-colors ${closeStatus === 'indeplinita' ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <input type="radio" name="closeStatus" value="indeplinita" checked={closeStatus === 'indeplinita'} onChange={() => setCloseStatus('indeplinita')} className="sr-only" />
-                <CheckCircle size={18} className={closeStatus === 'indeplinita' ? 'text-emerald-600' : 'text-gray-400'} />
-                <div>
-                  <p className="text-sm font-medium text-gray-800">Îndeplinită</p>
-                  <p className="text-xs text-gray-500">Cerere finalizată cu succes</p>
-                </div>
-              </label>
-              <label className={`flex-1 flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer transition-colors ${closeStatus === 'anulata' ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <input type="radio" name="closeStatus" value="anulata" checked={closeStatus === 'anulata'} onChange={() => setCloseStatus('anulata')} className="sr-only" />
-                <XCircle size={18} className={closeStatus === 'anulata' ? 'text-red-600' : 'text-gray-400'} />
-                <div>
-                  <p className="text-sm font-medium text-gray-800">Anulată</p>
-                  <p className="text-xs text-gray-500">Clientul a renunțat</p>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">
-              Comentariu de închidere * <span className="text-gray-400">(obligatoriu, min. 5 caractere)</span>
-            </label>
-            <textarea
-              value={comment}
-              onChange={e => { setComment(e.target.value); setErr(''); }}
-              placeholder="ex: Clientul a achiziționat apartamentul din str. Eroilor nr. 5..."
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-            <p className={`text-xs mt-1 ${comment.length < 5 && comment.length > 0 ? 'text-red-500' : 'text-gray-400'}`}>
-              {comment.length}/5+ caractere
-            </p>
-          </div>
-
-          {err && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
-        </div>
-        <div className="px-5 pb-5 flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Anulare</button>
-          <button
-            onClick={handleClose}
-            disabled={saving || comment.trim().length < 5}
-            className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50 hover:opacity-90 transition-colors"
-            style={{ backgroundColor: closeStatus === 'anulata' ? '#dc2626' : '#0E6B54' }}
-          >
-            {saving ? 'Se salvează...' : `Marchează ca ${closeStatus === 'indeplinita' ? 'îndeplinită' : 'anulată'}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MatchModal({ demand, onClose }: { demand: Demand; onClose: () => void }) {
-  const [matches, setMatches] = useState<Match[] | null>(null);
-  const [loading, setLoading] = useState(true);
+function MatchDialog({ demand, onClose }: { demand: DemandListItem; onClose: () => void }) {
+  const [matches, setMatches] = useState<MatchItem[] | null>(null);
+  const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [updating, setUpdating] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) { setError('Neautentificat'); return; }
-        const res = await fetch(`/api/demands/auto-match?demand_id=${demand.id}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        const d = await res.json();
-        if (cancelled) return;
-        if (!res.ok) throw new Error(d.error);
-        setMatches(d.matches || []);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Eroare');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return setError('Sesiune expirată');
+      const response = await fetch(`/api/demands/auto-match?demand_id=${demand.id}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const result = await response.json();
+      if (cancelled) return;
+      if (!response.ok) setError(result.error || 'Matchingul nu a putut fi calculat');
+      else { setMatches(result.matches || []); setNotice(result.notice || ''); }
     })();
     return () => { cancelled = true; };
   }, [demand.id]);
 
-  const scoreColor = (s: number) => {
-    if (s >= 80) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    if (s >= 55) return 'text-yellow-700 bg-yellow-50 border-yellow-200';
-    return 'text-gray-600 bg-gray-50 border-gray-200';
+  const updateMatch = async (match: MatchItem, action: 'approve' | 'reject') => {
+    if (!match.match_id) return;
+    setUpdating(match.match_id);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+    const response = await fetch('/api/demands/matches', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: match.match_id, action }),
+    });
+    if (response.ok) setMatches((current) => current?.map((item) => item.match_id === match.match_id ? { ...item, match_status: action === 'approve' ? 'aprobata' : 'respinsa' } : item) || []);
+    setUpdating('');
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-          <div>
-            <h3 className="font-bold text-gray-900">Potriviri automate</h3>
-            <p className="text-xs text-gray-500 mt-0.5 font-mono">{demand.internal_code}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {loading && (
-            <div className="text-center py-8 text-gray-400">
-              <Zap size={28} className="mx-auto mb-2 animate-pulse" />
-              <p className="text-sm">Caut proprietati potrivite...</p>
-            </div>
-          )}
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-sm">{error}</div>
-          )}
-          {matches !== null && matches.length === 0 && (
-            <div className="text-center py-8 text-gray-400">
-              <Home size={28} className="mx-auto mb-2" />
-              <p className="text-sm">Nu am gasit proprietati cu scor ≥ 30%. Adauga mai multe proprietati active.</p>
-            </div>
-          )}
-          {matches?.map((m) => (
-            <div key={m.id} className={`rounded-xl border p-4 ${scoreColor(m.score)}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-2xl font-black`}>{m.score}%</span>
-                    <span className="text-xs font-medium opacity-75">compatibilitate</span>
-                  </div>
-                  <Link
-                    href={`/properties/${m.id}`}
-                    className="font-semibold text-gray-900 hover:text-emerald-700 text-sm block truncate"
-                    target="_blank"
-                  >
-                    {m.title}
-                  </Link>
-                  <p className="text-xs text-gray-500 mt-0.5 font-mono">{m.internal_code}</p>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    {[m.city, m.county].filter(Boolean).join(', ')} — {(m.price ?? 0).toLocaleString('ro-RO')} {m.currency || 'EUR'}
-                  </p>
-                </div>
-                {m.attributes?.photos?.[0] && (
-                  <img
-                    src={m.attributes.photos[0]}
-                    alt={m.title}
-                    className="w-20 h-16 object-cover rounded-lg flex-shrink-0"
-                  />
-                )}
-              </div>
-              {/* Detalii scor */}
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {Object.entries(m.details).map(([key, val]) => {
-                  const ok = val.toLowerCase().includes('potrivit') || val.toLowerCase().includes('in range') || val.toLowerCase().includes('nespecificat');
-                  return (
-                    <span
-                      key={key}
-                      className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${ok ? 'bg-white/70 text-gray-700' : 'bg-red-100 text-red-700'}`}
-                    >
-                      {ok ? <CheckCircle size={11} /> : <AlertCircle size={11} />}
-                      {key}: {val}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="px-6 py-3 border-t border-gray-100 flex-shrink-0">
-          <p className="text-xs text-gray-400 flex items-center gap-1">
-            <Info size={12} />
-            Scorul combina: categorie, locatie, pret, suprafata si nr. camere
-          </p>
-        </div>
-      </div>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div className="flex items-center justify-between border-b px-6 py-4"><div><h2 className="font-bold text-gray-900">Potriviri explicate · {demand.internal_code}</h2><p className="text-xs text-gray-500">Rezultatele au fost filtrate pe server. Nicio recomandare nu este trimisă automat clientului.</p></div><button onClick={onClose} className="rounded-lg p-2 hover:bg-gray-100"><X size={20} /></button></div>
+    <div className="flex-1 space-y-3 overflow-y-auto p-5">
+      {!matches && !error && <p className="py-12 text-center text-gray-500">Se calculează potrivirile…</p>}
+      {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {notice && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">{notice}</p>}
+      {matches?.length === 0 && !notice && <p className="py-12 text-center text-gray-500">Nu există proprietăți care trec criteriile obligatorii.</p>}
+      {matches?.map((match) => <article key={match.id} className="rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><span className="text-2xl font-black text-emerald-700">{match.score}%</span><span className="text-xs text-gray-500">acoperire date {match.coverage}%</span></div><Link href={`/properties/${match.id}`} className="font-bold text-gray-900 hover:text-emerald-700">{match.internal_code ? `${match.internal_code} · ` : ''}{match.title || 'Proprietate'}</Link><p className="text-xs text-gray-500">{[match.city, match.county].filter(Boolean).join(', ')} · {match.price?.toLocaleString('ro-RO') || 'Preț necunoscut'} {match.currency || 'EUR'}</p></div><span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">{match.match_status || 'noua'}</span></div>
+        <p className="mt-3 text-sm text-gray-700">{match.reason}</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-3"><Explanation icon={CheckCircle2} title="Potrivite" color="text-emerald-700 bg-emerald-50" items={match.matched} /><Explanation icon={AlertTriangle} title="Nepotrivite" color="text-red-700 bg-red-50" items={match.unmatched} /><Explanation icon={CircleHelp} title="Date lipsă" color="text-amber-700 bg-amber-50" items={match.unknown} /></div>
+        {match.price_difference != null && match.price_difference !== 0 && <p className="mt-2 text-xs font-semibold text-amber-700">Diferență de preț: {match.price_difference > 0 ? '+' : ''}{match.price_difference.toLocaleString('ro-RO')} {match.currency || 'EUR'}</p>}
+        {match.match_id && <div className="mt-3 flex items-center gap-2 border-t pt-3"><button disabled={updating === match.match_id} onClick={() => updateMatch(match, 'approve')} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white">Aprobă recomandarea</button><button disabled={updating === match.match_id} onClick={() => updateMatch(match, 'reject')} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs">Respinge</button><span className="text-xs text-gray-400">Aprobarea nu trimite mesaj clientului.</span></div>}
+      </article>)}
     </div>
-  );
+  </div></div>;
 }
 
-export function DemandsList({ demands, onDelete, onStatusChange, canDelete = false, agentNames = {}, agents = [], onChanged }: DemandsListProps) {
-  const [matchDemand, setMatchDemand] = useState<Demand | null>(null);
-  const [closeDemand, setCloseDemand] = useState<Demand | null>(null);
-  const [editDemand, setEditDemand] = useState<Demand | null>(null);
-  const [localDemands, setLocalDemands] = useState<Demand[]>(demands);
-
-  useEffect(() => { setLocalDemands(demands); }, [demands]);
-
-  // ── Selecție + atribuire în masă ──
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkAgent, setBulkAgent] = useState('');
-  const [bulkLoading, setBulkLoading] = useState(false);
-  const [bulkErr, setBulkErr] = useState('');
-
-  // Curăță selecția când se schimbă lista (refetch / filtrare)
-  useEffect(() => { setSelected(new Set()); }, [demands]);
-
-  const toggleOne = (id: string) =>
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-
-  const allSelected = localDemands.length > 0 && localDemands.every(d => selected.has(d.id));
-  const toggleAll = () =>
-    setSelected(allSelected ? new Set() : new Set(localDemands.map(d => d.id)));
-
-  const applyBulkAgent = async () => {
-    if (selected.size === 0 || !bulkAgent) return;
-    setBulkLoading(true);
-    setBulkErr('');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Neautentificat');
-      const agentId = bulkAgent === '__none__' ? null : bulkAgent;
-      const ids = Array.from(selected);
-      const res = await fetch('/api/demands/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ ids, agent_id: agentId }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || 'Eroare la atribuire');
-      // Feedback imediat + golește selecția; părintele se reîmprospătează via onChanged
-      setLocalDemands(prev => prev.map(dm => ids.includes(dm.id) ? { ...dm, agent_id: agentId ?? undefined } : dm));
-      setSelected(new Set());
-      setBulkAgent('');
-      onChanged?.();
-    } catch (e) {
-      setBulkErr(e instanceof Error ? e.message : 'Eroare');
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  if (localDemands.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <Target size={40} className="mx-auto mb-3 text-gray-300" />
-        <p className="text-gray-500 text-lg font-medium">Nu ai cereri inca</p>
-        <p className="text-gray-400 text-sm mt-1">Adauga prima cerere de la un client</p>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {matchDemand && (
-        <MatchModal demand={matchDemand} onClose={() => setMatchDemand(null)} />
-      )}
-      {closeDemand && (
-        <CloseModal
-          demand={closeDemand}
-          onClose={() => setCloseDemand(null)}
-          onSuccess={(id, status) => {
-            onStatusChange?.(id, status);
-            setCloseDemand(null);
-          }}
-        />
-      )}
-      {editDemand && (
-        <EditDemandModal
-          demand={editDemand}
-          onClose={() => setEditDemand(null)}
-          onSuccess={(updated) => {
-            setLocalDemands(prev => prev.map(d => d.id === updated.id ? { ...d, ...updated } : d));
-            setEditDemand(null);
-          }}
-        />
-      )}
-
-      {/* Bară selecție + atribuire în masă */}
-      <div className="flex items-center gap-3 mb-3 flex-wrap">
-        <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={toggleAll}
-            className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-          />
-          Selectează tot ({localDemands.length})
-        </label>
-
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 flex-wrap bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-            <span className="text-sm font-medium text-emerald-800">{selected.size} selectate</span>
-            <select
-              value={bulkAgent}
-              onChange={(e) => setBulkAgent(e.target.value)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-            >
-              <option value="">— Alege agent —</option>
-              <option value="__none__">Fără agent (dezatribuie)</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>{a.email || a.name || a.id}</option>
-              ))}
-            </select>
-            <button
-              onClick={applyBulkAgent}
-              disabled={!bulkAgent || bulkLoading}
-              className="px-4 py-1.5 text-sm font-semibold text-white rounded-lg disabled:opacity-50 hover:opacity-90 transition-colors"
-              style={{ backgroundColor: '#0E6B54' }}
-            >
-              {bulkLoading ? 'Se atribuie...' : 'Atribuie'}
-            </button>
-            <button
-              onClick={() => setSelected(new Set())}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Deselectează
-            </button>
-          </div>
-        )}
-
-        {bulkErr && <span className="text-sm text-red-600">{bulkErr}</span>}
-      </div>
-
-      <div className="space-y-3">
-        {localDemands.map((demand) => {
-          const c = demand.criteria || {};
-          const city = demand.cities?.[0] || '';
-          const county = demand.counties?.[0] || '';
-          const source = demand.source || '';
-          const notes = demand.notes || '';
-          const currency = demand.currency || 'EUR';
-          const camere = c.nr_camere_min || c.nr_camere_max
-            ? `${c.nr_camere_min ?? '?'}-${c.nr_camere_max ?? '+'} cam`
-            : null;
-          const suprafata = c.suprafata_min || c.suprafata_max
-            ? `${c.suprafata_min ?? '?'}-${c.suprafata_max ?? '+'}mp`
-            : null;
-          const tranzactie = demand.transaction;
-
-          return (
-            <div
-              key={demand.id}
-              className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-sm transition-all"
-            >
-              {/* Rand principal */}
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(demand.id)}
-                    onChange={() => toggleOne(demand.id)}
-                    className="mt-1 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 flex-shrink-0 cursor-pointer"
-                    aria-label="Selectează cererea"
-                  />
-                  <div className="flex-1 min-w-0">
-                    {/* Cod + titlu auto + badges */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono text-gray-400">{demand.internal_code}</span>
-                      <h3 className="font-bold text-gray-900 text-sm">
-                        {demand.category?.replace(/_/g, ' ')}
-                        {camere ? ` · ${camere}` : ''}
-                        {city || county ? ` — ${[city, county].filter(Boolean).join(', ')}` : ''}
-                      </h3>
-                      {source && (
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SOURCE_COLOR[source] || 'bg-gray-100 text-gray-600'}`}>
-                          {SOURCE_LABEL[source] || source}
-                        </span>
-                      )}
-                      {tranzactie && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">
-                          {tranzactie === 'vanzare' ? 'Cumparare' : 'Inchiriere'}
-                        </span>
-                      )}
-                      {demand.agent_id && (
-                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 flex items-center gap-1">
-                          <User size={11} />
-                          {agentNames[demand.agent_id] || 'Agent'}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Locatie + pret */}
-                    <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-600">
-                      {(city || county) && (
-                        <span className="flex items-center gap-1">
-                          <MapPin size={12} className="text-emerald-600" />
-                          {[city, county].filter(Boolean).join(', ')}
-                        </span>
-                      )}
-                      {(demand.budget_min || demand.budget_max) && (
-                        <span className="flex items-center gap-1 font-semibold text-gray-800">
-                          <DollarSign size={12} />
-                          {demand.budget_min ? demand.budget_min.toLocaleString() : '0'} — {demand.budget_max ? demand.budget_max.toLocaleString() : '∞'} {currency}
-                        </span>
-                      )}
-                      <span className="text-gray-400 capitalize">{demand.category.replace(/_/g, ' ')}</span>
-                      {camere && <span>{camere}</span>}
-                      {suprafata && <span>{suprafata}</span>}
-                    </div>
-
-                    {/* Observatii — direct vizibile */}
-                    {notes && (
-                      <div className="mt-2 text-xs text-gray-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex gap-1.5">
-                        <span className="flex-shrink-0 text-amber-500">💬</span>
-                        <span className="italic">{notes}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actiuni */}
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => setMatchDemand(demand)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-white transition-all hover:opacity-90"
-                      style={{ backgroundColor: '#0E6B54' }}
-                    >
-                      <Zap size={13} />
-                      Potriviri auto
-                    </button>
-                    <button
-                      onClick={() => setEditDemand(demand)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <Pencil size={13} />
-                      Editează
-                    </button>
-                    <button
-                      onClick={() => setCloseDemand(demand)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      <CheckCircle size={13} />
-                      Închide cerere
-                    </button>
-                    {canDelete && (
-                      <button
-                        onClick={() => onDelete?.(demand.id)}
-                        className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors self-end"
-                        title="Sterge"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
-  );
+function Explanation({ icon: Icon, title, color, items }: { icon: typeof CheckCircle2; title: string; color: string; items: string[] }) {
+  return <div className={`rounded-lg p-3 ${color}`}><p className="mb-1 flex items-center gap-1 text-xs font-bold"><Icon size={13} />{title}</p>{items.length > 0 ? <ul className="space-y-1 text-xs">{items.map((item) => <li key={item}>• {item}</li>)}</ul> : <p className="text-xs opacity-70">Niciun criteriu</p>}</div>;
 }

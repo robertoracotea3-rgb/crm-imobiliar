@@ -1,794 +1,301 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, ChevronDown, ChevronUp, UserPlus, Search, User, Home } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, X } from 'lucide-react';
+
 import { supabase } from '@/lib/supabase';
-import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
+import { DEMAND_INTENTS, DEMAND_PROPERTY_TYPES } from '@/lib/demand-record';
+import { JUDETE, getCities } from '@/lib/romania-locations';
 
-function AutoComplete({ value, onChange, options, placeholder, disabled }: {
-  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const filtered = value.length > 0
-    ? options.filter(o => o.toLowerCase().includes(value.toLowerCase())).slice(0, 8)
-    : options.slice(0, 8);
-  return (
-    <div className="relative">
-      <input
-        type="text"
-        value={value}
-        onChange={e => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 180)}
-        placeholder={placeholder}
-        disabled={disabled}
-        className={ic + (disabled ? ' bg-gray-50 text-gray-400' : '')}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
-          {filtered.map(opt => (
-            <button key={opt} type="button"
-              onMouseDown={() => { onChange(opt); setOpen(false); }}
-              className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-gray-800 text-sm border-b border-gray-50 last:border-0">
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface Contact {
+export interface DemandView {
   id: string;
-  name: string;
-  phone?: string;
-  email?: string;
-  type?: string;
+  internal_code?: string;
+  contact_id?: string | null;
+  agent_id?: string | null;
+  intent?: string | null;
+  transaction?: string | null;
+  category?: string | null;
+  property_types?: string[] | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  budget_unknown?: boolean | null;
+  currency?: string | null;
+  counties?: string[] | null;
+  cities?: string[] | null;
+  zones?: string[] | null;
+  radius_km?: number | null;
+  rooms_min?: number | null;
+  rooms_max?: number | null;
+  usable_area_min?: number | null;
+  usable_area_max?: number | null;
+  land_area_min?: number | null;
+  land_area_max?: number | null;
+  floor_preferences?: string[] | null;
+  furnished_preference?: string | null;
+  parking_required?: boolean | null;
+  financing?: string | null;
+  deadline_date?: string | null;
+  special_requirements?: string | null;
+  source?: string | null;
+  notes?: string | null;
+  status?: string | null;
+  criteria?: Record<string, unknown> | null;
 }
 
-const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
+interface ContactOption { id: string; full_name?: string; name?: string; phone?: string; email?: string }
+interface AgentOption { id: string; email?: string; name?: string }
 
-interface AddDemandDialogProps {
-  isOpen: boolean;
+interface FormState {
+  status: string;
+  contact_id: string;
+  agent_id: string;
+  intent: string;
+  property_types: string[];
+  budget_min: string;
+  budget_max: string;
+  budget_unknown: boolean;
+  currency: string;
+  counties: string[];
+  cities: string[];
+  zones: string[];
+  radius_km: string;
+  rooms_min: string;
+  rooms_max: string;
+  usable_area_min: string;
+  usable_area_max: string;
+  land_area_min: string;
+  land_area_max: string;
+  floor_preferences: string[];
+  furnished_preference: string;
+  parking_required: boolean;
+  financing: string;
+  deadline_date: string;
+  special_requirements: string;
+  source: string;
+  notes: string;
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  apartament: 'Apartament', casa_vila: 'Casă / Vilă', spatiu_comercial: 'Spațiu comercial',
+  spatiu_industrial: 'Spațiu industrial', teren: 'Teren', pensiune_hotel: 'Pensiune / Hotel',
+  birou: 'Birou', garaj: 'Garaj',
+};
+const INTENT_LABELS: Record<string, string> = {
+  cumparare: 'Cumpărare', inchiriere: 'Închiriere', vanzare: 'Vânzare', oferire_inchiriere: 'Oferire spre închiriere',
+};
+const SOURCE_OPTIONS = [
+  ['manual', 'Manual'], ['storia', 'Storia'], ['olx', 'OLX'], ['imobiliare_ro', 'Imobiliare.ro'],
+  ['site_propriu', 'Site propriu'], ['facebook', 'Facebook'], ['recomandare', 'Recomandare'], ['altul', 'Altul'],
+];
+const FLOOR_OPTIONS = ['demisol', 'parter', '1', '2', '3', '4', '5+', 'ultimul'];
+const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200';
+
+function stringValue(value: unknown): string {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function initialForm(demand?: DemandView | null, defaultContactId?: string): FormState {
+  const criteria = demand?.criteria || {};
+  return {
+    status: demand?.status || 'activa',
+    contact_id: demand?.contact_id || defaultContactId || '',
+    agent_id: demand?.agent_id || '',
+    intent: demand?.intent || (demand?.transaction === 'inchiriere' ? 'inchiriere' : 'cumparare'),
+    property_types: demand?.property_types?.length ? demand.property_types : [demand?.category || 'apartament'],
+    budget_min: stringValue(demand?.budget_min),
+    budget_max: stringValue(demand?.budget_max),
+    budget_unknown: demand?.budget_unknown ?? (demand?.budget_min == null && demand?.budget_max == null),
+    currency: demand?.currency || 'EUR',
+    counties: demand?.counties || [],
+    cities: demand?.cities || [],
+    zones: demand?.zones || [],
+    radius_km: stringValue(demand?.radius_km),
+    rooms_min: stringValue(demand?.rooms_min ?? criteria.nr_camere_min),
+    rooms_max: stringValue(demand?.rooms_max ?? criteria.nr_camere_max),
+    usable_area_min: stringValue(demand?.usable_area_min ?? criteria.suprafata_min),
+    usable_area_max: stringValue(demand?.usable_area_max ?? criteria.suprafata_max),
+    land_area_min: stringValue(demand?.land_area_min ?? criteria.teren_min),
+    land_area_max: stringValue(demand?.land_area_max ?? criteria.teren_max),
+    floor_preferences: demand?.floor_preferences || [],
+    furnished_preference: demand?.furnished_preference || '',
+    parking_required: demand?.parking_required === true,
+    financing: demand?.financing || '',
+    deadline_date: demand?.deadline_date || '',
+    special_requirements: demand?.special_requirements || '',
+    source: demand?.source || 'manual',
+    notes: demand?.notes || '',
+  };
+}
+
+export function AddDemandDialog({
+  onClose,
+  onSuccess,
+  demand,
+  defaultContactId,
+}: {
   onClose: () => void;
   onSuccess?: () => void;
-}
-
-const CATEGORIES = [
-  { value: 'apartament', label: 'Apartament' },
-  { value: 'casa_vila', label: 'Casa / Vila' },
-  { value: 'spatiu_comercial', label: 'Spatiu comercial' },
-  { value: 'spatiu_industrial', label: 'Spatiu industrial' },
-  { value: 'teren', label: 'Teren' },
-  { value: 'pensiune_hotel', label: 'Pensiune / Hotel' },
-  { value: 'birou', label: 'Birou' },
-  { value: 'garaj', label: 'Garaj' },
-];
-
-const SURSE = [
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'olx', label: 'OLX' },
-  { value: 'storia', label: 'Storia' },
-  { value: 'imobiliare', label: 'Imobiliare.ro' },
-  { value: 'banner', label: 'Banner / Panou' },
-  { value: 'site_propriu', label: 'Site propriu' },
-  { value: 'recomandare', label: 'Recomandare' },
-  { value: 'altul', label: 'Altul' },
-];
-
-interface Section {
-  title: string;
-  open: boolean;
-}
-
-export function AddDemandDialog({ isOpen, onClose, onSuccess }: AddDemandDialogProps) {
+  demand?: DemandView | null;
+  defaultContactId?: string;
+}) {
+  const [form, setForm] = useState<FormState>(() => initialForm(demand, defaultContactId));
+  const [contacts, setContacts] = useState<ContactOption[]>([]);
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [countyChoice, setCountyChoice] = useState(form.counties[0] || 'Brașov');
+  const [cityChoice, setCityChoice] = useState('');
+  const [zoneDraft, setZoneDraft] = useState('');
+  const [newContact, setNewContact] = useState({ full_name: '', phone: '', email: '' });
+  const [showNewContact, setShowNewContact] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [agents, setAgents] = useState<{ id: string; email: string }[]>([]);
-  const [sections, setSections] = useState<Record<string, boolean>>({
-    client: true,
-    locatie: true,
-    cerere: true,
-    caracteristici: false,
-    crm: false,
-  });
-
-  // Contact state
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [contactSearch, setContactSearch] = useState('');
-  const [contactOpen, setContactOpen] = useState(false);
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
-  const [showNewContact, setShowNewContact] = useState(false);
-  const [newC, setNewC] = useState({ name: '', phone: '', email: '', type: 'cumparator' });
-  const [newCSaving, setNewCSaving] = useState(false);
-
-  // Property search state
-  const [allProperties, setAllProperties] = useState<any[]>([]);
-  const [propSearch, setPropSearch] = useState('');
-  const [propOpen, setPropOpen] = useState(false);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
-  const [selectedPropertyLabel, setSelectedPropertyLabel] = useState('');
-
-  const [fd, setFd] = useState({
-    source: '',
-    notes: '',
-    city: '',
-    county: '',
-    category: 'apartament',
-    tip_tranzactie: 'vanzare',
-    min_price: '',
-    max_price: '',
-    currency: 'EUR',
-    suprafata_min: '',
-    suprafata_max: '',
-    etaj_min: '',
-    etaj_max: '',
-    nr_camere_min: '',
-    nr_camere_max: '',
-    agent_id: '',
-    property_id: '',
-  });
 
   useEffect(() => {
-    if (!isOpen) return;
-    fetchAgents();
-    fetchContacts();
-    fetchProperties();
-  }, [isOpen]);
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const headers = { Authorization: `Bearer ${session.access_token}` };
+      const [contactResponse, agentResponse] = await Promise.all([
+        fetch('/api/contacts', { headers }),
+        fetch('/api/agents/list', { headers }),
+      ]);
+      if (cancelled) return;
+      if (contactResponse.ok) setContacts((await contactResponse.json()).contacts || []);
+      if (agentResponse.ok) setAgents((await agentResponse.json()).agents || []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  const fetchAgents = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-    const res = await fetch('/api/agents/list', {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    if (res.ok) {
-      const d = await res.json();
-      setAgents(d.agents || []);
-    }
+  const cityOptions = useMemo(() => getCities(countyChoice), [countyChoice]);
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    setError('');
   };
-
-  const fetchContacts = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-    const res = await fetch('/api/contacts', {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    if (res.ok) {
-      const d = await res.json();
-      setContacts(d.contacts || []);
-    }
+  const toggleList = (key: 'property_types' | 'floor_preferences', value: string) => {
+    set(key, form[key].includes(value) ? form[key].filter((item) => item !== value) : [...form[key], value]);
   };
-
-  const fetchProperties = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-    const res = await fetch('/api/properties/list', {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    if (res.ok) {
-      const d = await res.json();
-      setAllProperties(d.properties || []);
-    }
+  const addLocation = () => {
+    if (!cityChoice) return;
+    setForm((current) => ({
+      ...current,
+      counties: current.counties.includes(countyChoice) ? current.counties : [...current.counties, countyChoice],
+      cities: current.cities.includes(cityChoice) ? current.cities : [...current.cities, cityChoice],
+    }));
+    setCityChoice('');
   };
-
-  const filteredProperties = propSearch.length > 0
-    ? allProperties.filter((p) =>
-        p.title?.toLowerCase().includes(propSearch.toLowerCase()) ||
-        p.internal_code?.toLowerCase().includes(propSearch.toLowerCase()) ||
-        p.city?.toLowerCase().includes(propSearch.toLowerCase())
-      ).slice(0, 8)
-    : allProperties.slice(0, 6);
-
-  const selectProperty = (p: any) => {
-    setSelectedPropertyId(p.id);
-    setSelectedPropertyLabel(`${p.internal_code} — ${p.title}`);
-    setPropSearch('');
-    setPropOpen(false);
-  };
-
-  const filteredContacts = contactSearch.length > 0
-    ? contacts.filter(c =>
-        c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
-        (c.phone || '').includes(contactSearch)
-      )
-    : contacts.slice(0, 6);
-
-  const selectContact = (c: Contact) => {
-    setSelectedContactId(c.id);
-    setContactSearch(c.name);
-    setContactOpen(false);
-    setShowNewContact(false);
+  const addZone = () => {
+    const value = zoneDraft.trim();
+    if (value && !form.zones.includes(value)) set('zones', [...form.zones, value]);
+    setZoneDraft('');
   };
 
   const createContact = async () => {
-    if (!newC.name.trim()) return;
-    setNewCSaving(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const res = await fetch('/api/contacts', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(newC),
-      });
-      const data = await res.json();
-      if (res.ok && data.contact) {
-        setContacts(p => [...p, data.contact]);
-        selectContact(data.contact);
-        setNewC({ name: '', phone: '', email: '', type: 'cumparator' });
-        setShowNewContact(false);
-      }
-    } finally {
-      setNewCSaving(false);
+    if (!newContact.full_name.trim()) return setError('Numele clientului este obligatoriu');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return setError('Sesiune expirată');
+    const response = await fetch('/api/contacts', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...newContact, name: newContact.full_name, type: 'cumparator' }),
+    });
+    const result = await response.json();
+    if (!response.ok) return setError(result.error || 'Clientul nu a putut fi creat');
+    const contact = result.contact as ContactOption;
+    setContacts((current) => [contact, ...current]);
+    set('contact_id', contact.id);
+    setShowNewContact(false);
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.contact_id) return setError('Selectează clientul');
+    if (form.property_types.length === 0) return setError('Selectează cel puțin un tip de proprietate');
+    if (!form.budget_unknown && !form.budget_min && !form.budget_max) {
+      return setError('Completează bugetul sau bifează „Buget necunoscut”');
     }
-  };
-
-  const set = (key: string, value: string) => {
-    setFd((prev) => ({ ...prev, [key]: value }));
+    setLoading(true);
     setError('');
-  };
-
-  const toggleSection = (key: string) => {
-    setSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
     try {
-      setLoading(true);
-      setError('');
-
-      if (!fd.city && !fd.county) { setError('Adauga cel putin orasul sau judetul'); return; }
-
-      const location = [fd.city, fd.county].filter(Boolean).join(', ');
-
-      // Auto-generate title from criteria
-      const catLabel = CATEGORIES.find(c => c.value === fd.category)?.label || fd.category;
-      const camereStr = fd.nr_camere_min
-        ? ` ${fd.nr_camere_min}${fd.nr_camere_max && fd.nr_camere_max !== fd.nr_camere_min ? `-${fd.nr_camere_max}` : ''} cam`
-        : '';
-      const tranzStr = fd.tip_tranzactie === 'inchiriere' ? ' chirie' : '';
-      const autoTitle = `${catLabel}${camereStr}${tranzStr}${location ? ` — ${location}` : ''}`;
-
-      const criteria = {
-        category: fd.category,
-        tip_tranzactie: fd.tip_tranzactie,
-        city: fd.city,
-        county: fd.county,
-        location,
-        price_range: {
-          min: fd.min_price ? parseInt(fd.min_price) : null,
-          max: fd.max_price ? parseInt(fd.max_price) : null,
-        },
-        currency: fd.currency,
-        suprafata_min: fd.suprafata_min ? parseInt(fd.suprafata_min) : null,
-        suprafata_max: fd.suprafata_max ? parseInt(fd.suprafata_max) : null,
-        etaj_min: fd.etaj_min ? parseInt(fd.etaj_min) : null,
-        etaj_max: fd.etaj_max ? parseInt(fd.etaj_max) : null,
-        nr_camere_min: fd.nr_camere_min ? parseInt(fd.nr_camere_min) : null,
-        nr_camere_max: fd.nr_camere_max ? parseInt(fd.nr_camere_max) : null,
-        source: fd.source,
-        agent_id: fd.agent_id || null,
-        property_id: selectedPropertyId || null,
-        contact_id: selectedContactId || null,
-        notes: fd.notes,
-      };
-
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Sesiune invalida');
-
-      const res = await fetch('/api/demands/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+      if (!session) throw new Error('Sesiune expirată');
+      const response = await fetch(demand ? '/api/demands/update' : '/api/demands/create', {
+        method: demand ? 'PATCH' : 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: autoTitle,
-          location,
-          category: fd.category,
-          min_price: fd.min_price ? parseInt(fd.min_price) : null,
-          max_price: fd.max_price ? parseInt(fd.max_price) : null,
-          criteria,
+          ...(demand ? { id: demand.id } : {}),
+          ...form,
+          category: form.property_types[0],
+          budget_min: form.budget_unknown || !form.budget_min ? null : Number(form.budget_min),
+          budget_max: form.budget_unknown || !form.budget_max ? null : Number(form.budget_max),
+          radius_km: form.radius_km ? Number(form.radius_km) : null,
+          rooms_min: form.rooms_min ? Number(form.rooms_min) : null,
+          rooms_max: form.rooms_max ? Number(form.rooms_max) : null,
+          usable_area_min: form.usable_area_min ? Number(form.usable_area_min) : null,
+          usable_area_max: form.usable_area_max ? Number(form.usable_area_max) : null,
+          land_area_min: form.land_area_min ? Number(form.land_area_min) : null,
+          land_area_max: form.land_area_max ? Number(form.land_area_max) : null,
         }),
       });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Eroare server');
-
-      setFd({
-        source: '', notes: '', city: '', county: '',
-        category: 'apartament', tip_tranzactie: 'vanzare',
-        min_price: '', max_price: '', currency: 'EUR',
-        suprafata_min: '', suprafata_max: '', etaj_min: '', etaj_max: '',
-        nr_camere_min: '', nr_camere_max: '', agent_id: '', property_id: '',
-      });
-      setSelectedContactId(null);
-      setContactSearch('');
-      setShowNewContact(false);
-      setNewC({ name: '', phone: '', email: '', type: 'cumparator' });
-      setSelectedPropertyId(null);
-      setSelectedPropertyLabel('');
-      setPropSearch('');
-      onClose();
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Cererea nu a putut fi salvată');
       onSuccess?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Eroare la adaugare');
+      onClose();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Eroare la salvare');
     } finally {
       setLoading(false);
     }
   };
 
-  const SectionHeader = ({ id, title }: { id: string; title: string }) => (
-    <button
-      type="button"
-      onClick={() => toggleSection(id)}
-      className="w-full flex justify-between items-center py-2 text-sm font-semibold text-gray-700 border-b border-gray-200 mb-3"
-    >
-      <span>{title}</span>
-      {sections[id] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-    </button>
-  );
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="border-b border-gray-200 px-6 py-4 flex justify-between items-center flex-shrink-0">
-          <h2 className="text-xl font-bold" style={{ color: '#0E6B54' }}>
-            Adauga Cerere
-          </h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded transition-colors">
-            <X size={22} />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
+      <form onSubmit={submit} className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+          <div><h2 className="text-xl font-bold text-emerald-800">{demand ? `Editează ${demand.internal_code || 'cererea'}` : 'Cerere nouă'}</h2><p className="text-xs text-gray-500">Criteriile necunoscute nu reduc și nu cresc artificial scorul.</p></div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-gray-100" aria-label="Închide"><X size={20} /></button>
         </div>
 
-        {/* Form scroll */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-sm">{error}</div>
-          )}
+        <div className="grid flex-1 gap-5 overflow-y-auto p-6 md:grid-cols-2">
+          <section className="space-y-4">
+            <h3 className="font-bold text-gray-900">Client și scop</h3>
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Client *</label><div className="flex gap-2"><select value={form.contact_id} onChange={(event) => set('contact_id', event.target.value)} className={inputClass}><option value="">Selectează clientul</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.full_name || contact.name || 'Client'}{contact.phone ? ` · ${contact.phone}` : ''}</option>)}</select><button type="button" onClick={() => setShowNewContact((value) => !value)} className="rounded-lg border border-emerald-300 px-3 text-emerald-700" title="Client nou"><Plus size={18} /></button></div></div>
+            {showNewContact && <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><input className={inputClass} placeholder="Nume complet *" value={newContact.full_name} onChange={(event) => setNewContact({ ...newContact, full_name: event.target.value })} /><div className="grid grid-cols-2 gap-2"><input className={inputClass} placeholder="Telefon" value={newContact.phone} onChange={(event) => setNewContact({ ...newContact, phone: event.target.value })} /><input className={inputClass} placeholder="E-mail" value={newContact.email} onChange={(event) => setNewContact({ ...newContact, email: event.target.value })} /></div><button type="button" onClick={createContact} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Creează și selectează</button></div>}
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Tipul solicitării *</label><div className="grid grid-cols-2 gap-2">{DEMAND_INTENTS.map((intent) => <button type="button" key={intent} onClick={() => set('intent', intent)} className={`rounded-lg border px-3 py-2 text-sm ${form.intent === intent ? 'border-emerald-600 bg-emerald-50 font-semibold text-emerald-800' : 'border-gray-200 text-gray-600'}`}>{INTENT_LABELS[intent]}</button>)}</div></div>
+            {demand && <div><label className="mb-1 block text-xs font-semibold text-gray-600">Status</label><select className={inputClass} value={form.status} onChange={(event) => set('status', event.target.value)}><option value="activa">Activă</option><option value="inactiva">Inactivă</option><option value="indeplinita">Îndeplinită</option><option value="anulata">Anulată</option></select></div>}
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Tipuri proprietate *</label><div className="grid grid-cols-2 gap-2">{DEMAND_PROPERTY_TYPES.map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-gray-200 p-2 text-sm"><input type="checkbox" checked={form.property_types.includes(type)} onChange={() => toggleList('property_types', type)} />{TYPE_LABELS[type]}</label>)}</div></div>
+            <div className="grid grid-cols-2 gap-3"><div><label className="mb-1 block text-xs font-semibold text-gray-600">Sursă</label><select value={form.source} onChange={(event) => set('source', event.target.value)} className={inputClass}>{SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><label className="mb-1 block text-xs font-semibold text-gray-600">Agent</label><select value={form.agent_id} onChange={(event) => set('agent_id', event.target.value)} className={inputClass}><option value="">Agentul curent</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name || agent.email || agent.id}</option>)}</select></div></div>
 
-          {/* Sectiunea 1: Date client */}
-          <div>
-            <SectionHeader id="client" title="Date client" />
-            {sections.client && (
-              <div className="space-y-3">
-                {/* Contact */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-gray-600">Contact client</label>
-                    <button
-                      type="button"
-                      onClick={() => setShowNewContact(!showNewContact)}
-                      className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg text-white hover:opacity-90"
-                      style={{ backgroundColor: '#0E6B54' }}
-                    >
-                      <UserPlus size={12} /> Contact nou
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={contactSearch}
-                      onChange={(e) => { setContactSearch(e.target.value); setContactOpen(true); }}
-                      onFocus={() => setContactOpen(true)}
-                      onBlur={() => setTimeout(() => setContactOpen(false), 180)}
-                      placeholder="Cauta dupa nume sau telefon..."
-                      className={ic + ' pl-8'}
-                    />
-                    {contactOpen && (
-                      <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-0.5 max-h-44 overflow-y-auto">
-                        {filteredContacts.length === 0 ? (
-                          <p className="px-4 py-3 text-sm text-gray-400">Niciun contact găsit</p>
-                        ) : filteredContacts.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onMouseDown={() => selectContact(c)}
-                            className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 border-b border-gray-50 last:border-0"
-                          >
-                            <p className="text-sm font-medium text-gray-800">{c.name}</p>
-                            {c.phone && <p className="text-xs text-gray-500">{c.phone}</p>}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {selectedContactId && (
-                    <div className="mt-1.5 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
-                      <User size={12} />
-                      <span className="font-medium">{contactSearch}</span>
-                      <button
-                        type="button"
-                        onClick={() => { setSelectedContactId(null); setContactSearch(''); }}
-                        className="ml-auto text-gray-400 hover:text-gray-600"
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
+            <h3 className="pt-2 font-bold text-gray-900">Localizare</h3>
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-2"><select className={inputClass} value={countyChoice} onChange={(event) => { setCountyChoice(event.target.value); setCityChoice(''); }}><option value="">Județ</option>{JUDETE.map((county) => <option key={county} value={county}>{county}</option>)}</select><select className={inputClass} value={cityChoice} disabled={!countyChoice} onChange={(event) => setCityChoice(event.target.value)}><option value="">Oraș / sat / comună</option>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select><button type="button" onClick={addLocation} disabled={!cityChoice} className="rounded-lg bg-emerald-700 px-3 text-white disabled:opacity-40"><Plus size={18} /></button></div>
+            <div className="flex flex-wrap gap-2">{form.cities.map((city) => <button type="button" key={city} onClick={() => set('cities', form.cities.filter((item) => item !== city))} className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-800">{city} ×</button>)}{form.cities.length === 0 && <span className="text-xs text-gray-400">Nicio localitate selectată</span>}</div>
+            <div className="flex gap-2"><input className={inputClass} placeholder="Zonă / cartier" value={zoneDraft} onChange={(event) => setZoneDraft(event.target.value)} /><button type="button" onClick={addZone} className="rounded-lg border border-gray-300 px-3"><Plus size={18} /></button></div>
+            <div className="flex flex-wrap gap-2">{form.zones.map((zone) => <button type="button" key={zone} onClick={() => set('zones', form.zones.filter((item) => item !== zone))} className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-800">{zone} ×</button>)}</div>
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Rază (km, opțional)</label><input type="number" min="0" max="250" className={inputClass} value={form.radius_km} onChange={(event) => set('radius_km', event.target.value)} /></div>
+          </section>
 
-                {showNewContact && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-emerald-800">Contact nou</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        value={newC.name}
-                        onChange={(e) => setNewC((p) => ({ ...p, name: e.target.value }))}
-                        placeholder="Nume *"
-                        className={ic}
-                      />
-                      <input
-                        type="tel"
-                        value={newC.phone}
-                        onChange={(e) => setNewC((p) => ({ ...p, phone: e.target.value }))}
-                        placeholder="Telefon"
-                        className={ic}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        type="email"
-                        value={newC.email}
-                        onChange={(e) => setNewC((p) => ({ ...p, email: e.target.value }))}
-                        placeholder="Email"
-                        className={ic}
-                      />
-                      <select
-                        value={newC.type}
-                        onChange={(e) => setNewC((p) => ({ ...p, type: e.target.value }))}
-                        className={ic + ' bg-white'}
-                      >
-                        <option value="cumparator">Cumpărător</option>
-                        <option value="chirias">Chiriaș</option>
-                        <option value="proprietar">Proprietar</option>
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={createContact}
-                        disabled={newCSaving || !newC.name.trim()}
-                        className="px-3 py-1.5 text-white text-xs rounded-lg disabled:opacity-50 hover:opacity-90"
-                        style={{ backgroundColor: '#0E6B54' }}
-                      >
-                        {newCSaving ? 'Se salveaza...' : 'Salveaza si selecteaza'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowNewContact(false)}
-                        className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-white"
-                      >
-                        Anulare
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Sursa</label>
-                    <select
-                      value={fd.source}
-                      onChange={(e) => set('source', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    >
-                      <option value="">-- Selecteaza sursa --</option>
-                      {SURSE.map((s) => (
-                        <option key={s.value} value={s.value}>{s.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Agent alocat</label>
-                    <select
-                      value={fd.agent_id}
-                      onChange={(e) => set('agent_id', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    >
-                      <option value="">-- Fara agent --</option>
-                      {agents.map((a) => (
-                        <option key={a.id} value={a.id}>{a.email}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Observatii</label>
-                  <textarea
-                    value={fd.notes}
-                    onChange={(e) => set('notes', e.target.value)}
-                    placeholder="Note despre client, preferinte speciale, urgenta..."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm resize-none"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sectiunea 2: Locatie */}
-          <div>
-            <SectionHeader id="locatie" title="Locatie dorita" />
-            {sections.locatie && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Judet</label>
-                  <AutoComplete
-                    value={fd.county}
-                    onChange={(v) => { set('county', v); set('city', ''); }}
-                    options={JUDETE}
-                    placeholder="ex: Brașov"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Oras *</label>
-                  <AutoComplete
-                    value={fd.city}
-                    onChange={(v) => set('city', v)}
-                    options={(ORASE_BY_JUDET as Record<string, string[]>)[fd.county] || JUDETE}
-                    placeholder="ex: Brașov"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sectiunea 3: Cerere */}
-          <div>
-            <SectionHeader id="cerere" title="Cerere imobiliara" />
-            {sections.cerere && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Categorie</label>
-                    <select
-                      value={fd.category}
-                      onChange={(e) => set('category', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    >
-                      {CATEGORIES.map((c) => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Tip tranzactie</label>
-                    <select
-                      value={fd.tip_tranzactie}
-                      onChange={(e) => set('tip_tranzactie', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    >
-                      <option value="vanzare">Cumparare</option>
-                      <option value="inchiriere">Inchiriere</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">Moneda</label>
-                  <div className="flex gap-2">
-                    {['EUR', 'RON'].map((cur) => (
-                      <button
-                        key={cur}
-                        type="button"
-                        onClick={() => set('currency', cur)}
-                        className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                          fd.currency === cur
-                            ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
-                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        {cur}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Pret min ({fd.currency})</label>
-                    <input
-                      type="number"
-                      value={fd.min_price}
-                      onChange={(e) => set('min_price', e.target.value)}
-                      placeholder="ex: 50000"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Pret max ({fd.currency})</label>
-                    <input
-                      type="number"
-                      value={fd.max_price}
-                      onChange={(e) => set('max_price', e.target.value)}
-                      placeholder="ex: 100000"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sectiunea 4: Caracteristici */}
-          <div>
-            <SectionHeader id="caracteristici" title="Caracteristici dorite" />
-            {sections.caracteristici && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Suprafata min (mp)</label>
-                    <input
-                      type="number"
-                      value={fd.suprafata_min}
-                      onChange={(e) => set('suprafata_min', e.target.value)}
-                      placeholder="ex: 50"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Suprafata max (mp)</label>
-                    <input
-                      type="number"
-                      value={fd.suprafata_max}
-                      onChange={(e) => set('suprafata_max', e.target.value)}
-                      placeholder="ex: 100"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Nr. camere min</label>
-                    <input
-                      type="number"
-                      value={fd.nr_camere_min}
-                      onChange={(e) => set('nr_camere_min', e.target.value)}
-                      placeholder="ex: 2"
-                      min="1"
-                      max="20"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Nr. camere max</label>
-                    <input
-                      type="number"
-                      value={fd.nr_camere_max}
-                      onChange={(e) => set('nr_camere_max', e.target.value)}
-                      placeholder="ex: 3"
-                      min="1"
-                      max="20"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Etaj min</label>
-                    <input
-                      type="number"
-                      value={fd.etaj_min}
-                      onChange={(e) => set('etaj_min', e.target.value)}
-                      placeholder="ex: 1"
-                      min="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Etaj max</label>
-                    <input
-                      type="number"
-                      value={fd.etaj_max}
-                      onChange={(e) => set('etaj_max', e.target.value)}
-                      placeholder="ex: 5"
-                      min="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Sectiunea 5: CRM */}
-          <div>
-            <SectionHeader id="crm" title="Legatura CRM" />
-            {sections.crm && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Proprietate (optional)
-                </label>
-                {selectedPropertyId ? (
-                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    <Home size={14} className="text-emerald-600 flex-shrink-0" />
-                    <span className="text-sm font-medium text-emerald-800 flex-1 truncate">{selectedPropertyLabel}</span>
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedPropertyId(null); setSelectedPropertyLabel(''); setPropSearch(''); }}
-                      className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={propSearch}
-                      onChange={(e) => { setPropSearch(e.target.value); setPropOpen(true); }}
-                      onFocus={() => setPropOpen(true)}
-                      onBlur={() => setTimeout(() => setPropOpen(false), 180)}
-                      placeholder="Cauta dupa cod, titlu sau oras..."
-                      className={ic + ' pl-8'}
-                    />
-                    {propOpen && (
-                      <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto">
-                        {filteredProperties.length === 0 ? (
-                          <p className="px-4 py-3 text-sm text-gray-400">Nicio proprietate gasita</p>
-                        ) : filteredProperties.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onMouseDown={() => selectProperty(p)}
-                            className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 border-b border-gray-50 last:border-0 flex items-center gap-3"
-                          >
-                            {p.attributes?.photos?.[0] ? (
-                              <img src={p.attributes.photos[0]} alt="" className="w-10 h-8 object-cover rounded flex-shrink-0" />
-                            ) : (
-                              <div className="w-10 h-8 bg-gray-100 rounded flex-shrink-0 flex items-center justify-center">
-                                <Home size={14} className="text-gray-400" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-800 truncate">{p.title}</p>
-                              <p className="text-xs text-gray-500 font-mono">{p.internal_code} · {[p.city, p.county].filter(Boolean).join(', ')}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <p className="text-xs text-gray-400 mt-1">Completeaza daca clientul a sunat pentru o proprietate anume</p>
-              </div>
-            )}
-          </div>
-        </form>
-
-        {/* Footer */}
-        <div className="border-t border-gray-200 px-6 py-4 flex gap-3 flex-shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-          >
-            Anuleaza
-          </button>
-          <button
-            type="submit"
-            form=""
-            disabled={loading}
-            onClick={handleSubmit as any}
-            className="flex-1 px-4 py-2 text-white rounded-lg hover:opacity-90 disabled:opacity-50 transition-colors text-sm font-medium"
-            style={{ backgroundColor: '#0E6B54' }}
-          >
-            {loading ? 'Se salveaza...' : 'Salveaza Cerere'}
-          </button>
+          <section className="space-y-4">
+            <h3 className="font-bold text-gray-900">Buget și caracteristici</h3>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm"><input type="checkbox" checked={form.budget_unknown} onChange={(event) => set('budget_unknown', event.target.checked)} />Clientul nu știe încă bugetul</label>
+            <div className="grid grid-cols-[1fr_1fr_90px] gap-2"><input disabled={form.budget_unknown} type="number" min="0" className={inputClass} placeholder="Buget minim" value={form.budget_min} onChange={(event) => set('budget_min', event.target.value)} /><input disabled={form.budget_unknown} type="number" min="0" className={inputClass} placeholder="Buget maxim" value={form.budget_max} onChange={(event) => set('budget_max', event.target.value)} /><select className={inputClass} value={form.currency} onChange={(event) => set('currency', event.target.value)}><option>EUR</option><option>RON</option></select></div>
+            <Range label="Camere" min={form.rooms_min} max={form.rooms_max} onMin={(value) => set('rooms_min', value)} onMax={(value) => set('rooms_max', value)} />
+            <Range label="Suprafață utilă (mp)" min={form.usable_area_min} max={form.usable_area_max} onMin={(value) => set('usable_area_min', value)} onMax={(value) => set('usable_area_max', value)} />
+            <Range label="Teren (mp)" min={form.land_area_min} max={form.land_area_max} onMin={(value) => set('land_area_min', value)} onMax={(value) => set('land_area_max', value)} />
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Etaje acceptate</label><div className="flex flex-wrap gap-2">{FLOOR_OPTIONS.map((floor) => <button type="button" key={floor} onClick={() => toggleList('floor_preferences', floor)} className={`rounded-lg border px-3 py-1.5 text-xs ${form.floor_preferences.includes(floor) ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-gray-200 text-gray-600'}`}>{floor}</button>)}</div></div>
+            <div className="grid grid-cols-2 gap-3"><div><label className="mb-1 block text-xs font-semibold text-gray-600">Mobilare</label><select className={inputClass} value={form.furnished_preference} onChange={(event) => set('furnished_preference', event.target.value)}><option value="">Nespecificat</option><option value="oricare">Indiferent</option><option value="nemobilat">Nemobilat</option><option value="partial mobilat">Parțial mobilat</option><option value="mobilat">Mobilat</option></select></div><div><label className="mb-1 block text-xs font-semibold text-gray-600">Finanțare</label><select className={inputClass} value={form.financing} onChange={(event) => set('financing', event.target.value)}><option value="">Nespecificat</option><option value="numerar">Numerar</option><option value="credit">Credit</option><option value="credit_preaprobat">Credit preaprobat</option><option value="mixt">Mixt</option></select></div></div>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm"><input type="checkbox" checked={form.parking_required} onChange={(event) => set('parking_required', event.target.checked)} />Parcarea este obligatorie</label>
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Termen</label><input type="date" className={inputClass} value={form.deadline_date} onChange={(event) => set('deadline_date', event.target.value)} /></div>
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Cerințe speciale</label><textarea className={inputClass} rows={3} value={form.special_requirements} onChange={(event) => set('special_requirements', event.target.value)} placeholder="Accesibilitate, animale, orientare, utilități etc." /></div>
+            <div><label className="mb-1 block text-xs font-semibold text-gray-600">Observații interne</label><textarea className={inputClass} rows={3} value={form.notes} onChange={(event) => set('notes', event.target.value)} /></div>
+          </section>
         </div>
-      </div>
+
+        {error && <p className="mx-6 mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
+        <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4"><button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">Anulează</button><button type="submit" disabled={loading} className="rounded-lg bg-emerald-700 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{loading ? 'Se salvează…' : demand ? 'Salvează modificările' : 'Creează cererea'}</button></div>
+      </form>
     </div>
   );
+}
+
+function Range({ label, min, max, onMin, onMax }: { label: string; min: string; max: string; onMin: (value: string) => void; onMax: (value: string) => void }) {
+  return <div><label className="mb-1 block text-xs font-semibold text-gray-600">{label}</label><div className="grid grid-cols-2 gap-2"><input type="number" min="0" className={inputClass} placeholder="Minim" value={min} onChange={(event) => onMin(event.target.value)} /><input type="number" min="0" className={inputClass} placeholder="Maxim" value={max} onChange={(event) => onMax(event.target.value)} /></div></div>;
 }

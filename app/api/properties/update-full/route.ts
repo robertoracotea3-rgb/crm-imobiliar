@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { logActivity, diffFields, getUserName } from '@/lib/activity-log';
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 
 function errMsg(e: unknown): string {
   if (!e) return 'Eroare';
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
     if (!auth.ok) return auth.response;
-    const { admin, user, agencyId } = auth.context;
+    const { admin, serviceAdmin, user, agencyId } = auth.context;
 
     const body = await request.json();
     const { id, title, price, currency, description, county, city, zone, street, street_number, latitude, longitude, attributes, agent_id } = body;
@@ -111,7 +112,9 @@ export async function POST(request: Request) {
       }
     }
 
-    return Response.json({ success: true });
+    const matching = await refreshDemandMatchesForProperty(serviceAdmin, agencyId, id)
+      .catch(() => ({ evaluated: 0, matched: 0 }));
+    return Response.json({ success: true, matching });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }

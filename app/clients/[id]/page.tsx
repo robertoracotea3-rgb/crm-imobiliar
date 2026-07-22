@@ -43,6 +43,7 @@ type ClientProfile = {
   demands: {
     id: string; internal_code?: string | null; status?: string | null; category?: string | null;
     transaction?: string | null; budget_min?: number | null; budget_max?: number | null;
+    budget_unknown?: boolean | null; intent?: string | null; property_types?: string[] | null;
     currency?: string | null; cities?: string[] | null; created_at: string;
   }[];
   viewings: {
@@ -197,8 +198,8 @@ export default function ClientProfilePage() {
                 </section>
 
                 <section className={section}>
-                  <h2 className="mb-3 font-bold text-gray-900">Cereri</h2>
-                  <div className="grid gap-3 md:grid-cols-2">{profile.demands.map((demand) => <article key={demand.id} className="rounded-xl border border-gray-100 p-4"><p className="font-semibold text-gray-900">{demand.internal_code || 'Cerere'}</p><p className="mt-1 text-sm text-gray-600">{[demand.transaction, demand.category, ...(demand.cities || [])].filter(Boolean).join(' · ') || 'Criterii necompletate'}</p><p className="mt-2 text-sm font-medium text-emerald-700">{money(demand.budget_min, demand.currency || 'EUR')} – {money(demand.budget_max, demand.currency || 'EUR')}</p></article>)}{profile.demands.length === 0 && <p className="text-sm text-gray-500">Nicio cerere asociată.</p>}</div>
+                  <div className="mb-3 flex items-center justify-between gap-3"><h2 className="font-bold text-gray-900">Cereri</h2><Link href={`/matches?contact_id=${profile.contact.id}`} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white">Adaugă cerere</Link></div>
+                  <div className="grid gap-3 md:grid-cols-2">{profile.demands.map((demand) => <Link href={`/matches?demand_id=${demand.id}`} key={demand.id} className="rounded-xl border border-gray-100 p-4 hover:border-emerald-300"><p className="font-semibold text-gray-900">{demand.internal_code || 'Cerere'}</p><p className="mt-1 text-sm text-gray-600">{[demand.intent || demand.transaction, ...((demand.property_types?.length ? demand.property_types : [demand.category]).filter(Boolean)), ...(demand.cities || [])].filter(Boolean).join(' · ') || 'Criterii necompletate'}</p><p className="mt-2 text-sm font-medium text-emerald-700">{demand.budget_unknown ? 'Buget necunoscut' : `${money(demand.budget_min, demand.currency || 'EUR')} – ${money(demand.budget_max, demand.currency || 'EUR')}`}</p></Link>)}{profile.demands.length === 0 && <p className="text-sm text-gray-500">Nicio cerere asociată.</p>}</div>
                 </section>
 
                 <section className={section}>

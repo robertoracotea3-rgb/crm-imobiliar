@@ -1,13 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { processPendingDemandMatchJobs } from '@/lib/server/demand-matching';
 
 export async function GET(request: Request) {
   const auth = await requireApiAuth(request, { module: 'notifications', action: 'view' });
   if (!auth.ok) return auth.response;
 
   try {
-    const { admin, agencyId, user } = auth.context;
+    const { admin, serviceAdmin, agencyId, user } = auth.context;
     const now = new Date();
     const notifications: Array<{
       id: string;
@@ -17,6 +18,10 @@ export async function GET(request: Request) {
       link?: string;
       created_at: string;
     }> = [];
+
+    // Process a small retry-safe batch. The property write already created the
+    // queue item, and this never contacts the client automatically.
+    await processPendingDemandMatchJobs(serviceAdmin, agencyId, 3).catch(() => undefined);
 
     const [
       { data: propsNoPhoto },
@@ -156,6 +161,37 @@ export async function GET(request: Request) {
         message: `Proprietate noua adaugata: ${p.title}`,
         link: `/properties/${p.id}`,
         created_at: p.created_at,
+      });
+    });
+
+    const { data: pendingMatches } = await admin.from('matches')
+      .select('id, demand_id, property_id, score, created_at')
+      .eq('agency_id', agencyId)
+      .eq('status', 'noua')
+      .gte('created_at', new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString())
+      .order('score', { ascending: false })
+      .limit(20);
+    const demandIds = [...new Set((pendingMatches || []).map((match) => match.demand_id))];
+    const propertyIds = [...new Set((pendingMatches || []).map((match) => match.property_id))];
+    const [{ data: matchDemands }, { data: matchProperties }] = await Promise.all([
+      demandIds.length > 0
+        ? admin.from('demands').select('id, internal_code').eq('agency_id', agencyId).in('id', demandIds)
+        : Promise.resolve({ data: [] as Array<{ id: string; internal_code: string }> }),
+      propertyIds.length > 0
+        ? admin.from('properties').select('id, title, internal_code').eq('agency_id', agencyId).in('id', propertyIds)
+        : Promise.resolve({ data: [] as Array<{ id: string; title: string; internal_code?: string }> }),
+    ]);
+    const demandCode = new Map((matchDemands || []).map((demand) => [demand.id, demand.internal_code]));
+    const propertyTitle = new Map((matchProperties || []).map((property) => [property.id, property]));
+    (pendingMatches || []).forEach((match) => {
+      const property = propertyTitle.get(match.property_id);
+      notifications.push({
+        id: `demand_match_${match.id}`,
+        type: 'demand_match',
+        severity: Number(match.score) >= 75 ? 'success' : 'info',
+        message: `Potrivire nouă ${Math.round(Number(match.score))}%: ${demandCode.get(match.demand_id) || 'cerere'} ↔ ${property?.title || 'proprietate'}`,
+        link: `/matches?demand_id=${match.demand_id}`,
+        created_at: match.created_at,
       });
     });
 

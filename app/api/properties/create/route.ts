@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { logActivity, getUserName } from '@/lib/activity-log';
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 import { isPropertyStatus } from '@/lib/crm-catalogs';
 
 function errMsg(e: unknown): string {
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'create' });
     if (!auth.ok) return auth.response;
-    const { admin, user, agencyId } = auth.context;
+    const { admin, serviceAdmin, user, agencyId } = auth.context;
 
     const body = await request.json();
     const { propertyData } = body;
@@ -93,7 +94,12 @@ export async function POST(request: Request) {
       user_id: user.id, user_name: userName, action: 'create', new_value: payload.title,
     });
 
-    return Response.json({ property_id: property!.id, agency_id: agencyId, status });
+    const matching = status === 'activa'
+      ? await refreshDemandMatchesForProperty(serviceAdmin, agencyId, property!.id)
+        .catch(() => ({ evaluated: 0, matched: 0 }))
+      : { evaluated: 0, matched: 0 };
+
+    return Response.json({ property_id: property!.id, agency_id: agencyId, status, matching });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 
 function errMsg(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
     if (!auth.ok) return auth.response;
-    const { admin, agencyId } = auth.context;
+    const { admin, serviceAdmin, agencyId } = auth.context;
 
     const body = await request.json();
     const { id, title, price, description } = body;
@@ -40,7 +41,9 @@ export async function POST(request: Request) {
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
     if (!data) return Response.json({ error: 'Proprietatea nu există' }, { status: 404 });
-    return Response.json({ success: true });
+    const matching = await refreshDemandMatchesForProperty(serviceAdmin, agencyId, id)
+      .catch(() => ({ evaluated: 0, matched: 0 }));
+    return Response.json({ success: true, matching });
   } catch (error) {
     return Response.json({ error: errMsg(error) }, { status: 500 });
   }

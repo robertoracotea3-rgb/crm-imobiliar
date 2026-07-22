@@ -9,6 +9,7 @@ import {
   isPropertyStatus,
 } from '@/lib/crm-catalogs';
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 
 const statusLabel = (code: string) => getCatalogItem(PROPERTY_STATUSES, code)?.label || code;
 
@@ -16,7 +17,7 @@ export async function PATCH(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
     if (!auth.ok) return auth.response;
-    const { admin, user, agencyId } = auth.context;
+    const { admin, serviceAdmin, user, agencyId } = auth.context;
 
     const { id, status, reason } = await request.json();
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
@@ -59,7 +60,9 @@ export async function PATCH(request: Request) {
       });
     }
 
-    return Response.json({ success: true, status });
+    const matching = await refreshDemandMatchesForProperty(serviceAdmin, agencyId, id)
+      .catch(() => ({ evaluated: 0, matched: 0 }));
+    return Response.json({ success: true, status, matching });
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : 'Eroare internă' },

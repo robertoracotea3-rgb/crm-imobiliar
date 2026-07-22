@@ -651,6 +651,7 @@ export default function ClientsPage() {
           <div><h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Clienți</h1>
             <p className="text-sm text-gray-500 mt-1">{clients.length} clienți</p></div>
           <div className="flex flex-wrap gap-2">
+            <Link href="/matches" className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"><Target size={17} />Cereri și potriviri</Link>
             {(role === 'owner' || role === 'admin' || role === 'manager') && <Link href="/clients/duplicates" className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"><History size={17} />Verifică duplicate</Link>}
             <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90" style={{ backgroundColor: '#0E6B54' }}>
               <Plus size={18} /> Adaugă client
