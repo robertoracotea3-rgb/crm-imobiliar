@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { logActivity, getUserName } from '@/lib/activity-log';
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { isPropertyStatus } from '@/lib/crm-catalogs';
 
 function errMsg(e: unknown): string {
   if (!e) return 'Eroare';
@@ -15,11 +16,10 @@ function errMsg(e: unknown): string {
 
 // Enum-uri reale din baza de date
 const VALID_CATEGORY = ['apartament', 'casa_vila', 'spatiu_comercial', 'spatiu_industrial', 'teren', 'pensiune_hotel', 'birou', 'garaj'];
-const VALID_STATUS = ['draft', 'activa', 'rezervata', 'tranzactionata', 'retrasa', 'arhivata'];
 const VALID_TRANSACTION = ['vanzare', 'inchiriere', 'regim_hotelier'];
 
 const STATUS_ALIASES: Record<string, string> = {
-  active: 'activa', reserved: 'rezervata', sold: 'tranzactionata', rented: 'tranzactionata',
+  active: 'activa', reserved: 'rezervata', sold: 'tranzactionata', rented: 'inchiriata',
 };
 
 function num(v: unknown): number | null {
@@ -42,7 +42,8 @@ export async function POST(request: Request) {
 
     const category = VALID_CATEGORY.includes(propertyData.category) ? propertyData.category : 'apartament';
     const rawStatus = String(propertyData.status || 'draft');
-    const status = VALID_STATUS.includes(rawStatus) ? rawStatus : (STATUS_ALIASES[rawStatus] || 'draft');
+    const aliasedStatus = STATUS_ALIASES[rawStatus] || rawStatus;
+    const status = isPropertyStatus(aliasedStatus) ? aliasedStatus : 'draft';
     const tipOferta = String(attrs.tip_oferta || '');
     const transaction = VALID_TRANSACTION.includes(String(propertyData.transaction))
       ? propertyData.transaction

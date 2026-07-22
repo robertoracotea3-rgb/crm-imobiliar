@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { PropertiesList } from '@/components/PropertiesList';
@@ -9,6 +9,7 @@ import { AddPropertyDialog } from '@/components/AddPropertyDialog';
 import { Search, Filter, Plus, Wand2, ArrowUpDown, CheckSquare, Trash2, RefreshCw, User, Globe } from 'lucide-react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
+import { PROPERTY_STATUSES, PROPERTY_STATUS_TRANSITIONS, canTransition, isPropertyStatus } from '@/lib/crm-catalogs';
 
 const CATEGORIES = [
   'apartament', 'casa_vila', 'spatiu_comercial', 'spatiu_industrial',
@@ -22,30 +23,37 @@ const SORT_OPTIONS = [
   { value: 'price_desc', label: 'Pret ↓' },
 ];
 
-const STATUS_LABEL: Record<string, string> = {
-  activa: 'Activa', rezervata: 'Rezervata', tranzactionata: 'Tranzactionata',
-  inchiriata: 'Inchiriata', retrasa: 'Retrasa', expirata: 'Expirata',
-  draft: 'Draft', arhivata: 'Arhivata',
-};
+const STATUS_LABEL = Object.fromEntries(PROPERTY_STATUSES.map((item) => [item.code, item.label]));
+const STATUS_COLOR = Object.fromEntries(PROPERTY_STATUSES.map((item) => [item.code, item.color]));
+const BULK_STATUSES = PROPERTY_STATUSES.map((item) => ({ value: item.code, label: item.label }));
 
-const STATUS_COLOR: Record<string, string> = {
-  activa: 'bg-emerald-100 text-emerald-800', rezervata: 'bg-blue-100 text-blue-800',
-  tranzactionata: 'bg-purple-100 text-purple-800', inchiriata: 'bg-indigo-100 text-indigo-800',
-  retrasa: 'bg-gray-100 text-gray-600', expirata: 'bg-orange-100 text-orange-700',
-  draft: 'bg-yellow-100 text-yellow-800', arhivata: 'bg-red-100 text-red-700',
-};
-
-const BULK_STATUSES = [
-  { value: 'activa', label: 'Activă' },
-  { value: 'rezervata', label: 'Rezervată' },
-  { value: 'retrasa', label: 'Retrasă' },
-  { value: 'tranzactionata', label: 'Tranzacționată' },
-  { value: 'arhivata', label: 'Arhivată' },
-];
+interface PropertyRow {
+  id: string;
+  internal_code: string;
+  title: string;
+  city?: string;
+  county?: string;
+  price: number | null;
+  currency?: string;
+  category: string;
+  status?: string;
+  agent_id?: string;
+  created_at: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  attributes?: (Record<string, unknown> & {
+    location_text?: string;
+    judet?: string;
+    localitate?: string;
+    tip_oferta?: string;
+    photos?: string[];
+  }) | null;
+  days_since_update?: number;
+  publications?: Array<{ portal: string; isEnabled: boolean; status: 'published' | 'pending' | 'failed' | 'draft' }>;
+}
 
 export default function PropertiesPage() {
-  const [properties, setProperties] = useState<any[]>([]);
-  const [filteredProperties, setFilteredProperties] = useState<any[]>([]);
+  const [properties, setProperties] = useState<PropertyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -61,8 +69,8 @@ export default function PropertiesPage() {
   // Căutare AI
   const [aiQuery, setAiQuery] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiResults, setAiResults] = useState<any[] | null>(null);
-  const [aiFilters, setAiFilters] = useState<Record<string, any> | null>(null);
+  const [aiResults, setAiResults] = useState<PropertyRow[] | null>(null);
+  const [aiFilters, setAiFilters] = useState<Record<string, unknown> | null>(null);
   const [aiError, setAiError] = useState('');
 
   const runAiSearch = async () => {
@@ -104,12 +112,7 @@ export default function PropertiesPage() {
 
   const availableCities = selectedCounty ? (ORASE_BY_JUDET[selectedCounty] || []) : [];
 
-  useEffect(() => {
-    fetchProperties();
-    fetchAgents();
-  }, []);
-
-  const fetchProperties = async () => {
+  const fetchProperties = useCallback(async () => {
     try {
       setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
@@ -127,9 +130,9 @@ export default function PropertiesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchAgents = async () => {
+  const fetchAgents = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
@@ -140,9 +143,17 @@ export default function PropertiesPage() {
       const list = (d.agents || []).map((a: { id: string; email: string }) => ({ id: a.id, name: a.email }));
       setAgentsList(list);
     } catch {}
-  };
+  }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchProperties();
+      void fetchAgents();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchAgents, fetchProperties]);
+
+  const filteredProperties = useMemo(() => {
     let filtered = [...properties];
 
     // Status filter — fiecare buton/bifă e un grup de statusuri. Arătăm uniunea celor selectate.
@@ -150,7 +161,7 @@ export default function PropertiesPage() {
     const allowedStatuses: string[] = [];
     if (showActive) allowedStatuses.push('activa');
     if (showReservate) allowedStatuses.push('rezervata');
-    if (showTranzactionate) allowedStatuses.push('tranzactionata', 'tranzactionata', 'inchiriata', 'inchiriata');
+    if (showTranzactionate) allowedStatuses.push('tranzactionata', 'inchiriata');
     if (showRetrase) allowedStatuses.push('retrasa', 'expirata', 'arhivata');
     if (allowedStatuses.length > 0) {
       filtered = filtered.filter((p) => allowedStatuses.includes(p.status || 'activa'));
@@ -210,9 +221,7 @@ export default function PropertiesPage() {
       return 0;
     });
 
-    setFilteredProperties(filtered);
-    // Clear selections when filters change
-    setSelectedIds(new Set());
+    return filtered;
   }, [searchTerm, selectedCategory, sortBy, showActive, showReservate, showTranzactionate, showRetrase,
       selectedCounty, selectedCity, selectedTransaction, selectedAgent, properties]);
 
@@ -252,7 +261,7 @@ export default function PropertiesPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      await Promise.all(
+      const responses = await Promise.all(
         Array.from(selectedIds).map(id =>
           fetch('/api/properties/status', {
             method: 'PATCH',
@@ -261,11 +270,17 @@ export default function PropertiesPage() {
           })
         )
       );
+      const failed = responses.find((response) => !response.ok);
+      if (failed) {
+        const result = await failed.json();
+        throw new Error(result.error || 'Unele statusuri nu au putut fi schimbate');
+      }
       setSelectedIds(new Set());
       setBulkStatus('');
       await fetchProperties();
     } catch (err) {
       console.error('Eroare bulk status:', err);
+      alert(err instanceof Error ? err.message : 'Statusurile nu au putut fi schimbate');
     } finally {
       setBulkLoading(false);
     }
@@ -343,8 +358,8 @@ export default function PropertiesPage() {
 
   const activeCount = properties.filter((p) => (p.status || 'activa') === 'activa').length;
   const rezervateCount = properties.filter((p) => p.status === 'rezervata').length;
-  const tranzactionateCount = properties.filter((p) => ['tranzactionata', 'tranzactionata', 'inchiriata', 'inchiriata'].includes(p.status)).length;
-  const retraseCount = properties.filter((p) => ['retrasa', 'expirata', 'arhivata'].includes(p.status)).length;
+  const tranzactionateCount = properties.filter((p) => ['tranzactionata', 'inchiriata'].includes(p.status || '')).length;
+  const retraseCount = properties.filter((p) => ['retrasa', 'expirata', 'arhivata'].includes(p.status || '')).length;
 
   return (
     <ProtectedLayout module="properties">
@@ -607,7 +622,10 @@ export default function PropertiesPage() {
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                 >
                   <option value="">Schimbă status...</option>
-                  {BULK_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  {BULK_STATUSES.filter((option) => Array.from(selectedIds).every((id) => {
+                    const current = properties.find((property) => property.id === id)?.status;
+                    return isPropertyStatus(current) && canTransition(PROPERTY_STATUS_TRANSITIONS, current, option.value);
+                  })).map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
                 <button
                   onClick={applyBulkStatus}

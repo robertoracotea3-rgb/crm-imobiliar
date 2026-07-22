@@ -27,7 +27,7 @@ interface Property {
     location_text?: string;
     photos?: string[];
     tip_oferta?: string;
-  };
+  } | null;
   days_since_update?: number;
   publications?: Array<{
     portal: string;

@@ -1,18 +1,16 @@
 export const dynamic = 'force-dynamic';
 
 import { getUserName, logActivity } from '@/lib/activity-log';
+import {
+  PROPERTY_STATUSES,
+  PROPERTY_STATUS_TRANSITIONS,
+  canTransition,
+  getCatalogItem,
+  isPropertyStatus,
+} from '@/lib/crm-catalogs';
 import { requireApiAuth } from '@/lib/server/api-auth';
 
-const VALID_STATUSES = ['activa', 'rezervata', 'tranzactionata', 'inchiriata', 'retrasa', 'expirata', 'draft'];
-const STATUS_LABELS: Record<string, string> = {
-  activa: 'Activă',
-  rezervata: 'Rezervată',
-  tranzactionata: 'Tranzacționată',
-  inchiriata: 'Închiriată',
-  retrasa: 'Retrasă',
-  expirata: 'Expirată',
-  draft: 'Draft',
-};
+const statusLabel = (code: string) => getCatalogItem(PROPERTY_STATUSES, code)?.label || code;
 
 export async function PATCH(request: Request) {
   try {
@@ -20,9 +18,9 @@ export async function PATCH(request: Request) {
     if (!auth.ok) return auth.response;
     const { admin, user, agencyId } = auth.context;
 
-    const { id, status } = await request.json();
+    const { id, status, reason } = await request.json();
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
-    if (!status || !VALID_STATUSES.includes(status)) {
+    if (!isPropertyStatus(status)) {
       return Response.json({ error: 'Status invalid' }, { status: 400 });
     }
 
@@ -35,10 +33,13 @@ export async function PATCH(request: Request) {
       .maybeSingle();
     if (findError) return Response.json({ error: findError.message }, { status: 500 });
     if (!property) return Response.json({ error: 'Proprietatea nu există' }, { status: 404 });
+    if (!isPropertyStatus(property.status) || !canTransition(PROPERTY_STATUS_TRANSITIONS, property.status, status)) {
+      return Response.json({ error: `Tranziția ${statusLabel(property.status)} → ${statusLabel(status)} nu este permisă` }, { status: 409 });
+    }
 
     const { error } = await admin
       .from('properties')
-      .update({ status, updated_at: new Date().toISOString() })
+      .update({ status, status_reason: String(reason || '').trim() || null, updated_at: new Date().toISOString() })
       .eq('id', id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null);
@@ -53,8 +54,8 @@ export async function PATCH(request: Request) {
         user_name: await getUserName(user.id),
         action: 'status',
         field: 'Status',
-        old_value: STATUS_LABELS[property.status] || property.status,
-        new_value: STATUS_LABELS[status] || status,
+        old_value: statusLabel(property.status),
+        new_value: statusLabel(status),
       });
     }
 

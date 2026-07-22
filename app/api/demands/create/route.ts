@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth, type AuthenticatedContext } from '@/lib/server/api-auth';
+import { normalizeLeadSource } from '@/lib/crm-catalogs';
 
 async function generateCode(admin: AuthenticatedContext['admin'], agencyId: string): Promise<string> {
   const { data } = await admin
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
     }
 
     const internal_code = await generateCode(admin, agencyId);
+    const normalizedSource = normalizeLeadSource(c.source) || 'manual';
 
     const { error: insertError, data } = await admin.from('demands').insert([{
       internal_code,
@@ -66,7 +68,8 @@ export async function POST(request: Request) {
       contact_id: c.contact_id || null,
       category: body.category || null,
       transaction: c.tip_tranzactie || null,
-      source: c.source || null,
+      source: normalizedSource,
+      source_normalized: normalizedSource,
       budget_min: body.min_price ?? null,
       budget_max: body.max_price ?? null,
       currency: c.currency || 'EUR',

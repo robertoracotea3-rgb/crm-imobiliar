@@ -197,7 +197,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 const STATUS_MAP: Record<string, string> = {
-  'Activă': 'activa', 'Rezervată': 'rezervata', 'Vândută': 'tranzactionata', 'Închiriată': 'tranzactionata',
+  'Activă': 'activa', 'Rezervată': 'rezervata', 'Vândută': 'tranzactionata', 'Închiriată': 'inchiriata',
 };
 
 const TRANSACTION_MAP: Record<string, string> = {
@@ -802,7 +802,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             <div className="space-y-3">
               <SH title="Poze proprietate" />
               <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 text-xs text-violet-800">
-                💡 Adaugă pozele primele și apasă <span className="font-semibold">„Analizează cu AI"</span> — completează automat tipul, starea, finisajele și dotările vizibile. Le poți ajusta oricând la pașii următori.
+                💡 Adaugă pozele primele și apasă <span className="font-semibold">„Analizează cu AI”</span> — completează automat tipul, starea, finisajele și dotările vizibile. Le poți ajusta oricând la pașii următori.
               </div>
               <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotos} />
               <div onClick={() => fileRef.current?.click()}

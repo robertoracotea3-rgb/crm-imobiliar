@@ -13,6 +13,14 @@ import {
   initials, avatarColor, parseLeadMessage,
 } from '@/lib/clients';
 import {
+  LEAD_SOURCES,
+  LEAD_STATUS_TRANSITIONS,
+  canTransition,
+  isLeadStatus,
+  leadSourceLabel,
+  normalizeLeadSource,
+} from '@/lib/crm-catalogs';
+import {
   Plus, Search, Filter, Phone, Mail, MessageCircle, Pencil, Trash2,
   MoreVertical, Clock, User, MapPin, Tag, History, Target, X, Loader2,
   StickyNote, CalendarPlus, Globe, ChevronDown, Send,
@@ -32,6 +40,7 @@ interface Client {
   received_at: string;
   first_response_at?: string;
   source?: string;
+  source_normalized?: string;
   city?: string;
   county?: string;
   category?: string;
@@ -41,6 +50,11 @@ interface Client {
   currency?: string;
   criteria?: Record<string, unknown>;
   agent_id?: string;
+  next_action_at?: string;
+  next_action_type?: string;
+  status_reason?: string;
+  status_note?: string;
+  lost_to_competitor?: string;
 }
 
 interface PropertyOption {
@@ -66,8 +80,13 @@ interface PropertyMatch {
 
 const CATEGORIES = ['apartament', 'casa_vila', 'teren', 'spatiu_comercial', 'spatiu_industrial', 'birou', 'pensiune_hotel', 'garaj'];
 const CAT_LABEL = (c?: string) => (c ? c.replace(/_/g, ' ') : '');
-const SOURCES = ['Website', 'OLX', 'Storia', 'Imobiliare.ro', 'Facebook', 'Recomandare', 'Evaluare gratuită', 'Contact', 'Manual'];
+const SOURCES = LEAD_SOURCES.filter((source) => source.active);
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
+const localDateTimeInput = (value: string | number | Date) => {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+};
+const futureLocalInput = (minutes: number) => localDateTimeInput(Date.now() + minutes * 60_000);
 
 function relativeTime(date?: string): string {
   if (!date) return '';
@@ -102,7 +121,7 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
     contact_email: client?.contact_email || '',
     message: isEdit ? parseLeadMessage(client?.message, client?.source).text : '',
     status: client?.status || 'new',
-    source: client?.source || 'Manual',
+    source: client?.source_normalized || normalizeLeadSource(client?.source) || 'manual',
     county: client?.county || '',
     city: client?.city || '',
     category: client?.category || '',
@@ -115,6 +134,11 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
     suprafata_min: (c.suprafata_min as number)?.toString() || '',
     suprafata_max: (c.suprafata_max as number)?.toString() || '',
     agent_id: client?.agent_id || '',
+    next_action_at: client?.next_action_at ? localDateTimeInput(client.next_action_at) : futureLocalInput(60),
+    next_action_type: client?.next_action_type || (client ? 'follow_up' : 'first_contact'),
+    status_reason: client?.status_reason || '',
+    status_note: client?.status_note || '',
+    lost_to_competitor: client?.lost_to_competitor || '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -134,6 +158,11 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
         county: form.county, city: form.city, category: form.category, transaction: form.transaction,
         budget_min: form.budget_min || null, budget_max: form.budget_max || null, currency: form.currency,
         agent_id: form.agent_id || null,
+        next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null,
+        next_action_type: form.next_action_type || null,
+        status_reason: form.status_reason,
+        status_note: form.status_note,
+        lost_to_competitor: form.lost_to_competitor,
         criteria: {
           ...(client?.criteria || {}),
           nr_camere_min: form.nr_camere_min ? +form.nr_camere_min : null,
@@ -172,13 +201,13 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
               <input value={form.contact_email} onChange={(e) => set('contact_email', e.target.value)} className={ic} type="email" /></div>
             <div><label className="text-xs font-medium text-gray-600 block mb-1">Sursă</label>
               <select value={form.source} onChange={(e) => set('source', e.target.value)} className={ic}>
-                {SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                {SOURCES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
               </select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="text-xs font-medium text-gray-600 block mb-1">Status</label>
               <select value={form.status} onChange={(e) => set('status', e.target.value)} className={ic}>
-                {STATUS_ORDER.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                {STATUS_ORDER.filter((s) => !client ? s === 'new' : (isLeadStatus(client.status) && canTransition(LEAD_STATUS_TRANSITIONS, client.status, s))).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
               </select></div>
             <div><label className="text-xs font-medium text-gray-600 block mb-1">Agent responsabil</label>
               <select value={form.agent_id} onChange={(e) => set('agent_id', e.target.value)} className={ic}>
@@ -186,6 +215,24 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.email}</option>)}
               </select></div>
           </div>
+          {form.status === 'lost' && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-red-800">Detalii obligatorii pentru lead pierdut</p>
+              <input value={form.status_reason} onChange={(e) => set('status_reason', e.target.value)} className={ic} placeholder="Motiv *" />
+              <textarea value={form.status_note} onChange={(e) => set('status_note', e.target.value)} className={ic} rows={2} placeholder="Observație *" />
+              <input value={form.lost_to_competitor} onChange={(e) => set('lost_to_competitor', e.target.value)} className={ic} placeholder="Concurent / altă agenție (dacă este cazul)" />
+            </div>
+          )}
+          {!['won', 'lost', 'withdrawn'].includes(form.status) && (
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs font-medium text-gray-600 block mb-1">Următoarea acțiune *</label>
+                <select value={form.next_action_type} onChange={(e) => set('next_action_type', e.target.value)} className={ic}>
+                  <option value="first_contact">Prim contact</option><option value="follow_up">Revenire</option><option value="send_offers">Trimite oferte</option><option value="viewing">Vizionare</option>
+                </select></div>
+              <div><label className="text-xs font-medium text-gray-600 block mb-1">Data acțiunii *</label>
+                <input type="datetime-local" value={form.next_action_at} onChange={(e) => set('next_action_at', e.target.value)} className={ic} /></div>
+            </div>
+          )}
 
           <div className="pt-2 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-500 mb-2">CE CAUTĂ (pentru potriviri)</p>
@@ -467,7 +514,7 @@ export default function ClientsPage() {
     else if (!onlyMine && selectedAgent) { if (c.agent_id !== selectedAgent) return false; }
     if (fCity && c.city !== fCity) return false;
     if (fCategory && c.category !== fCategory) return false;
-    if (fSource && (c.source || '') !== fSource) return false;
+    if (fSource && (c.source_normalized || normalizeLeadSource(c.source) || '') !== fSource) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       const hay = `${c.contact_name || ''} ${c.contact_phone || ''} ${c.contact_email || ''} ${c.message || ''} ${c.property_code || ''} ${c.property_title || ''}`.toLowerCase();
@@ -486,10 +533,28 @@ export default function ClientsPage() {
   const visible = useMemo(() => scoped.filter((c) => inTab(c, tab) && (!fStatus || c.status === fStatus)), [scoped, tab, fStatus]);
 
   const changeStatus = async (id: string, status: string) => {
-    setClients((prev) => prev.map((c) => c.id === id ? { ...c, status } : c));
+    const current = clients.find((client) => client.id === id);
+    if (!current || !isLeadStatus(current.status) || !isLeadStatus(status)) return;
+    if (!canTransition(LEAD_STATUS_TRANSITIONS, current.status, status)) {
+      setError('Această tranziție de status nu este permisă');
+      return;
+    }
+    const payload: Record<string, unknown> = { id, status };
+    if (status === 'lost') {
+      const reason = window.prompt('Motivul pierderii leadului:')?.trim();
+      if (!reason) return;
+      const note = window.prompt('Observație despre motivul pierderii:')?.trim();
+      if (!note) return;
+      payload.status_reason = reason;
+      payload.status_note = note;
+      payload.lost_to_competitor = window.prompt('Concurent / altă agenție (opțional):')?.trim() || null;
+    }
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
-    await fetch('/api/leads/update', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ id, status }) });
+    const response = await fetch('/api/leads/update', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(payload) });
+    const result = await response.json();
+    if (!response.ok) { setError(result.error || 'Statusul nu a putut fi schimbat'); return; }
+    setClients((prev) => prev.map((client) => client.id === id ? { ...client, ...result.lead } : client));
   };
   const scheduleViewing = (c: Client) => { setViewingClient(c); setMenuOpen(null); };
   const remove = async (id: string) => {
@@ -618,7 +683,7 @@ export default function ClientsPage() {
                 <option value="">Toți agenții</option>
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.email}{a.id === user?.id ? ' (eu)' : ''}</option>)}
               </select>
-              <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate sursele</option>{SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+              <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate sursele</option>{SOURCES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}</select>
               {(search || fCity || fCategory || fSource || fStatus || !onlyMine) && (
                 <button onClick={() => { setSearch(''); setFCity(''); setFCategory(''); setFSource(''); setFStatus(''); setOnlyMine(true); setSelectedAgent(''); }} className="text-sm text-gray-500 underline">Reset</button>
               )}
@@ -655,7 +720,8 @@ export default function ClientsPage() {
         ) : (
           <div className="space-y-2.5">
             {visible.map((c) => {
-              const parsed = parseLeadMessage(c.message, c.source);
+              const normalizedSource = c.source_normalized || normalizeLeadSource(c.source);
+              const parsed = parseLeadMessage(c.message, leadSourceLabel(normalizedSource));
               const agentName = c.agent_id ? (agentNames[c.agent_id] || '') : '';
               return (
                 <div key={c.id} className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 transition-colors p-4">
@@ -697,7 +763,7 @@ export default function ClientsPage() {
                             {c.property_code ? `${c.property_code} · ` : ''}{c.property_title}
                           </span>
                         </a>
-                      ) : parsed.source === 'Storia' ? (
+                      ) : ['storia', 'olx', 'storia_olx'].includes(normalizedSource || '') ? (
                         <button
                           onClick={() => openLinkProperty(c)}
                           className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-100"
@@ -715,7 +781,7 @@ export default function ClientsPage() {
                         {c.contact_email && <a href={`mailto:${c.contact_email}`} title="Email" className="p-1.5 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600"><Mail size={16} /></a>}
                         <button onClick={() => setReplyClient(c)} title="Răspunde" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Send size={16} /></button>
                         <select value={c.status} onChange={(e) => changeStatus(c.id, e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
-                          {STATUS_ORDER.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                          {STATUS_ORDER.filter((s) => isLeadStatus(c.status) && canTransition(LEAD_STATUS_TRANSITIONS, c.status, s)).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
                         </select>
                         <button onClick={() => setEditClient(c)} title="Editează" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Pencil size={16} /></button>
                         <div className="relative ml-auto">

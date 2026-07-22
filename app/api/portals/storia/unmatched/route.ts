@@ -62,7 +62,7 @@ export async function GET(request: Request) {
     .is('property_id', null)
     .is('deleted_at', null)
     .eq('association_status', 'pending')
-    .in('source_normalized', ['storia', 'olx'])
+    .in('source_normalized', ['storia', 'olx', 'storia_olx'])
     .order('received_at', { ascending: false })
     .limit(200);
 
@@ -133,7 +133,7 @@ export async function PATCH(request: Request) {
       .is('property_id', null)
       .is('deleted_at', null)
       .eq('association_status', 'pending')
-      .in('source_normalized', ['storia', 'olx'])
+      .in('source_normalized', ['storia', 'olx', 'storia_olx'])
       .maybeSingle();
     if (leadError || !lead) return Response.json({ error: 'Leadul nu mai este disponibil' }, { status: 404 });
 

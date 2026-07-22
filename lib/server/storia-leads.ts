@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeLeadSource } from '@/lib/crm-catalogs';
 
 import {
   STORIA_CRM_PORTAL_ID,
@@ -213,8 +214,8 @@ async function upsertAssociatedLead(
   context: StoriaPropertyContext,
   transactionId: string,
 ): Promise<LeadIngestResult> {
-  const source = input.from?.toLowerCase().includes('olx') ? 'OLX' : 'Storia';
-  const sourceNormalized = source.toLowerCase();
+  const source = input.from?.toLowerCase().includes('olx') ? 'olx' : 'storia';
+  const sourceNormalized = normalizeLeadSource(source) || 'storia';
   const message = input.message?.trim() || '';
   const trace = [
     `[${source}]`,
@@ -270,6 +271,8 @@ async function upsertAssociatedLead(
     agent_id: context.agentId,
     source,
     source_normalized: sourceNormalized,
+    next_action_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    next_action_type: 'first_contact',
     association_status: 'linked',
     city: context.city,
     county: context.county,

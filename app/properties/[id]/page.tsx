@@ -14,6 +14,13 @@ import { PropertyMapView } from '@/components/PropertyMapView';
 import { PropertyDocuments } from '@/components/PropertyDocuments';
 import { PropertyHistory } from '@/components/PropertyHistory';
 import { parseLeadMessage } from '@/lib/clients';
+import {
+  PROPERTY_STATUSES,
+  PROPERTY_STATUS_TRANSITIONS,
+  canTransition,
+  isPropertyStatus,
+  type PropertyStatus,
+} from '@/lib/crm-catalogs';
 
 interface Property {
   id: string;
@@ -80,17 +87,8 @@ function storiaFreshness(lastSync?: string): {
   return { days, dot: '#10b981', text: '#047857', label: `Actualizat ${ago}`, stale: false };
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  activa: 'Activă', rezervata: 'Rezervată', tranzactionata: 'Tranzacționată',
-  inchiriata: 'Închiriată', retrasa: 'Retrasă', expirata: 'Expirată',
-  draft: 'Draft', arhivata: 'Arhivată',
-};
-const STATUS_COLORS: Record<string, string> = {
-  activa: 'bg-emerald-100 text-emerald-800', rezervata: 'bg-blue-100 text-blue-800',
-  tranzactionata: 'bg-purple-100 text-purple-800', inchiriata: 'bg-indigo-100 text-indigo-800',
-  retrasa: 'bg-gray-100 text-gray-600', expirata: 'bg-orange-100 text-orange-700',
-  draft: 'bg-yellow-100 text-yellow-800', arhivata: 'bg-red-100 text-red-700',
-};
+const STATUS_LABELS = Object.fromEntries(PROPERTY_STATUSES.map((item) => [item.code, item.label]));
+const STATUS_COLORS = Object.fromEntries(PROPERTY_STATUSES.map((item) => [item.code, item.color]));
 
 const SALE_STATUSES = new Set(['tranzactionata', 'inchiriata']);
 
@@ -263,6 +261,11 @@ export default function PropertyDetailPage() {
   const handleStatusChange = async (newStatus: string) => {
     if (!property) return;
     setShowStatusMenu(false);
+    if (!isPropertyStatus(property.status) || !isPropertyStatus(newStatus)
+      || !canTransition(PROPERTY_STATUS_TRANSITIONS, property.status, newStatus)) {
+      alert('Această tranziție de status nu este permisă.');
+      return;
+    }
     // Statuse de finalizare → dialog comision + retragere automată din portale
     if (SALE_STATUSES.has(newStatus)) {
       setPendingStatus(newStatus);
@@ -464,7 +467,9 @@ export default function PropertyDetailPage() {
             </button>
             {showStatusMenu && (
               <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-[170px]">
-                {Object.entries(STATUS_LABELS).filter(([k]) => k !== (property.status || 'activa')).map(([k, v]) => (
+                {Object.entries(STATUS_LABELS).filter(([k]) => isPropertyStatus(property.status)
+                  && canTransition(PROPERTY_STATUS_TRANSITIONS, property.status, k as PropertyStatus)
+                  && k !== property.status).map(([k, v]) => (
                   <button key={k} onClick={() => handleStatusChange(k)}
                     className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-gray-700 border-b border-gray-50 last:border-0">
                     {v}

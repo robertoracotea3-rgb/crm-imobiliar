@@ -1,6 +1,11 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth, type AuthenticatedContext } from '@/lib/server/api-auth';
+import {
+  TRANSACTION_STATUS_TRANSITIONS,
+  canTransition,
+  isTransactionStatus,
+} from '@/lib/crm-catalogs';
 
 const VALID_TYPE = ['vanzare', 'inchiriere'];
 
@@ -63,7 +68,7 @@ export async function GET(request: Request) {
     const { admin, agencyId } = auth.context;
     const { data, error } = await admin
       .from('transactions')
-      .select('id, property_id, agent_id, contact_id, type, sale_price, currency, agency_commission, agent_commission, closed_at, notes, created_at')
+      .select('id, property_id, agent_id, contact_id, type, status, status_reason, sale_price, currency, agency_commission, agent_commission, closed_at, notes, created_at')
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
       .order('closed_at', { ascending: false, nullsFirst: false })
@@ -102,6 +107,7 @@ export async function POST(request: Request) {
       agent_id: refs.agent_id,
       contact_id: refs.contact_id,
       type: VALID_TYPE.includes(b.type) ? b.type : 'vanzare',
+      status: 'finalizata',
       sale_price: num(b.sale_price),
       currency: b.currency || 'EUR',
       agency_commission: num(b.agency_commission),
@@ -135,12 +141,21 @@ export async function PATCH(request: Request) {
 
     const { data: existing } = await admin
       .from('transactions')
-      .select('id')
+      .select('id, status')
       .eq('id', id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
       .maybeSingle();
     if (!existing) return Response.json({ error: 'Tranzactie negasita' }, { status: 404 });
+
+    if (b.status !== undefined) {
+      if (!isTransactionStatus(b.status)) {
+        return Response.json({ error: 'Status de tranzacție invalid' }, { status: 400 });
+      }
+      if (!isTransactionStatus(existing.status) || !canTransition(TRANSACTION_STATUS_TRANSITIONS, existing.status, b.status)) {
+        return Response.json({ error: `Tranziția de la ${existing.status} la ${b.status} nu este permisă` }, { status: 409 });
+      }
+    }
 
     const refsError = await validateRefs(auth.context, {
       property_id: b.property_id,
@@ -160,6 +175,8 @@ export async function PATCH(request: Request) {
     if (b.agent_commission !== undefined) safe.agent_commission = num(b.agent_commission);
     if (b.closed_at !== undefined) safe.closed_at = b.closed_at || null;
     if (b.notes !== undefined) safe.notes = b.notes?.trim() || null;
+    if (b.status !== undefined) safe.status = b.status;
+    if (b.status_reason !== undefined) safe.status_reason = b.status_reason?.trim() || null;
 
     const { data, error } = await admin
       .from('transactions')

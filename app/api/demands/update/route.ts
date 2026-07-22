@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { normalizeLeadSource } from '@/lib/crm-catalogs';
 
 const VALID_STATUS = ['activa', 'inactiva', 'indeplinita', 'anulata'];
 
@@ -37,7 +38,11 @@ export async function PATCH(request: Request) {
     if (category !== undefined) patch.category = category || null;
     if (transaction !== undefined) patch.transaction = transaction || null;
     if (currency !== undefined) patch.currency = currency || null;
-    if (source !== undefined) patch.source = source || null;
+    if (source !== undefined) {
+      const normalizedSource = normalizeLeadSource(source);
+      patch.source = normalizedSource;
+      patch.source_normalized = normalizedSource;
+    }
     if (criteria !== undefined) patch.criteria = criteria || null;
 
     if (Object.keys(patch).length === 0) {

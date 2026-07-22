@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MessageCircle, Phone, Clock, CheckCircle2 } from 'lucide-react';
+import { MessageCircle, Phone, Clock } from 'lucide-react';
+import { LEAD_STATUSES, getCatalogItem, type LeadStatus } from '@/lib/crm-catalogs';
 
 interface Lead {
   id: string;
@@ -12,7 +13,7 @@ interface Lead {
   property_title?: string;
   received_at: string;
   first_response_at?: string;
-  status: 'new' | 'replied' | 'contacted';
+  status: LeadStatus;
 }
 
 interface LeadsListProps {
@@ -60,13 +61,8 @@ export function LeadsList({ leads, onReply }: LeadsListProps) {
   return (
     <div className="space-y-3">
       {leads.map((lead) => {
-        const statusColors = {
-          new: { bg: '#FEF3C7', text: '#92400E', badge: '🔴 Nou' },
-          replied: { bg: '#DBEAFE', text: '#1E40AF', badge: '✅ Raspuns' },
-          contacted: { bg: '#DCFCE7', text: '#166534', badge: '✓ Contact' },
-        };
-
-        const colors = statusColors[lead.status];
+        const status = getCatalogItem(LEAD_STATUSES, lead.status);
+        const colors = { bg: '#F3F4F6', text: '#374151', badge: status?.label || lead.status };
         const responseTime = responseTimers[lead.id];
 
         return (

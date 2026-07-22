@@ -1,13 +1,15 @@
 export const dynamic = 'force-dynamic';
 
 import { statusLabel } from '@/lib/clients';
+import {
+  LEAD_STATUSES,
+  LEAD_STATUS_TRANSITIONS,
+  canTransition,
+  getCatalogItem,
+  isLeadStatus,
+  normalizeLeadSource,
+} from '@/lib/crm-catalogs';
 import { requireApiAuth } from '@/lib/server/api-auth';
-
-const VALID_STATUSES = [
-  'new', 'contacted', 'viewing', 'negotiation', 'precontract', 'won', 'lost',
-  'no_answer', 'to_send_offers', 'upcoming_viewing', 'in_progress', 'withdrawn',
-  'replied',
-];
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
@@ -36,22 +38,42 @@ export async function PATCH(request: Request) {
     const {
       id, status, contact_name, contact_phone, contact_email, message,
       city, county, category, transaction, budget_min, budget_max, currency, criteria, source, agent_id, property_id,
+      next_action_at, next_action_type, status_reason, status_note, lost_to_competitor,
     } = body;
 
     if (!id) return Response.json({ error: 'ID lipsa' }, { status: 400 });
-    if (status && !VALID_STATUSES.includes(status)) {
+    if (status !== undefined && !isLeadStatus(status)) {
       return Response.json({ error: 'Status invalid' }, { status: 400 });
     }
 
     const { data: lead } = await admin
       .from('leads')
-      .select('id, agency_id, status')
+      .select('id, agency_id, status, next_action_at, next_action_type, status_reason, status_note')
       .eq('id', id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
       .maybeSingle();
 
     if (!lead) return Response.json({ error: 'Clientul nu exista' }, { status: 404 });
+
+    if (status && status !== lead.status) {
+      if (!isLeadStatus(lead.status) || !canTransition(LEAD_STATUS_TRANSITIONS, lead.status, status)) {
+        return Response.json({ error: `Tranziția ${statusLabel(lead.status)} → ${statusLabel(status)} nu este permisă` }, { status: 409 });
+      }
+      const meta = getCatalogItem(LEAD_STATUSES, status);
+      const effectiveNextActionAt = next_action_at || lead.next_action_at;
+      const effectiveNextActionType = next_action_type || lead.next_action_type;
+      if (meta?.requiresNextAction && (!effectiveNextActionAt || !effectiveNextActionType)) {
+        return Response.json({ error: 'Următoarea acțiune și data ei sunt obligatorii pentru un lead activ' }, { status: 400 });
+      }
+      const nextActionTime = new Date(effectiveNextActionAt || '').getTime();
+      if (meta?.requiresNextAction && (!Number.isFinite(nextActionTime) || nextActionTime <= Date.now())) {
+        return Response.json({ error: 'Data următoarei acțiuni trebuie să fie în viitor' }, { status: 400 });
+      }
+      if (status === 'lost' && (!String(status_reason || '').trim() || !String(status_note || '').trim())) {
+        return Response.json({ error: 'Motivul și observația sunt obligatorii pentru un lead pierdut' }, { status: 400 });
+      }
+    }
 
     if (agent_id && !(await agentBelongsToAgency(admin, agencyId, agent_id))) {
       return Response.json({ error: 'Agent invalid pentru aceasta agentie' }, { status: 400 });
@@ -92,9 +114,18 @@ export async function PATCH(request: Request) {
     if (budget_max !== undefined) patch.budget_max = num(budget_max);
     if (currency !== undefined) patch.currency = currency || null;
     if (criteria !== undefined) patch.criteria = criteria || {};
-    if (source !== undefined) patch.source = source || null;
+    if (source !== undefined) {
+      const normalizedSource = normalizeLeadSource(source);
+      patch.source = normalizedSource;
+      patch.source_normalized = normalizedSource;
+    }
     if (agent_id !== undefined) patch.agent_id = agent_id || null;
-    if (status === 'replied' || status === 'contacted') patch.first_response_at = new Date().toISOString();
+    if (next_action_at !== undefined) patch.next_action_at = next_action_at || null;
+    if (next_action_type !== undefined) patch.next_action_type = next_action_type || null;
+    if (status_reason !== undefined) patch.status_reason = String(status_reason || '').trim() || null;
+    if (status_note !== undefined) patch.status_note = String(status_note || '').trim() || null;
+    if (lost_to_competitor !== undefined) patch.lost_to_competitor = String(lost_to_competitor || '').trim() || null;
+    if (status === 'contacted') patch.first_response_at = new Date().toISOString();
 
     const { data, error } = await admin
       .from('leads')

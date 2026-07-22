@@ -4,6 +4,12 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import {
+  VIEWING_STATUSES,
+  VIEWING_STATUS_TRANSITIONS,
+  canTransition,
+  type ViewingStatus,
+} from '@/lib/crm-catalogs';
+import {
   Eye, Plus, X, Loader2, Trash2, Calendar, User, Phone, Home, Filter, Pencil,
 } from 'lucide-react';
 
@@ -35,13 +41,9 @@ function toLocalInput(iso?: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const STATUS_META: Record<string, { label: string; cls: string }> = {
-  programata: { label: 'Programată', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  confirmata: { label: 'Confirmată', cls: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
-  efectuata:  { label: 'Efectuată',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  anulata:    { label: 'Anulată',    cls: 'bg-red-50 text-red-700 border-red-200' },
-  amanata:    { label: 'Amânată',    cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-};
+const STATUS_META: Record<string, { label: string; cls: string }> = Object.fromEntries(
+  VIEWING_STATUSES.map((item) => [item.code, { label: item.label, cls: item.color }]),
+);
 
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
 const fmt = (d: string) => new Date(d).toLocaleString('ro-RO', { weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -369,7 +371,11 @@ export default function ViewingsPage() {
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <select value={v.status || 'programata'} onChange={e => changeStatus(v, e.target.value)}
                         className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
-                        {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+                        {Object.entries(STATUS_META).filter(([k]) => canTransition(
+                          VIEWING_STATUS_TRANSITIONS,
+                          (v.status || 'programata') as ViewingStatus,
+                          k as ViewingStatus,
+                        )).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
                       </select>
                       <button onClick={() => setEditing(v)} className="p-1.5 text-gray-400 hover:text-emerald-600" title="Editează"><Pencil size={15} /></button>
                       <button onClick={() => handleDelete(v.id)} className="p-1.5 text-red-400 hover:text-red-600" title="Șterge"><Trash2 size={15} /></button>

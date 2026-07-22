@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { normalizeLeadSource } from '@/lib/crm-catalogs';
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
     const finalCounty = text(county) || propCounty || null;
     const finalCategory = text(category) || propCategory || null;
     assignedAgent = assignedAgent || user.id;
+    const normalizedSource = normalizeLeadSource(source) || 'manual';
 
     let existing: Record<string, unknown> | null = null;
     const { data: byPhone } = await admin
@@ -103,7 +105,10 @@ export async function POST(request: Request) {
       if (!existing.county && finalCounty) upd.county = finalCounty;
       if (!existing.category && finalCategory) upd.category = finalCategory;
       if (!existing.agent_id && assignedAgent) upd.agent_id = assignedAgent;
-      if (!existing.source && source) upd.source = source;
+      if (!existing.source) {
+        upd.source = normalizedSource;
+        upd.source_normalized = normalizedSource;
+      }
 
       if (Object.keys(upd).length) {
         await admin
@@ -141,14 +146,18 @@ export async function POST(request: Request) {
       received_at: new Date().toISOString(),
       agent_id: assignedAgent,
       assigned_to: assignedAgent,
-      source: source || null,
+      source: normalizedSource,
+      source_normalized: normalizedSource,
+      next_action_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      next_action_type: 'first_contact',
     }).select().single();
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
 
     try {
       const enrich = {
-        source: source || null,
+        source: normalizedSource,
+        source_normalized: normalizedSource,
         city: finalCity,
         county: finalCounty,
         category: finalCategory,
