@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import type { CrmModule } from '@/lib/team-roles';
+import type { CrmAction, CrmModule } from '@/lib/team-roles';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
@@ -21,10 +21,11 @@ import {
   Wallet,
   Target,
   Ellipsis,
+  ShieldCheck,
   X,
 } from 'lucide-react';
 
-const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; module: CrmModule }[] = [
+const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; module: CrmModule; action?: CrmAction }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { href: '/properties', label: 'Proprietăți', icon: Building2, module: 'properties' },
   { href: '/contacts', label: 'Contacte', icon: BookUser, module: 'contacts' },
@@ -36,6 +37,7 @@ const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; mo
   { href: '/finance', label: 'Finanțe', icon: Wallet, module: 'finance' },
   { href: '/portals', label: 'Portaluri', icon: Globe, module: 'portals' },
   { href: '/team', label: 'Echipă', icon: Users, module: 'team' },
+  { href: '/audit', label: 'Jurnal audit', icon: ShieldCheck, module: 'team', action: 'manage_permissions' },
   { href: '/notifications', label: 'Notificări', icon: Bell, module: 'notifications' },
   { href: '/settings', label: 'Setări', icon: Settings, module: 'settings' },
 ];
@@ -54,7 +56,7 @@ export function Sidebar() {
   const [moreOpenForPath, setMoreOpenForPath] = useState<string | null>(null);
   const moreOpen = moreOpenForPath === pathname;
 
-  const visibleItems = menuItems.filter(item => can(item.module, 'view'));
+  const visibleItems = menuItems.filter(item => can(item.module, item.action || 'view'));
   const primaryHrefs = new Set(mobilePrimaryItems.map(item => item.href));
   const mobileMoreItems = visibleItems.filter(item => !primaryHrefs.has(item.href));
   const moreIsActive = mobileMoreItems.some(item => (

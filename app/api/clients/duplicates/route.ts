@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { contextCanManageAll, requireApiAuth } from '@/lib/server/api-auth';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -10,7 +11,7 @@ export async function GET(request: Request) {
   if (!contextCanManageAll(auth.context, 'contacts')) {
     return Response.json({ error: 'Doar managerii pot verifica duplicatele' }, { status: 403 });
   }
-  const { serviceAdmin, agencyId } = auth.context;
+  const { serviceAdmin, agencyId, user, role } = auth.context;
   const url = new URL(request.url);
   const status = url.searchParams.get('status') || 'pending';
   if (!['pending', 'merged', 'rejected', 'reverted'].includes(status)) {
@@ -46,6 +47,12 @@ export async function GET(request: Request) {
     .order('merged_at', { ascending: false })
     .limit(100);
 
+  await appendAuditEvent({
+    client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+    action: 'contact.duplicate_review_viewed', entityType: 'contact',
+    metadata: { candidate_count: candidates?.length || 0, status },
+  });
+
   return Response.json({
     candidates: (candidates || []).map((candidate) => ({
       ...candidate,
@@ -79,6 +86,13 @@ export async function POST(request: Request) {
       p_reason: reason,
     });
     if (error) return Response.json({ error: 'Profilurile nu au putut fi unite în siguranță' }, { status: 409 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'contact.merged', entityType: 'contact_merge', entityId: String(operationId),
+      before: { primary_contact_id: body.primary_contact_id, duplicate_contact_id: body.duplicate_contact_id },
+      after: { retained_contact_id: body.primary_contact_id, merged_contact_id: body.duplicate_contact_id },
+      reason,
+    });
     return Response.json({ success: true, operation_id: operationId });
   }
 
@@ -91,6 +105,11 @@ export async function POST(request: Request) {
       p_reason: reason,
     });
     if (error) return Response.json({ error: 'Unirea nu a putut fi anulată în siguranță' }, { status: 409 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'contact.merge_reverted', entityType: 'contact_merge', entityId: body.operation_id,
+      after: { reverted: true }, reason,
+    });
     return Response.json({ success: true });
   }
 
@@ -105,6 +124,11 @@ export async function POST(request: Request) {
       .select('id')
       .maybeSingle();
     if (error || !data) return Response.json({ error: 'Propunerea nu a putut fi respinsă' }, { status: 409 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'contact.merge_rejected', entityType: 'contact_merge_candidate', entityId: data.id,
+      after: { status: 'rejected' }, reason,
+    });
     return Response.json({ success: true });
   }
 

@@ -30,3 +30,18 @@ test('synthetic user signs in and receives exact dashboard KPIs', async ({ page 
   await expect(page.getByText('3.000 EUR')).toBeVisible();
   await expect(page.getByText('25%')).toBeVisible();
 });
+
+test('synthetic owner can verify the immutable audit journal', async ({ page }) => {
+  await page.goto('/login');
+  await waitForLoginReady(page);
+  await page.getByLabel('Nume utilizator').fill(TEST_USER.username);
+  await page.getByLabel('Parola').fill(TEST_USER.password);
+  await page.getByRole('button', { name: 'Logare' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.goto('/audit');
+  await expect(page.getByRole('heading', { name: 'Jurnal de audit' })).toBeVisible();
+  await expect(page.getByText('Lanț verificat: 1 evenimente')).toBeVisible();
+  await expect(page.getByText('Autentificare', { exact: true })).toBeVisible();
+  await expect(page.getByText(/IP pseudonimizat/)).toBeVisible();
+});

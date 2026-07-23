@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { processPortalRemovalJobs } from '@/lib/server/portal-removals';
 import { createPageWindow, paginationMetadata } from '@/lib/pagination';
 
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'edit' });
   if (!auth.ok) return auth.response;
-  const { admin, serviceAdmin, agencyId } = auth.context;
+  const { admin, serviceAdmin, agencyId, user, role } = auth.context;
   try {
     const body = await request.json().catch(() => ({}));
     const transactionId = typeof body.transaction_id === 'string' ? body.transaction_id : null;
@@ -61,6 +62,21 @@ export async function POST(request: Request) {
     }
     const deliveries = await processPortalRemovalJobs(serviceAdmin, agencyId, {
       transactionId, jobId, limit: transactionId || jobId ? 20 : 5,
+    });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+      action: jobId ? 'portal.removal_retried' : 'portal.removal_processed',
+      entityType: jobId ? 'portal_removal_job' : 'transaction',
+      entityId: jobId || transactionId,
+      result: deliveries.some(delivery => delivery.status !== 'confirmed') ? 'failure' : 'success',
+      after: {
+        deliveries: deliveries.map(delivery => ({
+          id: delivery.id,
+          portal: delivery.portal,
+          status: delivery.status,
+        })),
+      },
+      metadata: { delivery_count: deliveries.length },
     });
     return Response.json({ deliveries });
   } catch (caught) {

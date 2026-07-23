@@ -61,7 +61,7 @@ Autorizarea este verificată pe server și din nou prin politicile bazei de date
 
 ## Securitate
 
-CRM-ul este `noindex`, folosește headere de securitate, CSP cu nonce unic pentru scripturi, secrete criptate pentru portaluri și verificări tenant/rol pe endpointurile private. Detaliile, excepțiile CSP și politica dependențelor sunt în [docs/security.md](docs/security.md).
+CRM-ul este `noindex`, folosește headere de securitate, CSP cu nonce unic pentru scripturi, secrete criptate pentru portaluri și verificări tenant/rol pe endpointurile private. Detaliile, excepțiile CSP și politica dependențelor sunt în [docs/security.md](docs/security.md), iar jurnalul imuabil este descris în [docs/audit-log.md](docs/audit-log.md).
 
 ## Deploy
 
@@ -87,7 +87,7 @@ npm run test:e2e
 npm run test:all
 ```
 
-Testul PostgreSQL creează baza izolată `crmtest_phase22_automated`, aplică schema minimă și
+Testul PostgreSQL creează baza izolată `crmtest_automated`, aplică schema minimă și
 migrațiile necesare, rulează scenariile, apoi șterge baza chiar dacă o verificare eșuează.
 Scenariul din browser simulează serviciile externe și nu publică anunțuri, nu trimite mesaje
 WhatsApp și nu creează clienți reali.

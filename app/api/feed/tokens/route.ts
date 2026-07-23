@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { createFeedToken } from '@/lib/feed-token';
 import type { FeedPortal } from '@/lib/property-feed';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { requireApiAuth } from '@/lib/server/api-auth';
 
 const ALLOWED_PORTALS = new Set<FeedPortal>(['generic', 'storia']);
@@ -86,6 +87,12 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Tokenul de feed nu a putut fi creat' }, { status: 500 });
   }
 
+  await appendAuditEvent({
+    client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+    action: 'feed.token_created', entityType: 'feed_token', entityId: data.id,
+    after: { portal: data.portal, token_prefix: data.token_prefix, generation: data.generation, expires_at: data.expires_at },
+  });
+
   return Response.json({
     token: data,
     feed_url: publicFeedUrl(request, generated.token),
@@ -106,7 +113,7 @@ export async function PATCH(request: Request) {
 
   const { data: existing, error: findError } = await serviceAdmin
     .from('feed_tokens')
-    .select('id, generation')
+    .select('id, portal, token_prefix, is_active, generation')
     .eq('id', id)
     .eq('agency_id', agencyId)
     .maybeSingle();
@@ -120,6 +127,11 @@ export async function PATCH(request: Request) {
       updated_at: new Date().toISOString(),
     }).eq('id', id).eq('agency_id', agencyId);
     if (error) return Response.json({ error: 'Feedul nu a putut fi revocat' }, { status: 500 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'feed.token_revoked', entityType: 'feed_token', entityId: id,
+      before: existing, after: { ...existing, is_active: false },
+    });
     return Response.json({ success: true }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
@@ -135,6 +147,18 @@ export async function PATCH(request: Request) {
     updated_at: new Date().toISOString(),
   }).eq('id', id).eq('agency_id', agencyId);
   if (error) return Response.json({ error: 'Tokenul nu a putut fi rotit' }, { status: 500 });
+
+  await appendAuditEvent({
+    client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+    action: 'feed.token_rotated', entityType: 'feed_token', entityId: id,
+    before: existing,
+    after: {
+      portal: existing.portal,
+      token_prefix: generated.tokenPrefix,
+      is_active: true,
+      generation: Number(existing.generation || 1) + 1,
+    },
+  });
 
   return Response.json({
     success: true,

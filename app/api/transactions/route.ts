@@ -13,11 +13,17 @@ import {
   nonNegativeMoney,
 } from '@/lib/transactions';
 import { createPageWindow, paginationMetadata } from '@/lib/pagination';
+import { auditSnapshot } from '@/lib/audit-values';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 
 const PAGE_SIZE_MAX = 50;
 const migrationError = (message: string) => /relation|does not exist|schema cache/i.test(message);
 const allowed = <T extends readonly string[]>(values: T, value: unknown): value is T[number] =>
   typeof value === 'string' && values.includes(value);
+const AUDIT_FIELDS = [
+  'property_id', 'contact_id', 'lead_id', 'agent_id', 'type', 'status',
+  'sale_price', 'currency', 'agency_commission', 'agent_commission',
+] as const;
 
 function message(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -111,7 +117,7 @@ export async function POST(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'create' });
   if (!auth.ok) return auth.response;
   try {
-    const { admin, agencyId, user } = auth.context;
+    const { admin, serviceAdmin, agencyId, user, role } = auth.context;
     const body = await request.json();
     const refs = {
       property_id: typeof body.property_id === 'string' ? body.property_id : null,
@@ -143,6 +149,11 @@ export async function POST(request: Request) {
       notes: typeof body.notes === 'string' ? body.notes.trim().slice(0, 3000) || null : null,
     }).select().single();
     if (error) return Response.json({ error: error.message }, { status: 500 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+      action: 'transaction.created', entityType: 'transaction', entityId: data.id,
+      after: auditSnapshot(data, AUDIT_FIELDS),
+    });
     return Response.json({ transaction: data }, { status: 201 });
   } catch (error) {
     return Response.json({ error: message(error) }, { status: 500 });
@@ -157,7 +168,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     if (typeof body.id !== 'string') return Response.json({ error: 'ID lipsă.' }, { status: 400 });
     const { data: existing } = await admin.from('transactions')
-      .select('id,status,property_id,contact_id,agent_id,lead_id,legacy_import,sale_price,reservation_at,reservation_amount')
+      .select('id,status,property_id,contact_id,agent_id,lead_id,legacy_import,sale_price,currency,type,agency_commission,agent_commission,reservation_at,reservation_amount')
       .eq('id', body.id).eq('agency_id', agencyId).is('deleted_at', null).maybeSingle();
     if (!existing) return Response.json({ error: 'Tranzacția nu există.' }, { status: 404 });
 
@@ -174,6 +185,18 @@ export async function PATCH(request: Request) {
         transactionId: existing.id, limit: 20,
       }).catch((caught) => [{ status: 'retry', error: message(caught) }]);
       const { data: transaction } = await admin.from('transactions').select('*').eq('id', existing.id).single();
+      await appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+        action: 'transaction.finalized', entityType: 'transaction', entityId: existing.id,
+        before: auditSnapshot(existing, AUDIT_FIELDS),
+        after: auditSnapshot(transaction, AUDIT_FIELDS),
+        metadata: {
+          portal_removals: removalDeliveries.map(delivery => ({
+            portal: 'portal' in delivery ? delivery.portal : 'unknown',
+            status: delivery.status,
+          })),
+        },
+      });
       return Response.json({ transaction, finalization: data, removal_deliveries: removalDeliveries });
     }
     if (existing.status === 'finalizata') {
@@ -250,6 +273,38 @@ export async function PATCH(request: Request) {
     const { data, error } = await admin.from('transactions').update(safe)
       .eq('id', existing.id).eq('agency_id', agencyId).is('deleted_at', null).select().single();
     if (error) return Response.json({ error: error.message }, { status: 500 });
+    const auditEvents = [appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'transaction.updated', entityType: 'transaction', entityId: existing.id,
+      before: auditSnapshot(existing, AUDIT_FIELDS),
+      after: auditSnapshot(data, AUDIT_FIELDS),
+      metadata: { changed_fields: Object.keys(safe) },
+    })];
+    if (existing.agent_id !== data.agent_id) {
+      auditEvents.push(appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+        action: 'transaction.agent_reassigned', entityType: 'transaction', entityId: existing.id,
+        before: { agent_id: existing.agent_id }, after: { agent_id: data.agent_id },
+      }));
+    }
+    if (existing.agency_commission !== data.agency_commission
+      || existing.agent_commission !== data.agent_commission) {
+      auditEvents.push(appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+        action: 'transaction.commission_changed', entityType: 'transaction', entityId: existing.id,
+        before: {
+          agency_commission: existing.agency_commission,
+          agent_commission: existing.agent_commission,
+          currency: existing.currency,
+        },
+        after: {
+          agency_commission: data.agency_commission,
+          agent_commission: data.agent_commission,
+          currency: data.currency,
+        },
+      }));
+    }
+    await Promise.all(auditEvents);
     return Response.json({ transaction: data });
   } catch (error) {
     return Response.json({ error: message(error) }, { status: 500 });
@@ -259,10 +314,12 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'delete' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId, user } = auth.context;
+  const { admin, serviceAdmin, agencyId, user, role } = auth.context;
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return Response.json({ error: 'ID lipsă.' }, { status: 400 });
-  const { data: existing } = await admin.from('transactions').select('id,status').eq('id', id)
+  const { data: existing } = await admin.from('transactions')
+    .select('id,status,property_id,contact_id,agent_id,lead_id,type,sale_price,currency,agency_commission,agent_commission')
+    .eq('id', id)
     .eq('agency_id', agencyId).is('deleted_at', null).maybeSingle();
   if (!existing) return Response.json({ error: 'Tranzacția nu există.' }, { status: 404 });
   if (existing.status === 'finalizata') {
@@ -272,5 +329,12 @@ export async function DELETE(request: Request) {
     deleted_at: new Date().toISOString(), deleted_by: user.id,
   }).eq('id', id).eq('agency_id', agencyId).is('deleted_at', null);
   if (error) return Response.json({ error: error.message }, { status: 500 });
+  await appendAuditEvent({
+    client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+    action: 'transaction.archived', entityType: 'transaction', entityId: id,
+    before: auditSnapshot(existing, AUDIT_FIELDS),
+    after: { ...auditSnapshot(existing, AUDIT_FIELDS), archived: true },
+    reason: new URL(request.url).searchParams.get('reason'),
+  });
   return Response.json({ success: true });
 }

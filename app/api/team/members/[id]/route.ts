@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { CRM_ROLES, effectivePermissions } from '@/lib/team-roles';
 import { usernameToEmail, normalizeUsername } from '@/lib/username';
+import { auditSnapshot } from '@/lib/audit-values';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,7 +12,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   try {
     const { id } = await params;
-    const { admin, serviceAdmin, agencyId, role: callerRole } = auth.context;
+    const { admin, serviceAdmin, agencyId, role: callerRole, user } = auth.context;
 
     const { data: target } = await admin.from('profiles').select('*').eq('id', id).eq('agency_id', agencyId).single();
     if (!target) return Response.json({ error: 'Agent negasit' }, { status: 404 });
@@ -81,6 +83,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     await serviceAdmin.from('profiles').update(profileUpdate).eq('id', id).eq('agency_id', agencyId);
 
+    const auditEvents: Promise<string>[] = [];
+    if (canChangeRole && role !== undefined && role !== target.role) {
+      auditEvents.push(appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: callerRole,
+        action: 'team.role_changed', entityType: 'profile', entityId: target.id,
+        before: { role: target.role }, after: { role: finalRole },
+      }));
+    }
+    if (canChangeRole && permissions !== undefined) {
+      auditEvents.push(appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: callerRole,
+        action: 'team.permissions_changed', entityType: 'profile', entityId: target.id,
+        before: { permissions: target.permissions },
+        after: { permissions: profileUpdate.permissions },
+      }));
+    }
+    if (password || username?.trim()) {
+      auditEvents.push(appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: callerRole,
+        action: 'auth.credentials_changed', entityType: 'profile', entityId: target.id,
+        before: auditSnapshot(target, ['user_id']),
+        after: { password_changed: Boolean(password), username_changed: Boolean(username?.trim()) },
+      }));
+    }
+    await Promise.all(auditEvents);
+
     return Response.json({ ok: true });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 500 });
@@ -116,6 +144,13 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       await serviceAdmin.from('demands').update({ agent_id: reassignToUserId }).eq('agency_id', agencyId).eq('agent_id', target.user_id);
       await serviceAdmin.from('tasks').update({ assigned_to: reassignToUserId }).eq('agency_id', agencyId).eq('assigned_to', target.user_id);
       await serviceAdmin.from('calendar_events').update({ agent_id: reassignToUserId }).eq('agency_id', agencyId).eq('agent_id', target.user_id);
+      await appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+        action: 'team.agent_reassigned', entityType: 'profile', entityId: target.id,
+        before: { assigned_user_id: target.user_id },
+        after: { assigned_user_id: reassignToUserId },
+        reason: typeof body.reason === 'string' ? body.reason : 'Cont dezactivat; datele operaționale au fost realocate.',
+      });
     }
 
     await serviceAdmin.from('profiles').update({
@@ -137,6 +172,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       entity_id: target.id,
       role: auth.context.role,
       result: 'success',
+    });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'team.member_disabled', entityType: 'profile', entityId: target.id,
+      before: auditSnapshot(target, ['user_id', 'role', 'status']),
+      after: { user_id: target.user_id, role: target.role, status: 'inactive' },
+      reason: typeof body.reason === 'string' ? body.reason : null,
+      metadata: { reassigned_to_user_id: reassignToUserId },
     });
 
     return Response.json({ ok: true });

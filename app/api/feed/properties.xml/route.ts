@@ -9,6 +9,7 @@ import {
   type FeedPortal,
   type FeedProperty,
 } from '@/lib/property-feed';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { getAdminClient } from '@/lib/server/api-auth';
 
 type FeedTokenRow = {
@@ -65,7 +66,7 @@ async function writeExportLog(input: {
   status: 'success' | 'invalid_xml' | 'error';
   errorCode?: string;
   durationMs: number;
-}): Promise<void> {
+}): Promise<string> {
   const admin = getAdminClient();
   const included = input.decisions.filter(decision => decision.included);
   const excluded = input.decisions.filter(decision => !decision.included);
@@ -99,6 +100,7 @@ async function writeExportLog(input: {
       throw new Error('feed_log_items_failed');
     }
   }
+  return log.id;
 }
 export async function GET(request: Request) {
   const startedAt = Date.now();
@@ -137,7 +139,7 @@ export async function GET(request: Request) {
     const validationErrors = validatePropertyFeedXml(xml, token.portal);
 
     if (validationErrors.length > 0) {
-      await writeExportLog({
+      const exportLogId = await writeExportLog({
         token,
         decisions,
         status: 'invalid_xml',
@@ -145,15 +147,34 @@ export async function GET(request: Request) {
         durationMs: Date.now() - startedAt,
       });
       await admin.from('feed_tokens').update({ last_used_at: generatedAt, last_error_at: generatedAt }).eq('id', token.id);
+      await appendAuditEvent({
+        client: admin, request, agencyId: token.agency_id, actorRole: 'system',
+        action: 'feed.exported', entityType: 'feed_export', entityId: exportLogId,
+        result: 'failure', reason: 'invalid_xml',
+        after: { portal: token.portal, included_count: included.length, validation_error_count: validationErrors.length },
+        metadata: { token_id: token.id },
+      });
       return plainError('Feedul nu a trecut validarea XML.', 500);
     }
 
-    await writeExportLog({ token, decisions, status: 'success', durationMs: Date.now() - startedAt });
+    const exportLogId = await writeExportLog({
+      token, decisions, status: 'success', durationMs: Date.now() - startedAt,
+    });
     await admin.from('feed_tokens').update({
       last_used_at: generatedAt,
       last_success_at: generatedAt,
       last_error_at: null,
     }).eq('id', token.id);
+    await appendAuditEvent({
+      client: admin, request, agencyId: token.agency_id, actorRole: 'system',
+      action: 'feed.exported', entityType: 'feed_export', entityId: exportLogId,
+      after: {
+        portal: token.portal,
+        included_count: included.length,
+        excluded_count: decisions.length - included.length,
+      },
+      metadata: { token_id: token.id },
+    });
 
     return new Response(xml, {
       headers: {

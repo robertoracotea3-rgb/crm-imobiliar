@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { contextCanManageAll, requireApiAuth } from '@/lib/server/api-auth';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { buildPublicPropertyUrl } from '@/lib/public-property-url';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,7 +21,7 @@ export async function GET(
 ) {
   const auth = await requireApiAuth(request, { module: 'contacts', action: 'view' });
   if (!auth.ok) return auth.response;
-  const { admin, agencyId } = auth.context;
+  const { admin, serviceAdmin, agencyId, user, role } = auth.context;
   const { id } = await params;
   if (!UUID.test(id)) return Response.json({ error: 'ID client invalid' }, { status: 400 });
 
@@ -123,6 +124,15 @@ export async function GET(
     ...property,
     public_url: buildPublicPropertyUrl(property),
   }));
+
+  await appendAuditEvent({
+    client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+    action: 'contact.sensitive_profile_accessed', entityType: 'contact', entityId: contact.id,
+    metadata: {
+      fields: ['phone', 'email', 'cnp', 'address', 'gdpr_consent', 'documents', 'transactions'],
+      related_records: timeline.length,
+    },
+  });
 
   return Response.json({
     contact,

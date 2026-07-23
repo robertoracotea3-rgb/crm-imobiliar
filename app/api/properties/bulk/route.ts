@@ -1,12 +1,13 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 
 export async function POST(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
     if (!auth.ok) return auth.response;
-    const { admin, agencyId } = auth.context;
+    const { admin, serviceAdmin, agencyId, user, role } = auth.context;
 
     const { ids, agent_id, publishSite, unpublishSite } = await request.json() as {
       ids?: string[];
@@ -36,7 +37,16 @@ export async function POST(request: Request) {
       }
     }
 
+    let previousAssignments: Array<{ id: string; agent_id: string | null }> = [];
     if (agent_id !== undefined) {
+      const { data: currentRows, error: currentError } = await admin
+        .from('properties')
+        .select('id,agent_id')
+        .in('id', ids)
+        .eq('agency_id', agencyId)
+        .is('deleted_at', null);
+      if (currentError) return Response.json({ error: currentError.message }, { status: 500 });
+      previousAssignments = currentRows || [];
       const { error } = await admin
         .from('properties')
         .update({ agent_id: agent_id || null, updated_at: new Date().toISOString() })
@@ -73,6 +83,25 @@ export async function POST(request: Request) {
       }));
       const failed = results.find(result => result.error);
       if (failed?.error) return Response.json({ error: failed.error.message }, { status: 500 });
+    }
+
+    if (agent_id !== undefined) {
+      await appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+        action: 'property.agent_reassigned', entityType: 'property_batch',
+        before: { assignments: previousAssignments },
+        after: { property_ids: ids, agent_id: agent_id || null },
+        metadata: { affected_count: previousAssignments.length },
+      });
+    }
+    if (publishSite || unpublishSite) {
+      await appendAuditEvent({
+        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+        action: 'property.publication_changed', entityType: 'property_batch',
+        before: { property_ids: ids },
+        after: { site_published: Boolean(publishSite) },
+        metadata: { affected_count: ids.length },
+      });
     }
 
     return Response.json({ success: true, count: ids.length });

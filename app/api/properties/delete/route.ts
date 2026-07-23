@@ -1,19 +1,20 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 
 export async function DELETE(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'delete' });
     if (!auth.ok) return auth.response;
-    const { admin, user, agencyId } = auth.context;
+    const { admin, serviceAdmin, user, agencyId, role } = auth.context;
 
     const id = new URL(request.url).searchParams.get('id');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
 
     const { data: property, error: propertyError } = await admin
       .from('properties')
-      .select('id, agency_id, deleted_at')
+      .select('id, agency_id, status, agent_id, deleted_at')
       .eq('id', id)
       .eq('agency_id', agencyId)
       .single();
@@ -38,6 +39,13 @@ export async function DELETE(request: Request) {
       .eq('agency_id', agencyId);
 
     if (error) return Response.json({ error: error.message }, { status: 500 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+      action: 'property.archived', entityType: 'property', entityId: property.id,
+      before: { status: property.status, agent_id: property.agent_id, archived: false },
+      after: { status: 'arhivata', agent_id: property.agent_id, archived: true },
+      reason: new URL(request.url).searchParams.get('reason'),
+    });
     return Response.json({ success: true, archived: true });
   } catch (error) {
     return Response.json(

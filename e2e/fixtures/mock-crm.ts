@@ -92,6 +92,28 @@ export async function mockCrmBackend(page: Page) {
     status: 'active',
     agencies: { id: '00000000-0000-4000-8000-000000000011', name: 'Agenție E2E' },
   }));
+  await page.route('**/api/auth/audit**', (route) => json(route, { success: true }, 201));
+  await page.route('**/api/audit?**', (route) => json(route, {
+    events: [{
+      id: '00000000-0000-4000-8000-0000000000aa',
+      actor_user_id: TEST_USER.id,
+      actor_name: 'Agent E2E',
+      actor_role: 'owner',
+      action: 'auth.login',
+      entity_type: 'session',
+      entity_id: TEST_USER.id,
+      before_values: null,
+      after_values: { authenticated: true },
+      result: 'success',
+      reason: null,
+      route: '/api/auth/audit',
+      user_agent: 'Synthetic E2E',
+      ip_recorded: true,
+      occurred_at: '2026-07-23T09:00:00.000Z',
+    }],
+    integrity: { valid: true, checked: 1 },
+    pagination: { page: 1, page_size: 30, total: 1, pages: 1 },
+  }));
   await page.route('**/api/dashboard/overview**', (route) => {
     const plainFixture = {
       ...dashboardFixture,

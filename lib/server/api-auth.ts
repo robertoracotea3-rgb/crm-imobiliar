@@ -11,6 +11,7 @@ import {
   type CrmRole,
   type PermissionMap,
 } from '@/lib/team-roles';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 
 export type { CrmAction, CrmModule, CrmRole } from '@/lib/team-roles';
 
@@ -90,6 +91,19 @@ async function logDeniedPermission(
     role,
     result: 'denied',
   }).then(() => undefined, () => undefined);
+  await appendAuditEvent({
+    client: serviceAdmin,
+    request,
+    agencyId,
+    actorUserId: userId,
+    actorRole: role,
+    action: 'authorization.permission_denied',
+    entityType: 'api_route',
+    entityId: path,
+    result: 'denied',
+    reason: `${permission.module}.${permission.action}`,
+    metadata: { module: permission.module, requested_action: permission.action },
+  }).catch(() => undefined);
 }
 
 export function contextHasPermission(

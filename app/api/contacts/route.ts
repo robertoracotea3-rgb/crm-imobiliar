@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { normalizeLeadSource } from '@/lib/crm-catalogs';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 
 function errMsg(err: unknown): string {
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'contacts', action: 'view' });
     if (!auth.ok) return auth.response;
-    const { admin, agencyId } = auth.context;
+    const { admin, serviceAdmin, agencyId, user, role } = auth.context;
     const { data, error } = await admin
       .from('contacts')
       .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, created_at')
@@ -67,6 +68,11 @@ export async function GET(request: Request) {
       .order('full_name')
       .limit(500);
     if (error) return Response.json({ error: errMsg(error), contacts: [] });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+      action: 'contact.sensitive_list_accessed', entityType: 'contact',
+      metadata: { record_count: data?.length || 0, fields: ['phone', 'email', 'cnp', 'address'] },
+    });
     return Response.json({ contacts: (data as DbContact[]).map(toUi) });
   } catch (err) {
     return Response.json({ error: errMsg(err), contacts: [] });
@@ -134,7 +140,7 @@ export async function PATCH(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'contacts', action: 'edit' });
     if (!auth.ok) return auth.response;
-    const { admin, user, agencyId } = auth.context;
+    const { admin, serviceAdmin, user, agencyId, role } = auth.context;
     const body = await request.json();
     const { id, name, phone, phone2, email, cnp, address, type, notes, agent_id } = body;
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
@@ -143,6 +149,15 @@ export async function PATCH(request: Request) {
     if (agent_id && agent_id !== user.id && !contextHasPermission(auth.context, 'contacts', 'assign')) {
       return Response.json({ error: 'Nu poți atribui clientul altui agent' }, { status: 403 });
     }
+
+    const { data: existing } = await admin.from('contacts')
+      .select('id,agent_id')
+      .eq('id', id)
+      .eq('agency_id', agencyId)
+      .eq('merge_status', 'active')
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!existing) return Response.json({ error: 'Clientul nu există' }, { status: 404 });
 
     const { data: contact, error } = await admin.from('contacts').update({
       full_name: name.trim(),
@@ -163,6 +178,16 @@ export async function PATCH(request: Request) {
       .single();
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
+    const changedFields = ['name', 'phone', 'phone2', 'email', 'cnp', 'address', 'type', 'notes', 'agent_id']
+      .filter(field => body[field] !== undefined);
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
+      action: existing.agent_id !== contact.agent_id ? 'contact.agent_reassigned' : 'contact.updated',
+      entityType: 'contact', entityId: contact.id,
+      before: { agent_id: existing.agent_id },
+      after: { agent_id: contact.agent_id },
+      metadata: { changed_fields: changedFields, sensitive_values_omitted: true },
+    });
     return Response.json({ contact: toUi(contact as DbContact) });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
@@ -177,6 +202,12 @@ export async function DELETE(request: Request) {
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
+    const { data: existing } = await admin.from('contacts')
+      .select('id,agent_id,merge_status,deleted_at')
+      .eq('id', id)
+      .eq('agency_id', agencyId)
+      .maybeSingle();
+    if (!existing || existing.deleted_at) return Response.json({ error: 'Clientul nu există' }, { status: 404 });
 
     const references = [
       { table: 'leads', column: 'contact_id', softDeleted: true },
@@ -208,6 +239,13 @@ export async function DELETE(request: Request) {
       .is('deleted_at', null);
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      action: 'contact.archived', entityType: 'contact', entityId: id,
+      before: { agent_id: existing.agent_id, merge_status: existing.merge_status, archived: false },
+      after: { agent_id: existing.agent_id, merge_status: existing.merge_status, archived: true },
+      reason: url.searchParams.get('reason'),
+    });
     return Response.json({ success: true, archived: true });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });

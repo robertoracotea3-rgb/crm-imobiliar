@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { effectivePermissions } from '@/lib/team-roles';
 import { usernameToEmail, normalizeUsername, emailToUsername } from '@/lib/username';
+import { appendAuditEvent } from '@/lib/server/audit-log';
 import { requireApiAuth } from '@/lib/server/api-auth';
 
 export async function GET(request: Request) {
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const { serviceAdmin, agencyId, role: myRole } = auth.context;
+    const { serviceAdmin, agencyId, role: myRole, user } = auth.context;
 
     const body = await request.json();
     const { email, username, password, first_name, last_name, phone, job_title, department, role, hired_at, permissions } = body;
@@ -158,6 +159,17 @@ export async function POST(request: Request) {
       await serviceAdmin.auth.admin.deleteUser(newUser.user.id);
       return Response.json({ error: profileError.message }, { status: 500 });
     }
+
+    await appendAuditEvent({
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: myRole,
+      action: 'team.member_created', entityType: 'profile', entityId: profile.id,
+      after: {
+        user_id: newUser.user.id,
+        role: finalRole,
+        permissions: profile.permissions,
+        status: 'active',
+      },
+    });
 
     return Response.json({ member: { ...profile, email: loginEmail, username: uname } }, { status: 201 });
   } catch (err) {

@@ -34,6 +34,26 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function writeAuthAudit(action: 'login' | 'logout', accessToken: string): Promise<void> {
+  const response = await fetch('/api/auth/audit', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action }),
+  });
+  if (!response.ok) throw new Error('Jurnalul de autentificare nu este disponibil.');
+}
+
+async function writeFailedLoginAudit(): Promise<void> {
+  await fetch('/api/auth/audit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'login_failed' }),
+  });
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [agency, setAgency] = useState<Agency | null>(null);
@@ -112,8 +132,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password,
     });
 
-    if (error) throw error;
-    if (!data.user) throw new Error('Sign in failed');
+    if (error) {
+      await writeFailedLoginAudit().catch(() => undefined);
+      throw error;
+    }
+    if (!data.user || !data.session?.access_token) throw new Error('Sign in failed');
+
+    try {
+      await writeAuthAudit('login', data.session.access_token);
+    } catch (auditError) {
+      await supabase.auth.signOut();
+      throw auditError;
+    }
 
     setUser({
       id: data.user.id,
@@ -123,11 +153,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setAgency(null);
-    setRole(null);
-    setPermissions({});
+    const accessToken = (await supabase.auth.getSession()).data.session?.access_token;
+    try {
+      if (accessToken) await writeAuthAudit('logout', accessToken);
+    } catch (auditError) {
+      console.error('auth audit failed:', auditError instanceof Error ? auditError.message : 'unknown');
+    } finally {
+      await supabase.auth.signOut();
+      setUser(null);
+      setAgency(null);
+      setRole(null);
+      setPermissions({});
+    }
   };
 
   const can = (module: CrmModule, action: CrmAction = 'view') =>
