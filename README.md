@@ -91,3 +91,21 @@ Testul PostgreSQL creează baza izolată `crmtest_automated`, aplică schema min
 migrațiile necesare, rulează scenariile, apoi șterge baza chiar dacă o verificare eșuează.
 Scenariul din browser simulează serviciile externe și nu publică anunțuri, nu trimite mesaje
 WhatsApp și nu creează clienți reali.
+
+## Backup și recuperare
+
+Backupul operațional include baza PostgreSQL, inventarul utilizatorilor și toate obiectele
+Supabase Storage. Arhiva este criptată și autentificată înainte să fie acceptată, iar
+fișierele temporare necriptate sunt șterse.
+
+```powershell
+# Backup manual (BACKUP_DIRECTORY poate fi omis dacă este în .env.local)
+npm run backup:create -- --directory="D:\Kira-Backups"
+
+# Test automat într-o bază Docker izolată
+npm run test:backup
+```
+
+Procedura completă de configurare, programare, retenție și restaurare este în
+[docs/backup-disaster-recovery.md](docs/backup-disaster-recovery.md). Nu restaura direct
+peste producție.

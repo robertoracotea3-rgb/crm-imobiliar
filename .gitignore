@@ -17,6 +17,11 @@
 
 # local backups can contain personal data and must never be committed
 /backups/
+kira-backup-*.kira
+kira-backup-*.kira.meta.json
+.kira-stage-*
+.kira-archive-*
+.kira-partial-*
 
 # next.js
 /.next/
