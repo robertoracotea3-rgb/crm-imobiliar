@@ -1,52 +1,54 @@
-// Modul „Anunțuri particulari" — tipuri comune pentru adaptoarele de surse.
-
-/** Un anunț normalizat, așa cum îl întoarce fiecare adaptor de sursă. */
+/** Datele brute acceptate de modulul „Anunțuri particulari”. */
 export interface RawProspect {
-  source: string;         // 'olx' | 'publi24' | 'homezz' | 'romimo'
-  external_id: string;    // id-ul anunțului la sursă (pentru dedup)
-  url: string;            // link direct către anunț
+  source: string;
+  external_id: string;
+  url: string;
   title?: string;
   price?: number;
-  currency?: string;      // 'EUR' | 'RON'
-  category?: string;      // apartament | casa | teren | comercial (best-effort)
-  transaction?: string;   // vanzare | inchiriere (best-effort)
+  currency?: string;
+  category?: string;
+  transaction?: string;
+  county?: string;
   city?: string;
   zone?: string;
-  phone?: string;         // best-effort
+  phone?: string;
   seller_name?: string;
-  posted_at?: string;     // ISO (best-effort)
+  posted_at?: string;
+  surface_area?: number;
 }
 
-/** Contract pentru fiecare sursă (OLX, Publi24, ...). */
+export interface SourceFetchResult {
+  items: RawProspect[];
+  /** False when at least one page failed. Missing rows are never retired after a partial run. */
+  complete: boolean;
+  warnings: string[];
+}
+
 export interface SourceAdapter {
-  key: string;            // 'olx'
-  label: string;          // 'OLX'
-  /** Aduce anunțurile de la PARTICULARI din județul Brașov (o pagină). */
-  fetchBrasov(): Promise<RawProspect[]>;
+  key: string;
+  label: string;
+  termsUrl: string;
+  fetchBrasov(): Promise<SourceFetchResult>;
 }
 
-/** Ghicire best-effort a categoriei din titlu (portalurile HTML nu o dau curat). */
 export function guessCategory(title = ''): string {
-  const t = title.toLowerCase();
+  const t = title.toLocaleLowerCase('ro-RO');
   if (/apartament|garsonier|gars\b|\bcamere\b/.test(t)) return 'apartament';
-  if (/cas[aă]|vil[aă]|duplex|conac/.test(t)) return 'casa';
+  if (/cas[ăa]|vil[ăa]|duplex|conac/.test(t)) return 'casa';
   if (/teren|lot\b|parcel/.test(t)) return 'teren';
-  if (/spa[țt]iu|comercial|hal[aă]|birou|depozit/.test(t)) return 'comercial';
+  if (/spa[țt]iu|comercial|hal[ăa]|birou|depozit/.test(t)) return 'comercial';
   return '';
 }
 
-/** Ghicire best-effort a tranzacției din titlu. */
 export function guessTransaction(title = ''): string {
-  const t = title.toLowerCase();
-  if (/[iî]nchiri|chirie|de[- ]?[iî]nchiriat|rent/.test(t)) return 'inchiriere';
-  return 'vanzare';
+  const t = title.toLocaleLowerCase('ro-RO');
+  return /[îi]nchiri|chirie|de[- ]?[îi]nchiriat|rent/.test(t) ? 'inchiriere' : 'vanzare';
 }
 
-/** Normalizează un telefon românesc la forma 07XXXXXXXX (sau null dacă nu e valid). */
 export function normalizePhone(raw?: string | null): string | undefined {
   if (!raw) return undefined;
-  let d = raw.replace(/[^\d+]/g, '');
-  d = d.replace(/^\+?40/, '0');       // +40… / 40… → 0…
-  const m = d.match(/0\d{9}/);        // 10 cifre, începe cu 0
-  return m ? m[0] : undefined;
+  let digits = raw.replace(/[^\d+]/g, '');
+  digits = digits.replace(/^\+?40/, '0');
+  const match = digits.match(/0\d{9}/);
+  return match?.[0];
 }

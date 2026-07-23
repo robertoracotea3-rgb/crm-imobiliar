@@ -1,16 +1,13 @@
-// Adaptor OLX — folosește API-ul JSON public al OLX (mult mai ușor decât HTML-ul
-// de 3.4MB/pagină) cu paginare, ca să aducă TOT județul Brașov (nu doar prima pagină).
-// URL-ul + parametrii sunt exact cei folosiți de site-ul OLX:
-//   category_id=3 (imobiliare) · region_id=4 (județul Brașov) · owner_type=private (particulari)
-// NU trimitem city_id (acela ar limita la orașul Brașov) — vrem tot județul.
 import { fetchJson } from '../http';
-import { guessCategory, guessTransaction, type RawProspect, type SourceAdapter } from '../types';
+import {
+  guessCategory, guessTransaction, type RawProspect, type SourceAdapter, type SourceFetchResult,
+} from '../types';
 
 const API = 'https://www.olx.ro/api/v1/offers';
 const BASE = 'category_id=3&region_id=4&owner_type=private';
 const LIMIT = 50;
-const MAX_PAGES = 40;       // ~2000 anunțuri — acoperă tot județul cu margine
-const PAGE_DELAY_MS = 120;  // pauză mică între pagini (politețe / evită rate-limit)
+const MAX_PAGES = 40;
+const PAGE_DELAY_MS = 250;
 
 interface OlxParam { key: string; value?: { value?: number; currency?: string } }
 interface OlxOffer {
@@ -24,66 +21,56 @@ interface OlxOffer {
   contact?: { name?: string };
   user?: { name?: string };
 }
-interface OlxResp { data?: OlxOffer[]; metadata?: { total_elements?: number } }
+interface OlxResponse { data?: OlxOffer[]; metadata?: { total_elements?: number } }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function mapOffer(a: OlxOffer): RawProspect {
-  const priceParam = (a.params || []).find((p) => p.key === 'price');
-  const pv = priceParam?.value;
+function mapOffer(offer: OlxOffer): RawProspect {
+  const price = (offer.params || []).find((parameter) => parameter.key === 'price')?.value;
   return {
-    source: 'olx',
-    external_id: String(a.id),
-    url: a.url!,
-    title: a.title || '',
-    price: typeof pv?.value === 'number' ? pv.value : undefined,
-    currency: pv?.currency || 'EUR',
-    category: guessCategory(a.title),
-    transaction: guessTransaction(a.title),
-    city: a.location?.city?.name || 'Brașov',
-    zone: a.location?.district?.name || undefined,
-    phone: undefined, // OLX nu expune numărul în API — agentul dă clic pe link
-    seller_name: a.contact?.name || a.user?.name || undefined,
-    posted_at: a.created_time || undefined,
+    source: 'olx', external_id: String(offer.id), url: offer.url!, title: offer.title || '',
+    price: typeof price?.value === 'number' ? price.value : undefined,
+    currency: price?.currency || 'EUR', category: guessCategory(offer.title),
+    transaction: guessTransaction(offer.title), city: offer.location?.city?.name || 'Brașov',
+    county: offer.location?.region?.name || 'Brașov', zone: offer.location?.district?.name,
+    seller_name: offer.contact?.name || offer.user?.name, posted_at: offer.created_time,
   };
 }
 
 export const olxAdapter: SourceAdapter = {
   key: 'olx',
   label: 'OLX',
-  async fetchBrasov(): Promise<RawProspect[]> {
-    const out: RawProspect[] = [];
+  termsUrl: 'https://ajutor.olx.ro/olxhelpro/s/article/condi%C8%9Bii-de-utilizare-V31',
+  async fetchBrasov(): Promise<SourceFetchResult> {
+    const items: RawProspect[] = [];
     const seen = new Set<string>();
+    const warnings: string[] = [];
+    let complete = true;
 
-    for (let page = 0; page < MAX_PAGES; page++) {
+    for (let page = 0; page < MAX_PAGES; page += 1) {
       const offset = page * LIMIT;
-      const url = `${API}?offset=${offset}&limit=${LIMIT}&${BASE}`;
-
-      let resp: OlxResp;
+      let response: OlxResponse;
       try {
-        resp = await fetchJson<OlxResp>(url);
-      } catch (e) {
-        if (page === 0) throw new Error('OLX: API inaccesibil (posibil blocat) — ' + (e instanceof Error ? e.message : ''));
-        break; // pagini ulterioare eșuate: păstrăm ce am adunat
+        response = await fetchJson<OlxResponse>(`${API}?offset=${offset}&limit=${LIMIT}&${BASE}`);
+      } catch (error) {
+        if (page === 0) throw new Error(`OLX inaccesibil: ${error instanceof Error ? error.message : 'eroare'}`);
+        complete = false;
+        warnings.push(`Pagina ${page + 1} nu a putut fi citită; rezultatul este parțial.`);
+        break;
       }
 
-      const data = resp.data || [];
-      if (!data.length) break;
-
-      for (const a of data) {
-        if (a?.business === true) continue;        // doar particulari
-        if (!a?.url) continue;
-        const id = String(a.id);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        out.push(mapOffer(a));
+      const offers = response.data || [];
+      if (!offers.length) break;
+      for (const offer of offers) {
+        if (offer.business === true || !offer.url || seen.has(String(offer.id))) continue;
+        seen.add(String(offer.id));
+        items.push(mapOffer(offer));
       }
-
-      const total = resp.metadata?.total_elements ?? 0;
-      if (total && offset + LIMIT >= total) break;  // am ajuns la capăt
+      const total = response.metadata?.total_elements ?? 0;
+      if (total && offset + LIMIT >= total) break;
       await sleep(PAGE_DELAY_MS);
     }
 
-    return out;
+    return { items, complete, warnings };
   },
 };

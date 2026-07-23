@@ -1,52 +1,27 @@
-// Fetch cu antet de browser + timeout, folosit de toate adaptoarele.
-// Notă: în producție (Vercel) unele portaluri pot bloca IP-urile de datacenter;
-// dacă apare, se poate ruta prin proxy setând PROSPECTS_PROXY_URL (ex: un scraper API).
+// Acces HTTP simplu, identificabil și limitat. Nu există proxy, rotire de IP,
+// CAPTCHA solving sau alt mecanism de ocolire a protecțiilor portalurilor.
+const USER_AGENT = 'KiraCRM/1.0 (+https://kiraimobiliare.ro/contact)';
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-
-export async function fetchHtml(url: string, timeoutMs = 25000): Promise<string> {
-  const proxy = process.env.PROSPECTS_PROXY_URL; // opțional: `https://api.scraperapi.com?api_key=...&url=`
-  const target = proxy ? proxy + encodeURIComponent(url) : url;
-
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+async function publicFetch(url: string, accept: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(target, {
-      signal: ctrl.signal,
+    const response = await fetch(url, {
+      signal: controller.signal,
       cache: 'no-store',
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ro-RO,ro;q=0.9,en;q=0.8',
-      },
+      headers: { 'User-Agent': USER_AGENT, Accept: accept, 'Accept-Language': 'ro-RO,ro;q=0.9' },
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response;
   } finally {
     clearTimeout(timer);
   }
 }
 
-/** Ca fetchHtml, dar cere JSON și întoarce răspunsul parsat. */
-export async function fetchJson<T = unknown>(url: string, timeoutMs = 20000): Promise<T> {
-  const proxy = process.env.PROSPECTS_PROXY_URL;
-  const target = proxy ? proxy + encodeURIComponent(url) : url;
+export async function fetchHtml(url: string, timeoutMs = 25_000): Promise<string> {
+  return (await publicFetch(url, 'text/html,application/xhtml+xml', timeoutMs)).text();
+}
 
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(target, {
-      signal: ctrl.signal,
-      cache: 'no-store',
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'application/json',
-        'Accept-Language': 'ro-RO,ro;q=0.9,en;q=0.8',
-      },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(timer);
-  }
+export async function fetchJson<T>(url: string, timeoutMs = 20_000): Promise<T> {
+  return (await publicFetch(url, 'application/json', timeoutMs)).json() as Promise<T>;
 }
