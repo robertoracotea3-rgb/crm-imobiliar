@@ -23,7 +23,7 @@
 - [x] **Documente proprietăți** — upload per categorie (PDF/JPG/PNG max 15MB), download signed URL, ștergere
 - [x] **Istoric modificări** — activity_logs pe proprietăți (cine, când, ce câmp, valoare veche→nouă)
 - [x] **Notificări persistente** — inbox unic cu dashboardul, badge din cont, priorități, arhivare, paginare și alerte operaționale deduplicate
-- [x] **Portaluri** — integrare Storia (OAuth, publish, unpublish, webhook, status sync) + publicare Facebook
+- [x] **Portaluri** — integrare Storia cu OAuth legat de agenție/sesiune, state anti-CSRF de unică folosință, tokenuri criptate, refresh serializat, revocare auditată, publish/unpublish, webhook și status sync
 - [x] **Echipă** — membri, stats, activitate
 - [x] **Finanțe și tranzacții** — flux cu client și proprietate obligatorii, finalizare atomică, registru de comisioane și retrageri portal cu retry
 - [x] **Setări** — profil agenție, watermark fotografii
@@ -41,6 +41,7 @@
 Supabase Dashboard → SQL Editor → rulează fișierele din migrations/:
   - migrations/2026-features.sql   → taskuri, documente, vizionări, activity_logs
   - migrations/2026-storia.sql     → tabele integrare Storia
+  - migrations/20260720_140_storia_oauth_security.sql → OAuth multi-agency și tokenuri criptate
 ```
 
 ---

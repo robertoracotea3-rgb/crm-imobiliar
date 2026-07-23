@@ -3,6 +3,10 @@
 // Base URL is the unified OLX Group API; the marketplace is selected via site_urn.
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import {
+  decryptPortalToken,
+  encryptPortalToken,
+} from '@/lib/server/portal-token-crypto.mjs';
 
 // Authorization redirect goes to the marketplace itself (Storia.ro, locale `ro`).
 // Format: https://www.storia.ro/ro/crm/authorization/?response_type=code&client_id=..&state=..
@@ -268,49 +272,228 @@ export interface OlxTokens {
   scope?:        string;
 }
 
-export async function exchangeCode(code: string): Promise<OlxTokens> {
+export class StoriaOAuthError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+  ) {
+    super(code);
+    this.name = 'StoriaOAuthError';
+  }
+}
+
+function oauthErrorCode(status: number, body: unknown): string {
+  const candidate = body && typeof body === 'object'
+    ? String((body as Record<string, unknown>).error || '')
+    : '';
+  const normalized = candidate.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 48);
+  return normalized ? `oauth_${normalized}` : `oauth_http_${status}`;
+}
+
+async function requestTokens(payload: Record<string, string>): Promise<OlxTokens> {
   const res = await fetch(OLX_TOKEN_URL, {
     method: 'POST',
-    headers: olxHeaders({ 'Authorization': basicAuth(), 'Content-Type': 'application/x-www-form-urlencoded' }),
-    body: new URLSearchParams({ grant_type: 'authorization_code', code }),
+    headers: olxHeaders({ 'Authorization': basicAuth(), 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Token exchange failed: ${await res.text()}`);
-  return res.json();
+  const body = await res.json().catch(() => null) as Partial<OlxTokens> | Record<string, unknown> | null;
+  if (!res.ok) throw new StoriaOAuthError(oauthErrorCode(res.status, body), res.status);
+  if (
+    !body
+    || typeof body.access_token !== 'string'
+    || !body.access_token
+    || typeof body.refresh_token !== 'string'
+    || !body.refresh_token
+    || !Number.isFinite(Number(body.expires_in))
+    || Number(body.expires_in) <= 0
+  ) {
+    throw new StoriaOAuthError('oauth_invalid_token_response', 502);
+  }
+  return {
+    access_token: body.access_token,
+    refresh_token: body.refresh_token,
+    expires_in: Number(body.expires_in),
+    token_type: typeof body.token_type === 'string' ? body.token_type : 'Bearer',
+    scope: typeof body.scope === 'string' ? body.scope : undefined,
+  };
+}
+
+export async function exchangeCode(code: string): Promise<OlxTokens> {
+  return requestTokens({ grant_type: 'authorization_code', code });
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<OlxTokens> {
-  const res = await fetch(OLX_TOKEN_URL, {
-    method: 'POST',
-    headers: olxHeaders({ 'Authorization': basicAuth(), 'Content-Type': 'application/x-www-form-urlencoded' }),
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
-  });
-  if (!res.ok) throw new Error(`Token refresh failed: ${await res.text()}`);
-  return res.json();
+  return requestTokens({ grant_type: 'refresh_token', refresh_token: refreshToken });
+}
+
+interface PortalTokenRow {
+  id: string;
+  agency_id: string;
+  portal: string;
+  access_token: string | null;
+  refresh_token: string | null;
+  access_token_ciphertext: string | null;
+  refresh_token_ciphertext: string | null;
+  connection_status: string | null;
+  expires_at: string | null;
+  scope: string | null;
+}
+
+function encryptedTokenContext(agencyId: string, purpose: 'access' | 'refresh') {
+  return { agencyId, portal: 'storia', purpose };
+}
+
+async function tokenSecrets(
+  supabase: SupabaseClient,
+  row: PortalTokenRow,
+): Promise<{ accessToken: string; refreshToken: string } | null> {
+  if (row.access_token_ciphertext && row.refresh_token_ciphertext) {
+    try {
+      return {
+        accessToken: decryptPortalToken(
+          row.access_token_ciphertext,
+          encryptedTokenContext(row.agency_id, 'access'),
+        ),
+        refreshToken: decryptPortalToken(
+          row.refresh_token_ciphertext,
+          encryptedTokenContext(row.agency_id, 'refresh'),
+        ),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // One-time, in-place upgrade for credentials created before Phase 15.
+  if (!row.access_token || !row.refresh_token) return null;
+  try {
+    const accessCiphertext = encryptPortalToken(
+      row.access_token,
+      encryptedTokenContext(row.agency_id, 'access'),
+    );
+    const refreshCiphertext = encryptPortalToken(
+      row.refresh_token,
+      encryptedTokenContext(row.agency_id, 'refresh'),
+    );
+    const { error } = await supabase
+      .from('portal_tokens')
+      .update({
+        access_token: null,
+        refresh_token: null,
+        access_token_ciphertext: accessCiphertext,
+        refresh_token_ciphertext: refreshCiphertext,
+        encryption_version: 'v1',
+        connection_status: 'connected',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', row.id)
+      .eq('agency_id', row.agency_id)
+      .eq('portal', 'storia');
+    if (error) return null;
+    await supabase.rpc('crm_record_legacy_token_encryption', {
+      p_agency_id: row.agency_id,
+      p_portal: 'storia',
+      p_token_id: row.id,
+    });
+    return { accessToken: row.access_token, refreshToken: row.refresh_token };
+  } catch {
+    return null;
+  }
+}
+
+async function waitForConcurrentRefresh(
+  supabase: SupabaseClient,
+  agencyId: string,
+): Promise<string | null> {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const { data } = await supabase
+      .from('portal_tokens')
+      .select([
+        'id','agency_id','portal','access_token','refresh_token',
+        'access_token_ciphertext','refresh_token_ciphertext',
+        'connection_status','expires_at','scope',
+      ].join(','))
+      .eq('agency_id', agencyId)
+      .eq('portal', 'storia')
+      .maybeSingle();
+    const row = data as PortalTokenRow | null;
+    const expiresAt = row?.expires_at ? new Date(row.expires_at).getTime() : 0;
+    if (!row || row.connection_status !== 'connected') return null;
+    if (expiresAt > Date.now() + 5 * 60 * 1000) {
+      const secrets = await tokenSecrets(supabase, row);
+      return secrets?.accessToken || null;
+    }
+  }
+  return null;
 }
 
 // Returns a valid access token (refreshing if needed), or null if not connected.
 export async function getValidToken(supabase: SupabaseClient, agencyId: string): Promise<string | null> {
   const { data } = await supabase
     .from('portal_tokens')
-    .select('*')
+    .select([
+      'id','agency_id','portal','access_token','refresh_token',
+      'access_token_ciphertext','refresh_token_ciphertext',
+      'connection_status','expires_at','scope',
+    ].join(','))
     .eq('agency_id', agencyId)
     .eq('portal', 'storia')
-    .single();
-  if (!data) return null;
+    .maybeSingle();
+  const row = data as PortalTokenRow | null;
+  if (!row || !['connected', null].includes(row.connection_status)) return null;
+  const secrets = await tokenSecrets(supabase, row);
+  if (!secrets) return null;
 
-  const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : 0;
-  if (expiresAt > Date.now() + 5 * 60 * 1000) return data.access_token;
-
-  try {
-    const tokens = await refreshAccessToken(data.refresh_token);
+  const expiresAt = row.expires_at ? new Date(row.expires_at).getTime() : 0;
+  if (expiresAt > Date.now() + 5 * 60 * 1000) {
     await supabase.from('portal_tokens').update({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || data.refresh_token,
-      expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq('id', data.id);
+      last_used_at: new Date().toISOString(),
+    }).eq('id', row.id).eq('agency_id', agencyId);
+    return secrets.accessToken;
+  }
+
+  const lockId = crypto.randomUUID();
+  const { data: claimed } = await supabase.rpc('crm_claim_portal_token_refresh', {
+    p_agency_id: agencyId,
+    p_portal: 'storia',
+    p_lock_id: lockId,
+  });
+  if (claimed !== true) return waitForConcurrentRefresh(supabase, agencyId);
+  try {
+    const tokens = await refreshAccessToken(secrets.refreshToken);
+    const newRefreshToken = tokens.refresh_token || secrets.refreshToken;
+    const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+    const { data: completed } = await supabase.rpc('crm_complete_portal_token_refresh', {
+      p_agency_id: agencyId,
+      p_portal: 'storia',
+      p_lock_id: lockId,
+      p_access_token_ciphertext: encryptPortalToken(
+        tokens.access_token,
+        encryptedTokenContext(agencyId, 'access'),
+      ),
+      p_refresh_token_ciphertext: encryptPortalToken(
+        newRefreshToken,
+        encryptedTokenContext(agencyId, 'refresh'),
+      ),
+      p_encryption_version: 'v1',
+      p_expires_at: newExpiresAt,
+      p_scope: tokens.scope || row.scope,
+    });
+    if (completed !== true) return null;
     return tokens.access_token;
-  } catch {
+  } catch (error) {
+    const oauthError = error instanceof StoriaOAuthError ? error : null;
+    const reconnectRequired = Boolean(
+      oauthError && [400, 401, 403].includes(oauthError.status),
+    );
+    await supabase.rpc('crm_fail_portal_token_refresh', {
+      p_agency_id: agencyId,
+      p_portal: 'storia',
+      p_lock_id: lockId,
+      p_error_code: oauthError?.code || 'refresh_failed',
+      p_reconnect_required: reconnectRequired,
+    });
     return null;
   }
 }

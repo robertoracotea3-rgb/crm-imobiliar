@@ -2,11 +2,23 @@ import { NextResponse } from 'next/server';
 import { getValidToken, fetchAdvertStatus } from '@/lib/storia-api';
 import { extractStoriaAdvertIdentity } from '@/lib/server/storia-ad-identity.mjs';
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { portalTokenEncryptionConfigured } from '@/lib/server/portal-token-crypto.mjs';
 
 // Statuses that are worth re-syncing from OLX.
 // Includes 'error' because an error may reflect a failed update attempt on our side
 // (e.g. expired token during PUT) while the advert is still POSTED on OLX.
 const NON_TERMINAL = new Set(['pending', 'not_posted', 'to_post', 'to_put', 'processing', 'error']);
+
+interface PortalConnectionStatus {
+  connection_status: string | null;
+  expires_at: string | null;
+  scope: string | null;
+  connected_at: string | null;
+  created_at: string | null;
+  last_refreshed_at: string | null;
+  refresh_failure_count: number | null;
+  last_refresh_error_code: string | null;
+}
 
 // GET /api/portals/storia/status?property_id=<optional>
 // Returns: connection status + listings for a specific property (or all listings).
@@ -34,14 +46,20 @@ export async function GET(request: Request) {
   }
 
   // Check connection
-  const { data: tokenRow } = await supabase
+  const { data: rawTokenRow } = await supabase
     .from('portal_tokens')
-    .select('expires_at, scope, created_at')
+    .select([
+      'connection_status','expires_at','scope','connected_at','created_at',
+      'last_refreshed_at','refresh_failure_count','last_refresh_error_code',
+    ].join(','))
     .eq('agency_id', agency.id)
     .eq('portal', 'storia')
-    .single();
+    .maybeSingle();
+  const tokenRow = rawTokenRow as PortalConnectionStatus | null;
 
-  const connected = !!tokenRow;
+  const connectionStatus = tokenRow?.connection_status
+    || (tokenRow ? 'connected' : 'disconnected');
+  const connected = connectionStatus === 'connected';
   const token = connected ? await getValidToken(supabase, agency.id) : null;
   const tokenValid = !!token;
 
@@ -183,11 +201,19 @@ export async function GET(request: Request) {
   return NextResponse.json({
     connected,
     token_valid: tokenValid,
-    connected_at: tokenRow?.created_at || null,
+    connection_status: tokenValid ? 'connected' : connectionStatus,
+    connected_at: tokenRow?.connected_at || tokenRow?.created_at || null,
+    expires_at: tokenRow?.expires_at || null,
+    last_refreshed_at: tokenRow?.last_refreshed_at || null,
+    refresh_failure_count: tokenRow?.refresh_failure_count || 0,
+    last_refresh_error_code: tokenRow?.last_refresh_error_code || null,
     listing,
     listings,
     credentials_configured: !!(
-      process.env.STORIA_CLIENT_ID && process.env.STORIA_CLIENT_SECRET && process.env.STORIA_API_KEY
+      process.env.STORIA_CLIENT_ID
+      && process.env.STORIA_CLIENT_SECRET
+      && process.env.STORIA_API_KEY
+      && portalTokenEncryptionConfigured()
     ),
   });
 }

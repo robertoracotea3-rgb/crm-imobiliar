@@ -24,7 +24,12 @@ interface StoriaListing {
 interface StoriaStatus {
   connected: boolean;
   token_valid: boolean;
+  connection_status: 'disconnected' | 'connected' | 'reconnect_required' | 'revoked';
   connected_at: string | null;
+  expires_at: string | null;
+  last_refreshed_at: string | null;
+  refresh_failure_count: number;
+  last_refresh_error_code: string | null;
   credentials_configured: boolean;
   listings: StoriaListing[];
 }
@@ -78,6 +83,18 @@ const LISTING_STATUS_COLOR: Record<string, string> = {
   limited:  'bg-blue-100 text-blue-700',
 };
 
+const STORIA_OAUTH_ERROR: Record<string, string> = {
+  invalid_state: 'Cererea de conectare nu este validă. Pornește din nou conectarea.',
+  invalid_or_expired_state: 'Cererea de conectare a expirat sau a fost deja folosită.',
+  authorization_denied: 'Autorizarea a fost refuzată în Storia.',
+  authorization_failed: 'Storia nu a putut autoriza această conectare.',
+  authorization_code_missing: 'Storia nu a trimis codul de autorizare.',
+  configuration_missing: 'Configurarea securizată Storia este incompletă.',
+  oauth_storage_failed: 'Conectarea a reușit, dar acreditările nu au putut fi salvate.',
+  oauth_invalid_token_response: 'Storia a trimis un răspuns de autorizare invalid.',
+  oauth_failed: 'Conectarea Storia nu a putut fi finalizată.',
+};
+
 export default function PortalsPage() {
   const { can } = useAuth();
   const [token, setToken] = useState('');
@@ -101,7 +118,11 @@ export default function PortalsPage() {
     if (params.get('storia_connected')) {
       message = { type: 'success', text: 'Contul Storia a fost conectat cu succes!' };
     } else if (params.get('storia_error')) {
-      message = { type: 'error', text: `Eroare la conectare: ${decodeURIComponent(params.get('storia_error')!)}` };
+      const errorCode = params.get('storia_error') || 'oauth_failed';
+      message = {
+        type: 'error',
+        text: STORIA_OAUTH_ERROR[errorCode] || 'Conectarea Storia nu a putut fi finalizată.',
+      };
     }
     if (!message) return;
     window.history.replaceState({}, '', '/portals');
@@ -157,14 +178,24 @@ export default function PortalsPage() {
   const handleDisconnect = async () => {
     if (!confirm('Deconectezi contul Storia? Nu vei mai putea publica anunțuri automat.')) return;
     setDisconnecting(true);
-    // Remove token from DB
-    await fetch('/api/portals/storia/status', {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    // Even if it fails, refresh status
-    await fetchData(token);
-    setDisconnecting(false);
+    try {
+      const response = await fetch('/api/portals/storia/disconnect', {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setFlashMsg({
+          type: 'error',
+          text: result.error || 'Contul Storia nu a putut fi deconectat.',
+        });
+        return;
+      }
+      setFlashMsg({ type: 'success', text: 'Contul Storia a fost deconectat în siguranță.' });
+      await fetchData(token);
+    } finally {
+      setDisconnecting(false);
+    }
   };
 
   const copyFeed = (url: string) => {
@@ -319,7 +350,14 @@ export default function PortalsPage() {
                   Adăugați variabilele în Vercel → Settings → Environment Variables:
                 </p>
                 <div className="space-y-1.5">
-                  {['STORIA_CLIENT_ID', 'STORIA_CLIENT_SECRET', 'STORIA_API_KEY', 'STORIA_WEBHOOK_SECRET', 'NEXT_PUBLIC_APP_URL = https://crm.kiraimobiliare.ro'].map(v => (
+                  {[
+                    'STORIA_CLIENT_ID',
+                    'STORIA_CLIENT_SECRET',
+                    'STORIA_API_KEY',
+                    'STORIA_WEBHOOK_SECRET',
+                    'PORTAL_TOKEN_ENCRYPTION_KEY',
+                    'NEXT_PUBLIC_APP_URL = https://crm.kiraimobiliare.ro',
+                  ].map(v => (
                     <code key={v} className="block text-xs bg-amber-100 text-amber-900 px-3 py-1.5 rounded">{v}</code>
                   ))}
                 </div>
@@ -329,6 +367,16 @@ export default function PortalsPage() {
             {/* Not connected / token expired state */}
             {storia?.credentials_configured && (!storia.connected || !storia.token_valid) && (
               <div className="mb-4">
+                {storia.connection_status === 'reconnect_required' && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3 text-xs text-red-700">
+                    Sesiunea Storia nu mai poate fi reînnoită. Reconectează contul pentru a continua publicarea.
+                  </div>
+                )}
+                {storia.connection_status === 'revoked' && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3 text-xs text-gray-700">
+                    Conexiunea anterioară a fost revocată. Este necesară o autorizare nouă.
+                  </div>
+                )}
                 <p className="text-sm text-gray-600 mb-3">
                   Conectați contul Storia pentru a publica anunțuri automat din CRM.
                 </p>
@@ -353,11 +401,13 @@ export default function PortalsPage() {
                       ? `Conectat pe ${new Date(storia.connected_at).toLocaleDateString('ro-RO')}`
                       : 'Cont conectat'}
                   </p>
-                  <button onClick={handleDisconnect} disabled={disconnecting}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40">
-                    {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <Link2Off size={12} />}
-                    Deconectează
-                  </button>
+                  {can('portals', 'delete') && (
+                    <button onClick={handleDisconnect} disabled={disconnecting}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-40">
+                      {disconnecting ? <Loader2 size={12} className="animate-spin" /> : <Link2Off size={12} />}
+                      Deconectează
+                    </button>
+                  )}
                 </div>
 
                 {/* Listings table */}
