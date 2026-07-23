@@ -63,6 +63,7 @@ test('database audit is append-only, redacted, tenant scoped and hash chained', 
 test('every mandatory sensitive workflow emits the central audit event', async () => {
   const sources = await Promise.all([
     read('lib/auth-context.tsx'),
+    read('app/api/auth/login/route.ts'),
     read('app/api/auth/audit/route.ts'),
     read('app/api/team/members/[id]/route.ts'),
     read('app/api/clients/duplicates/route.ts'),

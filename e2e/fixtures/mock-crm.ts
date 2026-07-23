@@ -15,6 +15,9 @@ export const TEST_ACCESS_TOKEN = [
     email: TEST_USER.email,
     role: 'authenticated',
     aud: 'authenticated',
+    session_id: '00000000-0000-4000-8000-000000000033',
+    aal: 'aal2',
+    iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 3_600,
   }),
   'synthetic-e2e-signature',
@@ -68,6 +71,43 @@ export const dashboardFixture = {
 };
 
 export async function mockCrmBackend(page: Page) {
+  await page.route('**/api/auth/login', async (route) => {
+    const credentials = route.request().postDataJSON() as { username?: string; password?: string };
+    if (credentials.username?.trim().toLowerCase() !== TEST_USER.username.toLowerCase()
+      || credentials.password !== TEST_USER.password) {
+      await json(route, { error: 'Nume utilizator sau parolă incorectă.' }, 401);
+      return;
+    }
+    await json(route, {
+      access_token: TEST_ACCESS_TOKEN,
+      refresh_token: 'synthetic-e2e-refresh-token',
+      expires_at: Math.floor(Date.now() / 1000) + 3_600,
+      user: { id: TEST_USER.id, email: TEST_USER.email },
+      security: { aal: 'aal2', mfa_required: true, password_change_required: false },
+      next_path: '/dashboard',
+    });
+  });
+
+  await page.route('**/api/auth/context', (route) => json(route, {
+    user: { id: TEST_USER.id, email: TEST_USER.email, full_name: 'Agent E2E' },
+    agency: {
+      id: '00000000-0000-4000-8000-000000000011',
+      name: 'Agenție E2E',
+    },
+    role: 'owner',
+    permissions: {},
+    security: {
+      aal: 'aal2',
+      mfa_required: true,
+      mfa_enrolled_at: '2026-07-23T08:00:00.000Z',
+      password_change_required: false,
+      session_id: '00000000-0000-4000-8000-000000000033',
+      session_created_at: '2026-07-23T08:00:00.000Z',
+      session_last_seen_at: '2026-07-23T09:00:00.000Z',
+      next_path: null,
+    },
+  }));
+
   await page.route('**/auth/v1/token**', async (route) => {
     const credentials = route.request().postDataJSON() as { email?: string; password?: string };
     if (credentials.email !== TEST_USER.email || credentials.password !== TEST_USER.password) {

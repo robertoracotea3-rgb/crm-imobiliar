@@ -43,19 +43,28 @@ try {
   psql(database, readFileSync('migrations/20260720_040_viewing_workflow.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260720_120_atomic_transactions_outbox.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260720_190_immutable_audit_log.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260723_200_account_security.sql', 'utf8'));
   const phase22 = psql(database, readFileSync('tests/integration/phase22-workflow.sql', 'utf8'));
   const phase23 = psql(database, readFileSync('tests/integration/phase23-audit.sql', 'utf8'));
+  const phase25 = psql(database, readFileSync('tests/integration/phase25-account-security.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260720_190_immutable_audit_log.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260723_200_account_security.sql', 'utf8'));
   const idempotency = psql(database, readFileSync('tests/integration/phase23-idempotency.sql', 'utf8'));
+  const phase25Idempotency = psql(database, readFileSync('tests/integration/phase25-account-security.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260723_200_account_security.rollback.sql', 'utf8'));
+  const phase25Rollback = psql(database, readFileSync('tests/integration/phase25-account-security-rollback.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260720_190_immutable_audit_log.rollback.sql', 'utf8'));
   const rollback = psql(database, readFileSync('tests/integration/phase23-rollback.sql', 'utf8'));
   if (!phase22.includes('phase22_db_integration_ok')
     || !phase23.includes('phase23_audit_integration_ok')
+    || !phase25.includes('phase25_account_security_ok')
     || !idempotency.includes('phase23_audit_idempotency_ok')
+    || !phase25Idempotency.includes('phase25_account_security_ok')
+    || !phase25Rollback.includes('phase25_account_security_rollback_ok')
     || !rollback.includes('phase23_audit_rollback_ok')) {
-    throw new Error(`Database integration marker is missing.\n${phase22}\n${phase23}\n${idempotency}\n${rollback}`);
+    throw new Error(`Database integration marker is missing.\n${phase22}\n${phase23}\n${phase25}\n${idempotency}\n${phase25Idempotency}\n${phase25Rollback}\n${rollback}`);
   }
-  console.log('Database integration passed: CRM workflow, immutable audit chain and rollback.');
+  console.log('Database integration passed: CRM workflow, immutable audit, account security and rollbacks.');
 } finally {
   try {
     psql('postgres', `drop database if exists ${database} with (force);`);

@@ -1,11 +1,14 @@
 export const dynamic = 'force-dynamic';
 
-import { createClient } from '@supabase/supabase-js';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import {
+  checkRateLimit,
+  recordRateLimitResult,
+  requestIpHash,
+} from '@/lib/server/account-security';
+import { getAdminClient } from '@/lib/server/api-auth';
+import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from '@/lib/password-policy';
 
 // Fail closed: registration is disabled unless REGISTRATION_ACCESS_CODE is set
 // in the environment. No hardcoded fallback (avoids a universally-known code).
@@ -14,8 +17,21 @@ const ACCESS_CODE = process.env.REGISTRATION_ACCESS_CODE?.toUpperCase() || '';
 // Username: only letters, numbers, dots, underscores (3-30 chars)
 const USERNAME_RE = /^[a-zA-Z0-9._]{3,30}$/;
 
+function safeAccessCodeMatch(received: unknown): boolean {
+  if (typeof received !== 'string' || !ACCESS_CODE) return false;
+  const expected = createHash('sha256').update(ACCESS_CODE).digest();
+  const actual = createHash('sha256').update(received.trim().toUpperCase()).digest();
+  return timingSafeEqual(expected, actual);
+}
+
 export async function POST(request: Request) {
   try {
+    const origin = request.headers.get('origin');
+    const fetchSite = request.headers.get('sec-fetch-site');
+    if ((origin && origin !== new URL(request.url).origin)
+      || (fetchSite && !['same-origin', 'none'].includes(fetchSite))) {
+      return Response.json({ error: 'Cerere invalidă.' }, { status: 403 });
+    }
     if (!ACCESS_CODE) {
       return Response.json(
         { error: 'Înregistrarea este dezactivată (lipsește REGISTRATION_ACCESS_CODE).' },
@@ -23,12 +39,37 @@ export async function POST(request: Request) {
       );
     }
 
+    const supabaseAdmin = getAdminClient();
+    let registrationRateEntry: { scope: 'registration_ip'; keyHash: string } | null = null;
+    try {
+      const ipHash = requestIpHash(request);
+      if (ipHash) registrationRateEntry = { scope: 'registration_ip', keyHash: ipHash };
+    } catch {
+      return Response.json({ error: 'Protecția înregistrării nu este configurată.' }, { status: 503 });
+    }
+    if (registrationRateEntry) {
+      const decision = await checkRateLimit(supabaseAdmin, [registrationRateEntry]);
+      if (!decision.allowed) {
+        return Response.json(
+          { error: 'Prea multe încercări. Încearcă din nou mai târziu.' },
+          { status: 429, headers: { 'Retry-After': String(decision.retryAfterSeconds) } },
+        );
+      }
+      try {
+        // Registration uses a fixed-window quota. Successful account creation
+        // must not reset the IP counter and bypass that quota.
+        await recordRateLimitResult(supabaseAdmin, [registrationRateEntry], false);
+      } catch {
+        return Response.json({ error: 'Protecția înregistrării nu este disponibilă.' }, { status: 503 });
+      }
+    }
+
     const body = await request.json().catch(() => null);
     if (!body) return Response.json({ error: 'Date invalide' }, { status: 400 });
 
     const { username, password, agencyName, accessCode } = body;
 
-    if (!accessCode || (accessCode as string).toUpperCase() !== ACCESS_CODE) {
+    if (!safeAccessCodeMatch(accessCode)) {
       return Response.json({ error: 'Cod de acces incorect' }, { status: 403 });
     }
 
@@ -40,8 +81,8 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Numele de utilizator poate conține doar litere, cifre, punct și underscore (3-30 caractere)' }, { status: 400 });
     }
 
-    if (typeof password !== 'string' || password.length < 12) {
-      return Response.json({ error: 'Parola trebuie să aibă cel puțin 12 caractere' }, { status: 400 });
+    if (!isStrongPassword(password)) {
+      return Response.json({ error: PASSWORD_POLICY_MESSAGE }, { status: 400 });
     }
 
     if (typeof agencyName !== 'string' || agencyName.trim().length < 2) {
@@ -55,13 +96,14 @@ export async function POST(request: Request) {
       email,
       password,
       email_confirm: true,
+      user_metadata: { username: username.trim().toLowerCase() },
     });
 
     if (authError) {
       if (authError.message.includes('already been registered') || authError.message.includes('already exists')) {
         return Response.json({ error: 'Numele de utilizator este deja folosit' }, { status: 400 });
       }
-      return Response.json({ error: authError.message }, { status: 400 });
+      return Response.json({ error: 'Contul nu a putut fi creat.' }, { status: 400 });
     }
 
     if (!authData.user) {
@@ -90,9 +132,12 @@ export async function POST(request: Request) {
         user_id: authData.user.id,
         agency_id: agencyData.id,
         role: 'owner',
+        status: 'active',
+        force_password_change: false,
       }]);
 
     if (profileError) {
+      await supabaseAdmin.from('agencies').delete().eq('id', agencyData.id);
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       console.error('Profile creation error:', profileError);
       return Response.json({ error: 'Eroare la crearea profilului' }, { status: 500 });
@@ -117,7 +162,9 @@ export async function POST(request: Request) {
     return Response.json({ success: true });
   } catch (error) {
     return Response.json(
-      { error: error instanceof Error ? error.message : 'Eroare server' },
+      { error: error instanceof Error && error.message.includes('anti-abuz')
+        ? 'Protecția înregistrării nu este disponibilă.'
+        : 'Eroare server' },
       { status: 500 }
     );
   }

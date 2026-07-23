@@ -22,12 +22,12 @@ export default function RecuperareParolaPage() {
           <h1 className="text-xl font-bold mb-3 text-center" style={{ color: '#0E6B54' }}>Recuperare parolă</h1>
           <p className="text-sm text-gray-600 leading-relaxed mb-4">
             Conturile din CRM folosesc un nume de utilizator intern. Pentru resetarea parolei,
-            contactați proprietarul sau administratorul agenției — o poate reseta imediat din
-            modulul <b>Echipă → Editează membru</b>.
+            contactează proprietarul sau administratorul agenției. Parola temporară se schimbă
+            obligatoriu la prima autentificare, iar celelalte sesiuni sunt revocate.
           </p>
           <p className="text-xs text-gray-400 leading-relaxed mb-6">
-            Resetarea automată prin email va fi disponibilă după asocierea unei adrese de email
-            reale fiecărui cont.
+            Nu trimitem linkuri de resetare către adresele tehnice <b>@fortis.crm</b>. Dacă ești
+            deja autentificat, parola se schimbă din <b>Setări → Securitate</b>.
           </p>
           <Link href="/login" className="inline-flex items-center gap-2 text-sm font-medium hover:underline" style={{ color: '#0E6B54' }}>
             <ArrowLeft size={16} /> Înapoi la logare

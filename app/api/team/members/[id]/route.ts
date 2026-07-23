@@ -5,6 +5,7 @@ import { usernameToEmail, normalizeUsername } from '@/lib/username';
 import { auditSnapshot } from '@/lib/audit-values';
 import { appendAuditEvent } from '@/lib/server/audit-log';
 import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
+import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from '@/lib/password-policy';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiAuth(request, { module: 'team', action: 'edit' });
@@ -20,8 +21,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = await request.json();
     const { first_name, last_name, phone, job_title, department, role, status, hired_at, avatar_url, notes, permissions, password, username, email } = body;
 
-    if (password !== undefined && (typeof password !== 'string' || password.length < 12)) {
-      return Response.json({ error: 'Parola trebuie sa aiba cel putin 12 caractere' }, { status: 400 });
+    if (password !== undefined && !isStrongPassword(password)) {
+      return Response.json({ error: PASSWORD_POLICY_MESSAGE }, { status: 400 });
     }
 
     const { data: authUser } = await serviceAdmin.auth.admin.getUserById(target.user_id);
@@ -30,6 +31,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const uname = username?.trim() ? normalizeUsername(username) : (existingMeta.username as string) || '';
 
     const canChangeRole = contextHasPermission(auth.context, 'team', 'manage_permissions');
+    const changesAccountAccess = password !== undefined || username?.trim() || status !== undefined;
+    if (changesAccountAccess && !canChangeRole) {
+      return Response.json({ error: 'Nu poți modifica accesul acestui cont' }, { status: 403 });
+    }
+    if (
+      target.role === 'owner'
+      && callerRole !== 'owner'
+      && (changesAccountAccess || role !== undefined || permissions !== undefined)
+    ) {
+      return Response.json({ error: 'Numai proprietarul poate modifica accesul unui proprietar' }, { status: 403 });
+    }
     if ((role !== undefined || permissions !== undefined) && !canChangeRole) {
       return Response.json({ error: 'Nu poți modifica roluri sau permisiuni' }, { status: 403 });
     }
@@ -64,11 +76,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       updatePayload.email_confirm = true;
     }
 
+    if (password) {
+      const { data: prepared, error: prepareError } = await serviceAdmin.rpc(
+        'crm_prepare_password_change',
+        {
+          p_user_id: target.user_id,
+          p_agency_id: agencyId,
+          p_actor_id: user.id,
+          p_reason: 'administrator_password_reset',
+        },
+      );
+      if (prepareError || prepared !== true) {
+        return Response.json({ error: 'Resetarea sigură a parolei nu a putut fi pregătită' }, { status: 503 });
+      }
+    }
+
     const { error: authUpdateErr } = await serviceAdmin.auth.admin.updateUserById(target.user_id, updatePayload);
     if (authUpdateErr) {
       const msg = /already (been )?registered|exists|duplicate/i.test(authUpdateErr.message)
         ? `Numele de utilizator "${uname}" este deja folosit.`
-        : authUpdateErr.message;
+        : 'Datele de autentificare nu au putut fi actualizate.';
       return Response.json({ error: msg }, { status: 400 });
     }
 
@@ -80,8 +107,40 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         permissions !== undefined ? permissions : (role !== undefined ? undefined : target.permissions),
       );
     }
+    if (password) {
+      profileUpdate.force_password_change = true;
+      profileUpdate.security_updated_at = new Date().toISOString();
+    }
+    if (status !== undefined) {
+      profileUpdate.status = status === 'activ' || status === 'active' ? 'active' : 'inactive';
+      profileUpdate.disabled_at = profileUpdate.status === 'inactive' ? new Date().toISOString() : null;
+      profileUpdate.disabled_by = profileUpdate.status === 'inactive' ? user.id : null;
+    }
 
-    await serviceAdmin.from('profiles').update(profileUpdate).eq('id', id).eq('agency_id', agencyId);
+    const { error: profileUpdateError } = await serviceAdmin
+      .from('profiles')
+      .update(profileUpdate)
+      .eq('id', id)
+      .eq('agency_id', agencyId);
+    if (profileUpdateError) {
+      return Response.json({ error: 'Profilul nu a putut fi actualizat' }, { status: 500 });
+    }
+    const revokeReason = profileUpdate.status === 'inactive'
+      ? 'account_disabled'
+      : username?.trim()
+        ? 'username_changed'
+        : null;
+    if (!password && revokeReason) {
+      const { error: revokeError } = await serviceAdmin.rpc('crm_revoke_user_sessions', {
+        p_user_id: target.user_id,
+        p_agency_id: agencyId,
+        p_actor_id: user.id,
+        p_reason: revokeReason,
+      });
+      if (revokeError) {
+        return Response.json({ error: 'Sesiunile contului nu au putut fi revocate' }, { status: 503 });
+      }
+    }
 
     const auditEvents: Promise<string>[] = [];
     if (canChangeRole && role !== undefined && role !== target.role) {
@@ -121,11 +180,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   try {
     const { id } = await params;
-    const { admin, serviceAdmin, agencyId, user } = auth.context;
+    const { admin, serviceAdmin, agencyId, user, role } = auth.context;
 
     const { data: target } = await admin.from('profiles').select('*').eq('id', id).eq('agency_id', agencyId).single();
     if (!target) return Response.json({ error: 'Agent negasit' }, { status: 404 });
     if (target.user_id === user.id) return Response.json({ error: 'Nu te poti sterge pe tine' }, { status: 400 });
+    if (target.role === 'owner' && role !== 'owner') {
+      return Response.json({ error: 'Numai proprietarul poate dezactiva un proprietar' }, { status: 403 });
+    }
 
     const body = await request.json().catch(() => ({}));
     const reassignToUserId = body.reassign_to_user_id || null;
@@ -153,11 +215,23 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       });
     }
 
-    await serviceAdmin.from('profiles').update({
+    const { error: disableError } = await serviceAdmin.from('profiles').update({
       status: 'inactive',
       disabled_at: new Date().toISOString(),
       disabled_by: user.id,
     }).eq('id', id).eq('agency_id', agencyId);
+    if (disableError) {
+      return Response.json({ error: 'Contul nu a putut fi dezactivat' }, { status: 500 });
+    }
+    const { error: revokeError } = await serviceAdmin.rpc('crm_revoke_user_sessions', {
+      p_user_id: target.user_id,
+      p_agency_id: agencyId,
+      p_actor_id: user.id,
+      p_reason: 'account_disabled',
+    });
+    if (revokeError) {
+      return Response.json({ error: 'Sesiunile contului nu au putut fi revocate' }, { status: 503 });
+    }
     const { data: targetAuth } = await serviceAdmin.auth.admin.getUserById(target.user_id);
     await serviceAdmin.auth.admin.updateUserById(target.user_id, {
       user_metadata: { ...(targetAuth.user?.user_metadata || {}), status: 'inactiv' },

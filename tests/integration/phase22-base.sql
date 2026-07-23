@@ -5,8 +5,30 @@ create schema if not exists auth;
 
 create table auth.users (
   id uuid primary key,
-  email text
+  email text,
+  raw_user_meta_data jsonb not null default '{}'::jsonb
 );
+
+create table auth.sessions (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
+create table auth.mfa_factors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id),
+  status text not null,
+  factor_type text not null default 'totp'
+);
+
+create or replace function auth.jwt()
+returns jsonb language sql stable
+as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
+
+create or replace function auth.uid()
+returns uuid language sql stable
+as $$ select nullif(auth.jwt() ->> 'sub', '')::uuid $$;
 
 create table public.agencies (
   id uuid primary key,
@@ -16,6 +38,8 @@ create table public.agencies (
 create table public.profiles (
   user_id uuid not null references auth.users(id),
   agency_id uuid not null references public.agencies(id),
+  role text not null default 'agent',
+  permissions jsonb,
   status text not null default 'active',
   primary key (user_id, agency_id)
 );

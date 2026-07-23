@@ -7,6 +7,7 @@ import { Settings, User, Building2, Shield, Copy, CheckCircle, AlertTriangle, St
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { AutomationSettings } from '@/components/AutomationSettings';
+import { AccountSecurityPanel } from '@/components/AccountSecurityPanel';
 
 const ic = 'w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900';
 const ROLE_LABEL: Record<string, string> = {
@@ -354,38 +355,7 @@ export default function SettingsPage() {
 
             {/* Security Tab */}
             {activeTab === 'security' && (
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h2 className="font-semibold text-gray-800 mb-4">Securitate cont</h2>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-800 text-sm">Schimbă parola</p>
-                      <p className="text-xs text-gray-500 mt-0.5">Trimite un email de resetare la adresa ta</p>
-                    </div>
-                    <button onClick={async () => {
-                      if (!data?.profile.email) return;
-                      await supabase.auth.resetPasswordForEmail(data.profile.email);
-                      alert('Email de resetare trimis!');
-                    }}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors">
-                      Resetează parola
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between p-4 bg-amber-50 rounded-lg border border-amber-200">
-                    <div>
-                      <p className="font-medium text-amber-800 text-sm">Sesiuni active</p>
-                      <p className="text-xs text-amber-600 mt-0.5">Deconectează-te de pe toate dispozitivele</p>
-                    </div>
-                    <button onClick={async () => {
-                      await supabase.auth.signOut({ scope: 'global' });
-                      window.location.href = '/login';
-                    }}
-                      className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors">
-                      Deconectare globală
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <AccountSecurityPanel />
             )}
           </>
         )}

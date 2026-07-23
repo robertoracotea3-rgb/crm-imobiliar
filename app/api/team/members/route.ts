@@ -4,6 +4,7 @@ import { effectivePermissions } from '@/lib/team-roles';
 import { usernameToEmail, normalizeUsername, emailToUsername } from '@/lib/username';
 import { appendAuditEvent } from '@/lib/server/audit-log';
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { isStrongPassword, PASSWORD_POLICY_MESSAGE } from '@/lib/password-policy';
 
 export async function GET(request: Request) {
   const auth = await requireApiAuth(request, { module: 'team', action: 'view' });
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
     const { email, username, password, first_name, last_name, phone, job_title, department, role, hired_at, permissions } = body;
 
     if (!username?.trim() || !password) return Response.json({ error: 'Nume utilizator si parola sunt obligatorii' }, { status: 400 });
-    if (typeof password !== 'string' || password.length < 12) return Response.json({ error: 'Parola trebuie sa aiba cel putin 12 caractere' }, { status: 400 });
+    if (!isStrongPassword(password)) return Response.json({ error: PASSWORD_POLICY_MESSAGE }, { status: 400 });
 
     const allowedRoles = ['admin', 'manager', 'agent_senior', 'agent', 'assistant', 'accountant', 'viewer'];
     const finalRole = allowedRoles.includes(role) ? role : 'agent';
@@ -136,13 +137,14 @@ export async function POST(request: Request) {
         department: department || '',
         status: 'activ',
         hired_at: hired_at || null,
+        force_password_change: true,
       },
     });
 
     if (createError) {
       const msg = /already (been )?registered|exists|duplicate/i.test(createError.message)
         ? `Numele de utilizator "${uname}" este deja folosit.`
-        : createError.message;
+        : 'Contul nu a putut fi creat.';
       return Response.json({ error: msg }, { status: 400 });
     }
 
@@ -152,12 +154,13 @@ export async function POST(request: Request) {
       role: finalRole,
       full_name,
       status: 'active',
+      force_password_change: true,
       permissions: effectivePermissions(finalRole, permissions),
     }]).select().single();
 
     if (profileError) {
       await serviceAdmin.auth.admin.deleteUser(newUser.user.id);
-      return Response.json({ error: profileError.message }, { status: 500 });
+      return Response.json({ error: 'Profilul membrului nu a putut fi creat.' }, { status: 500 });
     }
 
     await appendAuditEvent({

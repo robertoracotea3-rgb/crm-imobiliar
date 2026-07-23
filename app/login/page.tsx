@@ -4,7 +4,6 @@ import { useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { usernameToEmail } from '@/lib/username';
 import { User, Lock } from 'lucide-react';
 
 const subscribeToHydration = () => () => undefined;
@@ -23,9 +22,8 @@ export default function LoginPage() {
     try {
       setLoading(true);
       setError('');
-      const email = usernameToEmail(username);
-      await signIn(email, password);
-      router.push('/dashboard');
+      const nextPath = await signIn(username, password);
+      router.push(nextPath);
     } catch {
       setError('Nume utilizator sau parola incorecta.');
     } finally {

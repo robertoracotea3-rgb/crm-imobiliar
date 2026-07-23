@@ -12,6 +12,12 @@ import {
   type PermissionMap,
 } from '@/lib/team-roles';
 import { appendAuditEvent } from '@/lib/server/audit-log';
+import {
+  authorizeAppSession,
+  verifiedAccessTokenClaims,
+  type AccessTokenClaims,
+  type SessionDecision,
+} from '@/lib/server/account-security';
 
 export type { CrmAction, CrmModule, CrmRole } from '@/lib/team-roles';
 
@@ -23,9 +29,11 @@ export interface AuthenticatedContext {
   /** Privileged server client. Use only after explicit permission and row checks. */
   serviceAdmin: SupabaseClient;
   user: User;
+  accessToken: string;
   agencyId: string;
   role: CrmRole;
   permissions: PermissionMap;
+  session: AccessTokenClaims & SessionDecision;
 }
 
 export type AuthResult =
@@ -124,6 +132,7 @@ export function contextCanManageAll(
 export async function requireApiAuth(
   request: Request,
   permission?: { module: CrmModule; action: CrmAction },
+  options: { allowMfaSetup?: boolean; allowPasswordChange?: boolean } = {},
 ): Promise<AuthResult> {
   const token = bearerToken(request);
   if (!token) {
@@ -151,6 +160,39 @@ export async function requireApiAuth(
 
   const role = normalizeCrmRole(profile.role);
   const permissions = effectivePermissions(role, profile.permissions);
+  const claims = verifiedAccessTokenClaims(token, user.id);
+  if (!claims) {
+    return { ok: false, response: Response.json({ error: 'Sesiune fără identificator valid' }, { status: 401 }) };
+  }
+  let sessionDecision: SessionDecision;
+  try {
+    sessionDecision = await authorizeAppSession(serviceAdmin, request, claims);
+  } catch {
+    return {
+      ok: false,
+      response: Response.json({ error: 'Verificarea sesiunii nu este disponibilă' }, { status: 503 }),
+    };
+  }
+  const allowedException = (
+    sessionDecision.reason === 'mfa_required' && options.allowMfaSetup
+  ) || (
+    sessionDecision.reason === 'password_change_required' && options.allowPasswordChange
+  );
+  if (!sessionDecision.authorized && !allowedException) {
+    const mfa = sessionDecision.reason === 'mfa_required';
+    const password = sessionDecision.reason === 'password_change_required';
+    return {
+      ok: false,
+      response: Response.json({
+        error: mfa
+          ? 'Este necesară verificarea în doi pași.'
+          : password
+            ? 'Trebuie să schimbi parola temporară.'
+            : 'Sesiunea a expirat sau a fost revocată.',
+        code: mfa ? 'MFA_REQUIRED' : password ? 'PASSWORD_CHANGE_REQUIRED' : 'SESSION_REVOKED',
+      }, { status: mfa || password ? 403 : 401 }),
+    };
+  }
   if (permission && !hasPermission(role, permission.module, permission.action, profile.permissions)) {
     await logDeniedPermission(serviceAdmin, request, user.id, profile.agency_id, role, permission);
     return { ok: false, response: Response.json({ error: 'Acces interzis' }, { status: 403 }) };
@@ -164,9 +206,11 @@ export async function requireApiAuth(
       admin: db,
       serviceAdmin,
       user,
+      accessToken: token,
       agencyId: profile.agency_id,
       role,
       permissions,
+      session: { ...claims, ...sessionDecision },
     },
   };
 }

@@ -111,7 +111,12 @@ export function Sidebar() {
   // Nu afișa sidebar pe pagini de auth
   if (loading) return null;
   if (!user) return null;
-  if (pathname?.startsWith('/login') || pathname?.startsWith('/register')) {
+  if (
+    pathname?.startsWith('/login')
+    || pathname?.startsWith('/register')
+    || pathname?.startsWith('/auth/')
+    || pathname?.startsWith('/recuperare-parola')
+  ) {
     return null;
   }
 

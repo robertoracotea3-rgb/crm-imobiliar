@@ -21,6 +21,7 @@ const externalOrDisabledRoutes = new Set([
   'app/api/cron/automations/route.ts',
   'app/api/cron/storia-sync/route.ts',
   'app/api/auth/register/route.ts',
+  'app/api/auth/login/route.ts',
   'app/api/feed/properties.xml/route.ts',
   'app/api/portals/storia/callback/route.ts',
   'app/api/portals/storia/webhook/route.ts',

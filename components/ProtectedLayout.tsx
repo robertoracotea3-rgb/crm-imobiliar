@@ -15,13 +15,15 @@ export function ProtectedLayout({
   action?: CrmAction;
 }) {
   const router = useRouter();
-  const { user, loading, can } = useAuth();
+  const { user, loading, can, security } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
+    } else if (!loading && user && security?.nextPath) {
+      router.push(security.nextPath);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, security?.nextPath]);
 
   if (loading) {
     return (
@@ -34,6 +36,7 @@ export function ProtectedLayout({
   if (!user) {
     return null;
   }
+  if (security?.nextPath) return null;
 
   if (module && !can(module, action)) {
     return (

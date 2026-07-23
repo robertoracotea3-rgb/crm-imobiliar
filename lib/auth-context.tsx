@@ -21,37 +21,39 @@ interface Agency {
   name: string;
 }
 
+interface AuthSecurity {
+  aal: 'aal1' | 'aal2';
+  mfaRequired: boolean;
+  passwordChangeRequired: boolean;
+  sessionId: string | null;
+  nextPath: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   agency: Agency | null;
   role: CrmRole | null;
   permissions: PermissionMap;
+  security: AuthSecurity | null;
   can: (module: CrmModule, action?: CrmAction) => boolean;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (username: string, password: string) => Promise<string>;
   signOut: () => Promise<void>;
+  refreshSecurity: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-async function writeAuthAudit(action: 'login' | 'logout', accessToken: string): Promise<void> {
+async function writeLogoutAudit(accessToken: string): Promise<void> {
   const response = await fetch('/api/auth/audit', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action: 'logout' }),
   });
   if (!response.ok) throw new Error('Jurnalul de autentificare nu este disponibil.');
-}
-
-async function writeFailedLoginAudit(): Promise<void> {
-  await fetch('/api/auth/audit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'login_failed' }),
-  });
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -59,119 +61,128 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [agency, setAgency] = useState<Agency | null>(null);
   const [role, setRole] = useState<CrmRole | null>(null);
   const [permissions, setPermissions] = useState<PermissionMap>({});
+  const [security, setSecurity] = useState<AuthSecurity | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserAgency = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('agency_id, role, permissions, status, agencies(id, name)')
-      .eq('user_id', userId)
-      .single();
-
-    if (error) {
-      console.error('fetchUserAgency error:', error.message);
-      return;
-    }
-
-    if (data?.status && data.status !== 'active') {
-      setRole('viewer');
-      setPermissions({});
-      setAgency(null);
-      return;
-    }
-
-    const nextRole = normalizeCrmRole(data?.role);
+  const fetchUserContext = useCallback(async (accessToken: string) => {
+    const response = await fetch('/api/auth/context', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('Sesiunea CRM nu poate fi verificată.');
+    const data = await response.json();
+    const nextRole = normalizeCrmRole(data.role);
     setRole(nextRole);
-    setPermissions(effectivePermissions(nextRole, data?.permissions));
-    if (data?.agencies && Array.isArray(data.agencies) && data.agencies.length > 0) {
-      setAgency(data.agencies[0] as Agency);
-    } else if (data?.agencies && !Array.isArray(data.agencies)) {
-      setAgency(data.agencies as Agency);
-    }
+    setPermissions(effectivePermissions(nextRole, data.permissions));
+    setAgency(data.agency || null);
+    setUser(data.user ? { id: data.user.id, email: data.user.email || '' } : null);
+    setSecurity({
+      aal: data.security?.aal === 'aal2' ? 'aal2' : 'aal1',
+      mfaRequired: data.security?.mfa_required === true,
+      passwordChangeRequired: data.security?.password_change_required === true,
+      sessionId: data.security?.session_id || null,
+      nextPath: data.security?.next_path || null,
+    });
   }, []);
 
   const checkSession = useCallback(async () => {
     try {
       const { data } = await supabase.auth.getSession();
-      if (data.session?.user) {
-        setUser({
-          id: data.session.user.id,
-          email: data.session.user.email || '',
-        });
-        await fetchUserAgency(data.session.user.id);
+      if (data.session?.access_token) {
+        await fetchUserContext(data.session.access_token);
       }
+    } catch {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+      setUser(null);
+      setAgency(null);
+      setRole(null);
+      setPermissions({});
+      setSecurity(null);
     } finally {
       setLoading(false);
     }
-  }, [fetchUserAgency]);
+  }, [fetchUserContext]);
 
   // Check session on mount and keep the permission context synchronized.
   useEffect(() => {
-    void checkSession();
-    const { data } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
-        });
-        await fetchUserAgency(session.user.id);
+    const initialCheck = window.setTimeout(() => void checkSession(), 0);
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) {
+        window.setTimeout(() => void fetchUserContext(session.access_token).catch(() => undefined), 0);
       } else {
         setUser(null);
         setAgency(null);
         setRole(null);
         setPermissions({});
+        setSecurity(null);
       }
     });
 
-    return () => data?.subscription.unsubscribe();
-  }, [checkSession, fetchUserAgency]);
+    return () => {
+      window.clearTimeout(initialCheck);
+      data?.subscription.unsubscribe();
+    };
+  }, [checkSession, fetchUserContext]);
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
+  useEffect(() => {
+    if (!user) return undefined;
+    const timer = window.setInterval(() => {
+      void supabase.auth.getSession().then(({ data }) => {
+        if (data.session?.access_token) return fetchUserContext(data.session.access_token);
+        return undefined;
+      }).catch(() => undefined);
+    }, 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [fetchUserContext, user]);
+
+  const signIn = async (username: string, password: string) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
     });
-
-    if (error) {
-      await writeFailedLoginAudit().catch(() => undefined);
-      throw error;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token || !data.refresh_token) {
+      throw new Error(data.error || 'Autentificare eșuată.');
     }
-    if (!data.user || !data.session?.access_token) throw new Error('Sign in failed');
-
-    try {
-      await writeAuthAudit('login', data.session.access_token);
-    } catch (auditError) {
-      await supabase.auth.signOut();
-      throw auditError;
-    }
-
-    setUser({
-      id: data.user.id,
-      email: data.user.email || '',
+    const { error } = await supabase.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
     });
-    await fetchUserAgency(data.user.id);
+    if (error) throw new Error('Sesiunea nu a putut fi salvată.');
+    await fetchUserContext(data.access_token);
+    return typeof data.next_path === 'string' ? data.next_path : '/dashboard';
   };
 
   const signOut = async () => {
     const accessToken = (await supabase.auth.getSession()).data.session?.access_token;
     try {
-      if (accessToken) await writeAuthAudit('logout', accessToken);
+      if (accessToken) await writeLogoutAudit(accessToken);
     } catch (auditError) {
       console.error('auth audit failed:', auditError instanceof Error ? auditError.message : 'unknown');
     } finally {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
       setUser(null);
       setAgency(null);
       setRole(null);
       setPermissions({});
+      setSecurity(null);
     }
   };
+
+  const refreshSecurity = useCallback(async () => {
+    const accessToken = (await supabase.auth.getSession()).data.session?.access_token;
+    if (!accessToken) throw new Error('Sesiunea a expirat.');
+    await fetchUserContext(accessToken);
+  }, [fetchUserContext]);
 
   const can = (module: CrmModule, action: CrmAction = 'view') =>
     permissions[module]?.[action] === true;
 
   return (
-    <AuthContext.Provider value={{ user, agency, role, permissions, can, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{
+      user, agency, role, permissions, security, can, loading, signIn, signOut, refreshSecurity,
+    }}>
       {children}
     </AuthContext.Provider>
   );

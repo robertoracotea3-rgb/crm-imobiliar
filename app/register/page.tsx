@@ -28,12 +28,13 @@ export default function RegisterPage() {
         return;
       }
 
-      if (password.length < 12) {
-        setError('Parola trebuie să aibă cel puțin 12 caractere');
+      const passwordGroups = [/[a-z]/.test(password), /[A-Z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length;
+      if (password.length < 12 || password.length > 128 || passwordGroups < 3) {
+        setError('Parola trebuie să aibă 12–128 caractere și minimum trei tipuri de caractere');
         return;
       }
 
-      // Creeaza contul via API server-side (fara email, fara rate limit)
+      // Contul se creează server-side, cu cod de acces și limitare persistentă a încercărilor.
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -47,9 +48,8 @@ export default function RegisterPage() {
       }
 
       // Login automat dupa inregistrare
-      const email = `${username.trim().toLowerCase().replace(/\s+/g, '.')}@fortis.crm`;
-      await signIn(email, password);
-      router.push('/dashboard');
+      const nextPath = await signIn(username, password);
+      router.push(nextPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Eroare la inregistrare');
     } finally {
