@@ -36,6 +36,7 @@ export async function GET(request: Request) {
       admin.from('transactions')
         .select('id, agent_id, type, sale_price, currency, agency_commission, agent_commission, closed_at, created_at')
         .eq('agency_id', agencyId)
+        .eq('status', 'finalizata')
         .is('deleted_at', null)
         .limit(2000),
       admin.from('properties')

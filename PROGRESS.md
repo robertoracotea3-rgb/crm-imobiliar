@@ -25,7 +25,7 @@
 - [x] **Notificări persistente** — inbox unic cu dashboardul, badge din cont, priorități, arhivare, paginare și alerte operaționale deduplicate
 - [x] **Portaluri** — integrare Storia (OAuth, publish, unpublish, webhook, status sync) + publicare Facebook
 - [x] **Echipă** — membri, stats, activitate
-- [x] **Finanțe** — dashboard comisioane calculate din proprietăți vândute/închiriate
+- [x] **Finanțe și tranzacții** — flux cu client și proprietate obligatorii, finalizare atomică, registru de comisioane și retrageri portal cu retry
 - [x] **Setări** — profil agenție, watermark fotografii
 - [x] **Căutare AI** — natural language → filtre structurate (Claude Haiku)
 - [x] **Funcționalități AI** — analiză/îmbunătățire poze, generator descrieri SEO

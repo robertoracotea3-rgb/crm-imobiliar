@@ -1,227 +1,254 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth, type AuthenticatedContext } from '@/lib/server/api-auth';
+import { processPortalRemovalJobs } from '@/lib/server/portal-removals';
 import {
   TRANSACTION_STATUS_TRANSITIONS,
   canTransition,
   isTransactionStatus,
 } from '@/lib/crm-catalogs';
+import {
+  TRANSACTION_CURRENCIES,
+  TRANSACTION_TYPES,
+  nonNegativeMoney,
+} from '@/lib/transactions';
 
-const VALID_TYPE = ['vanzare', 'inchiriere'];
+const PAGE_SIZE_MAX = 50;
+const migrationError = (message: string) => /relation|does not exist|schema cache/i.test(message);
+const positiveInt = (value: string | null, fallback: number, max: number) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, max) : fallback;
+};
+const allowed = <T extends readonly string[]>(values: T, value: unknown): value is T[number] =>
+  typeof value === 'string' && values.includes(value);
 
-function errMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (e && typeof e === 'object' && 'message' in e) return String(e.message);
-  return String(e ?? 'Eroare');
+function message(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error) return String(error.message);
+  return String(error || 'Eroare necunoscută');
 }
 
-const num = (v: unknown): number => {
-  const n = parseFloat(String(v));
-  return Number.isFinite(n) ? n : 0;
-};
-
-const migrationError = (msg: string) => /relation|does not exist|schema cache/i.test(msg);
-
-async function validateRefs(context: AuthenticatedContext, refs: { property_id?: string | null; contact_id?: string | null; agent_id?: string | null }) {
+async function validateRefs(
+  context: AuthenticatedContext,
+  refs: { property_id?: string | null; contact_id?: string | null; agent_id?: string | null; lead_id?: string | null },
+): Promise<Response | null> {
   const { admin, agencyId } = context;
-
-  if (refs.property_id) {
-    const { data } = await admin
-      .from('properties')
-      .select('id')
-      .eq('id', refs.property_id)
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (!data) return Response.json({ error: 'Proprietate invalida pentru aceasta agentie' }, { status: 400 });
-  }
-
-  if (refs.contact_id) {
-    const { data } = await admin
-      .from('contacts')
-      .select('id')
-      .eq('id', refs.contact_id)
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (!data) return Response.json({ error: 'Contact invalid pentru aceasta agentie' }, { status: 400 });
-  }
-
-  if (refs.agent_id) {
-    const { data } = await admin
-      .from('profiles')
-      .select('user_id')
-      .eq('user_id', refs.agent_id)
-      .eq('agency_id', agencyId)
-      .maybeSingle();
-    if (!data) return Response.json({ error: 'Agent invalid pentru aceasta agentie' }, { status: 400 });
-  }
-
+  const checks = await Promise.all([
+    refs.property_id
+      ? admin.from('properties').select('id').eq('id', refs.property_id).eq('agency_id', agencyId)
+        .is('deleted_at', null).maybeSingle()
+      : Promise.resolve({ data: null }),
+    refs.contact_id
+      ? admin.from('contacts').select('id').eq('id', refs.contact_id).eq('agency_id', agencyId)
+        .is('deleted_at', null).eq('merge_status', 'active').maybeSingle()
+      : Promise.resolve({ data: null }),
+    refs.agent_id
+      ? admin.from('profiles').select('user_id').eq('user_id', refs.agent_id).eq('agency_id', agencyId)
+        .eq('status', 'active').maybeSingle()
+      : Promise.resolve({ data: null }),
+    refs.lead_id
+      ? admin.from('leads').select('id').eq('id', refs.lead_id).eq('agency_id', agencyId)
+        .is('deleted_at', null).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  if (refs.property_id && !checks[0].data) return Response.json({ error: 'Proprietatea nu este accesibilă.' }, { status: 400 });
+  if (refs.contact_id && !checks[1].data) return Response.json({ error: 'Clientul nu este accesibil.' }, { status: 400 });
+  if (refs.agent_id && !checks[2].data) return Response.json({ error: 'Agentul nu este activ în agenție.' }, { status: 400 });
+  if (refs.lead_id && !checks[3].data) return Response.json({ error: 'Leadul nu este accesibil.' }, { status: 400 });
   return null;
 }
 
 export async function GET(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'view' });
   if (!auth.ok) return auth.response;
-
   try {
-    const { admin, agencyId } = auth.context;
-    const { data, error } = await admin
-      .from('transactions')
-      .select('id, property_id, agent_id, contact_id, type, status, status_reason, sale_price, currency, agency_commission, agent_commission, closed_at, notes, created_at')
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null)
-      .order('closed_at', { ascending: false, nullsFirst: false })
-      .limit(500);
-
+    const { admin, serviceAdmin, agencyId } = auth.context;
+    const params = new URL(request.url).searchParams;
+    const page = positiveInt(params.get('page'), 1, 100_000);
+    const pageSize = positiveInt(params.get('page_size'), 25, PAGE_SIZE_MAX);
+    const from = (page - 1) * pageSize;
+    let query = admin.from('transactions').select(
+      'id,property_id,agent_id,contact_id,lead_id,type,status,status_reason,sale_price,currency,agency_commission,agent_commission,closed_at,completed_at,notes,legacy_import,legacy_import_reason,property_code_snapshot,property_title_snapshot,contact_name_snapshot,created_at,updated_at',
+      { count: 'exact' },
+    ).eq('agency_id', agencyId).is('deleted_at', null);
+    const status = params.get('status');
+    if (status) {
+      if (!isTransactionStatus(status)) return Response.json({ error: 'Status invalid.' }, { status: 400 });
+      query = query.eq('status', status);
+    }
+    const search = params.get('search')?.trim().slice(0, 100);
+    if (search) query = query.ilike('search_text', `%${search.replace(/[%_]/g, '')}%`);
+    const { data, error, count } = await query.order('updated_at', { ascending: false })
+      .order('id', { ascending: true }).range(from, from + pageSize - 1);
     if (error) {
-      if (migrationError(error.message)) return Response.json({ transactions: [], needsMigration: true });
+      if (migrationError(error.message)) {
+        return Response.json({ transactions: [], needsMigration: true,
+          pagination: { page: 1, page_size: pageSize, total: 0, pages: 0 } });
+      }
       return Response.json({ error: error.message }, { status: 500 });
     }
-    return Response.json({ transactions: data || [] });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
+    const ids = (data || []).map((item) => item.id);
+    const { data: jobs } = ids.length
+      ? await serviceAdmin.from('portal_removal_jobs')
+        .select('id,transaction_id,portal,status,attempts,max_attempts,next_attempt_at,last_error,confirmed_at')
+        .eq('agency_id', agencyId).in('transaction_id', ids).order('requested_at', { ascending: false })
+      : { data: [] };
+    const jobsByTransaction = new Map<string, unknown[]>();
+    for (const job of jobs || []) {
+      const current = jobsByTransaction.get(job.transaction_id) || [];
+      current.push(job); jobsByTransaction.set(job.transaction_id, current);
+    }
+    const total = count || 0;
+    return Response.json({
+      transactions: (data || []).map((item) => ({
+        ...item, removal_jobs: jobsByTransaction.get(item.id) || [],
+      })),
+      pagination: { page, page_size: pageSize, total, pages: Math.ceil(total / pageSize) },
+    });
+  } catch (error) {
+    return Response.json({ error: message(error) }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'create' });
   if (!auth.ok) return auth.response;
-
   try {
     const { admin, agencyId, user } = auth.context;
-    const b = await request.json();
+    const body = await request.json();
     const refs = {
-      property_id: b.property_id || null,
-      contact_id: b.contact_id || null,
-      agent_id: b.agent_id || user.id,
+      property_id: typeof body.property_id === 'string' ? body.property_id : null,
+      contact_id: typeof body.contact_id === 'string' ? body.contact_id : null,
+      agent_id: typeof body.agent_id === 'string' && body.agent_id ? body.agent_id : user.id,
+      lead_id: typeof body.lead_id === 'string' && body.lead_id ? body.lead_id : null,
     };
-
+    if (!refs.property_id || !refs.contact_id) {
+      return Response.json({ error: 'Proprietatea și clientul sunt obligatorii.' }, { status: 400 });
+    }
     const refsError = await validateRefs(auth.context, refs);
     if (refsError) return refsError;
-
-    const { data, error } = await admin.from('transactions').insert({
-      agency_id: agencyId,
-      created_by: user.id,
-      property_id: refs.property_id,
-      agent_id: refs.agent_id,
-      contact_id: refs.contact_id,
-      type: VALID_TYPE.includes(b.type) ? b.type : 'vanzare',
-      status: 'finalizata',
-      sale_price: num(b.sale_price),
-      currency: b.currency || 'EUR',
-      agency_commission: num(b.agency_commission),
-      agent_commission: num(b.agent_commission),
-      closed_at: b.closed_at || new Date().toISOString().slice(0, 10),
-      notes: b.notes?.trim() || null,
-    }).select().single();
-
-    if (error) {
-      if (migrationError(error.message)) {
-        return Response.json({ error: 'Tabela transactions lipseste - ruleaza migrarea SQL in Supabase.' }, { status: 503 });
-      }
-      return Response.json({ error: error.message }, { status: 500 });
+    const salePrice = nonNegativeMoney(body.sale_price);
+    const agencyCommission = body.agency_commission === '' || body.agency_commission == null
+      ? 0 : nonNegativeMoney(body.agency_commission);
+    const agentCommission = body.agent_commission === '' || body.agent_commission == null
+      ? 0 : nonNegativeMoney(body.agent_commission);
+    if (!salePrice) return Response.json({ error: 'Prețul tranzacției trebuie să fie mai mare decât zero.' }, { status: 400 });
+    if (agencyCommission === null || agentCommission === null) {
+      return Response.json({ error: 'Comisioanele nu pot fi negative.' }, { status: 400 });
     }
-
+    if (!allowed(TRANSACTION_TYPES, body.type) || !allowed(TRANSACTION_CURRENCIES, body.currency)) {
+      return Response.json({ error: 'Tipul sau moneda tranzacției este invalidă.' }, { status: 400 });
+    }
+    const { data, error } = await admin.from('transactions').insert({
+      agency_id: agencyId, created_by: user.id, ...refs,
+      type: body.type, status: 'draft', sale_price: salePrice, currency: body.currency,
+      agency_commission: agencyCommission, agent_commission: agentCommission,
+      notes: typeof body.notes === 'string' ? body.notes.trim().slice(0, 3000) || null : null,
+    }).select().single();
+    if (error) return Response.json({ error: error.message }, { status: 500 });
     return Response.json({ transaction: data }, { status: 201 });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
+  } catch (error) {
+    return Response.json({ error: message(error) }, { status: 500 });
   }
 }
 
 export async function PATCH(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'edit' });
   if (!auth.ok) return auth.response;
-
   try {
-    const { admin, agencyId } = auth.context;
-    const b = await request.json();
-    const { id } = b;
-    if (!id) return Response.json({ error: 'ID lipsa' }, { status: 400 });
+    const { admin, serviceAdmin, agencyId, user } = auth.context;
+    const body = await request.json();
+    if (typeof body.id !== 'string') return Response.json({ error: 'ID lipsă.' }, { status: 400 });
+    const { data: existing } = await admin.from('transactions')
+      .select('id,status,property_id,contact_id,agent_id,lead_id,legacy_import')
+      .eq('id', body.id).eq('agency_id', agencyId).is('deleted_at', null).maybeSingle();
+    if (!existing) return Response.json({ error: 'Tranzacția nu există.' }, { status: 404 });
 
-    const { data: existing } = await admin
-      .from('transactions')
-      .select('id, status')
-      .eq('id', id)
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (!existing) return Response.json({ error: 'Tranzactie negasita' }, { status: 404 });
-
-    if (b.status !== undefined) {
-      if (!isTransactionStatus(b.status)) {
-        return Response.json({ error: 'Status de tranzacție invalid' }, { status: 400 });
+    if (body.status === 'finalizata') {
+      const extraFields = Object.keys(body).filter((key) => !['id', 'status'].includes(key));
+      if (extraFields.length) {
+        return Response.json({ error: 'Salvează modificările înainte de finalizarea atomică.' }, { status: 400 });
       }
-      if (!isTransactionStatus(existing.status) || !canTransition(TRANSACTION_STATUS_TRANSITIONS, existing.status, b.status)) {
-        return Response.json({ error: `Tranziția de la ${existing.status} la ${b.status} nu este permisă` }, { status: 409 });
-      }
+      const { data, error } = await serviceAdmin.rpc('crm_finalize_transaction', {
+        p_agency_id: agencyId, p_transaction_id: existing.id, p_actor_id: user.id,
+      });
+      if (error) return Response.json({ error: error.message }, { status: 409 });
+      const removalDeliveries = await processPortalRemovalJobs(serviceAdmin, agencyId, {
+        transactionId: existing.id, limit: 20,
+      }).catch((caught) => [{ status: 'retry', error: message(caught) }]);
+      const { data: transaction } = await admin.from('transactions').select('*').eq('id', existing.id).single();
+      return Response.json({ transaction, finalization: data, removal_deliveries: removalDeliveries });
+    }
+    if (existing.status === 'finalizata') {
+      return Response.json({ error: 'O tranzacție finalizată nu poate fi modificată direct.' }, { status: 409 });
     }
 
-    const refsError = await validateRefs(auth.context, {
-      property_id: b.property_id,
-      contact_id: b.contact_id,
-      agent_id: b.agent_id,
-    });
+    const nextStatus = body.status === undefined ? existing.status : body.status;
+    if (!isTransactionStatus(nextStatus)) return Response.json({ error: 'Status invalid.' }, { status: 400 });
+    if (body.status !== undefined
+      && (!isTransactionStatus(existing.status)
+        || !canTransition(TRANSACTION_STATUS_TRANSITIONS, existing.status, nextStatus))) {
+      return Response.json({ error: `Tranziția ${existing.status} → ${nextStatus} nu este permisă.` }, { status: 409 });
+    }
+    const refs = {
+      property_id: body.property_id === undefined ? existing.property_id : body.property_id || null,
+      contact_id: body.contact_id === undefined ? existing.contact_id : body.contact_id || null,
+      agent_id: body.agent_id === undefined ? existing.agent_id : body.agent_id || null,
+      lead_id: body.lead_id === undefined ? existing.lead_id : body.lead_id || null,
+    };
+    if (!existing.legacy_import && (!refs.property_id || !refs.contact_id || !refs.agent_id)) {
+      return Response.json({ error: 'Proprietatea, clientul și agentul sunt obligatorii.' }, { status: 400 });
+    }
+    const refsError = await validateRefs(auth.context, refs);
     if (refsError) return refsError;
-
-    const safe: Record<string, unknown> = {};
-    if (b.property_id !== undefined) safe.property_id = b.property_id || null;
-    if (b.agent_id !== undefined) safe.agent_id = b.agent_id || null;
-    if (b.contact_id !== undefined) safe.contact_id = b.contact_id || null;
-    if (b.type !== undefined) safe.type = VALID_TYPE.includes(b.type) ? b.type : 'vanzare';
-    if (b.sale_price !== undefined) safe.sale_price = num(b.sale_price);
-    if (b.currency !== undefined) safe.currency = b.currency || 'EUR';
-    if (b.agency_commission !== undefined) safe.agency_commission = num(b.agency_commission);
-    if (b.agent_commission !== undefined) safe.agent_commission = num(b.agent_commission);
-    if (b.closed_at !== undefined) safe.closed_at = b.closed_at || null;
-    if (b.notes !== undefined) safe.notes = b.notes?.trim() || null;
-    if (b.status !== undefined) safe.status = b.status;
-    if (b.status_reason !== undefined) safe.status_reason = b.status_reason?.trim() || null;
-
-    const { data, error } = await admin
-      .from('transactions')
-      .update(safe)
-      .eq('id', id)
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null)
-      .select()
-      .single();
-
+    const safe: Record<string, unknown> = { ...refs, status: nextStatus };
+    if (body.type !== undefined) {
+      if (!allowed(TRANSACTION_TYPES, body.type)) return Response.json({ error: 'Tip invalid.' }, { status: 400 });
+      safe.type = body.type;
+    }
+    if (body.currency !== undefined) {
+      if (!allowed(TRANSACTION_CURRENCIES, body.currency)) return Response.json({ error: 'Monedă invalidă.' }, { status: 400 });
+      safe.currency = body.currency;
+    }
+    for (const field of ['sale_price', 'agency_commission', 'agent_commission'] as const) {
+      if (body[field] === undefined) continue;
+      const value = field !== 'sale_price' && (body[field] === '' || body[field] === null)
+        ? 0 : nonNegativeMoney(body[field]);
+      if (value === null || (field === 'sale_price' && value <= 0)) {
+        return Response.json({ error: 'Valorile financiare sunt invalide.' }, { status: 400 });
+      }
+      safe[field] = value;
+    }
+    if (body.notes !== undefined) safe.notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 3000) || null : null;
+    if (nextStatus === 'anulata') {
+      const reason = typeof body.status_reason === 'string' ? body.status_reason.trim() : '';
+      if (!reason) return Response.json({ error: 'Motivul anulării este obligatoriu.' }, { status: 400 });
+      safe.status_reason = reason.slice(0, 500); safe.cancelled_at = new Date().toISOString();
+    } else if (body.status !== undefined) safe.cancelled_at = null;
+    const { data, error } = await admin.from('transactions').update(safe)
+      .eq('id', existing.id).eq('agency_id', agencyId).is('deleted_at', null).select().single();
     if (error) return Response.json({ error: error.message }, { status: 500 });
     return Response.json({ transaction: data });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
+  } catch (error) {
+    return Response.json({ error: message(error) }, { status: 500 });
   }
 }
 
 export async function DELETE(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'delete' });
   if (!auth.ok) return auth.response;
-
-  try {
-    const { admin, agencyId, user } = auth.context;
-    const id = new URL(request.url).searchParams.get('id');
-    if (!id) return Response.json({ error: 'ID lipsa' }, { status: 400 });
-
-    const { data: existing } = await admin
-      .from('transactions')
-      .select('id')
-      .eq('id', id)
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (!existing) return Response.json({ error: 'Tranzactie negasita' }, { status: 404 });
-
-    const { error } = await admin
-      .from('transactions')
-      .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
-      .eq('id', id)
-      .eq('agency_id', agencyId)
-      .is('deleted_at', null);
-
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-    return Response.json({ success: true });
-  } catch (err) {
-    return Response.json({ error: errMsg(err) }, { status: 500 });
+  const { admin, agencyId, user } = auth.context;
+  const id = new URL(request.url).searchParams.get('id');
+  if (!id) return Response.json({ error: 'ID lipsă.' }, { status: 400 });
+  const { data: existing } = await admin.from('transactions').select('id,status').eq('id', id)
+    .eq('agency_id', agencyId).is('deleted_at', null).maybeSingle();
+  if (!existing) return Response.json({ error: 'Tranzacția nu există.' }, { status: 404 });
+  if (existing.status === 'finalizata') {
+    return Response.json({ error: 'Tranzacțiile finalizate se păstrează în istoricul financiar.' }, { status: 409 });
   }
+  const { error } = await admin.from('transactions').update({
+    deleted_at: new Date().toISOString(), deleted_by: user.id,
+  }).eq('id', id).eq('agency_id', agencyId).is('deleted_at', null);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ success: true });
 }

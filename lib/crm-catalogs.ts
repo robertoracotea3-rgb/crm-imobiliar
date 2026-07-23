@@ -45,11 +45,14 @@ export const VIEWING_STATUSES = [
 
 export const TRANSACTION_STATUSES = [
   { code: 'draft', label: 'Draft', order: 10, category: 'open', color: 'bg-gray-100 text-gray-700', active: true },
-  { code: 'negociere', label: 'Negociere', order: 20, category: 'open', color: 'bg-orange-100 text-orange-700', active: true },
-  { code: 'rezervata', label: 'Rezervată', order: 30, category: 'closing', color: 'bg-blue-100 text-blue-700', active: true },
-  { code: 'antecontract', label: 'Antecontract', order: 40, category: 'closing', color: 'bg-yellow-100 text-yellow-800', active: true },
-  { code: 'finalizata', label: 'Finalizată', order: 50, category: 'closed', color: 'bg-emerald-100 text-emerald-800', active: true, terminal: true },
-  { code: 'anulata', label: 'Anulată', order: 60, category: 'cancelled', color: 'bg-red-100 text-red-700', active: true, terminal: true },
+  { code: 'oferta', label: 'Ofertă', order: 20, category: 'open', color: 'bg-sky-100 text-sky-700', active: true },
+  { code: 'negociere', label: 'Negociere', order: 30, category: 'open', color: 'bg-orange-100 text-orange-700', active: true },
+  { code: 'rezervata', label: 'Rezervată', order: 40, category: 'closing', color: 'bg-blue-100 text-blue-700', active: true },
+  { code: 'antecontract', label: 'Antecontract', order: 50, category: 'closing', color: 'bg-yellow-100 text-yellow-800', active: true },
+  { code: 'finantare', label: 'Finanțare', order: 60, category: 'closing', color: 'bg-indigo-100 text-indigo-700', active: true },
+  { code: 'notar', label: 'Notar', order: 70, category: 'closing', color: 'bg-violet-100 text-violet-700', active: true },
+  { code: 'finalizata', label: 'Finalizată', order: 80, category: 'closed', color: 'bg-emerald-100 text-emerald-800', active: true, terminal: true },
+  { code: 'anulata', label: 'Anulată', order: 90, category: 'cancelled', color: 'bg-red-100 text-red-700', active: true, terminal: true },
 ] as const satisfies readonly CrmCatalogItem[];
 
 export const LEAD_SOURCES = [
@@ -134,11 +137,14 @@ export const VIEWING_STATUS_TRANSITIONS = transitionMap<ViewingStatus>({
 });
 
 export const TRANSACTION_STATUS_TRANSITIONS = transitionMap<TransactionStatus>({
-  draft: ['negociere', 'rezervata', 'antecontract', 'finalizata', 'anulata'],
-  negociere: ['draft', 'rezervata', 'antecontract', 'finalizata', 'anulata'],
-  rezervata: ['negociere', 'antecontract', 'finalizata', 'anulata'],
-  antecontract: ['negociere', 'finalizata', 'anulata'],
-  finalizata: ['draft'],
+  draft: ['oferta', 'negociere', 'rezervata', 'antecontract', 'finantare', 'notar', 'finalizata', 'anulata'],
+  oferta: ['draft', 'negociere', 'rezervata', 'anulata'],
+  negociere: ['draft', 'oferta', 'rezervata', 'antecontract', 'finantare', 'notar', 'finalizata', 'anulata'],
+  rezervata: ['negociere', 'antecontract', 'finantare', 'notar', 'finalizata', 'anulata'],
+  antecontract: ['negociere', 'rezervata', 'finantare', 'notar', 'finalizata', 'anulata'],
+  finantare: ['antecontract', 'notar', 'finalizata', 'anulata'],
+  notar: ['antecontract', 'finantare', 'finalizata', 'anulata'],
+  finalizata: [],
   anulata: ['draft'],
 });
 

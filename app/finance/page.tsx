@@ -6,8 +6,9 @@ import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { BarChart } from '@/components/Charts';
 import {
   Wallet, TrendingUp, DollarSign, Handshake, Trophy, BarChart3,
-  Plus, X, Loader2, Trash2, Pencil, UserCog, Calendar,
+  Plus, X, Loader2, Trash2, Pencil, UserCog, Calendar, RefreshCw, ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import { TRANSACTION_STATUSES } from '@/lib/crm-catalogs';
 
 interface Finance {
   currency: string;
@@ -29,27 +30,36 @@ interface Tx {
   agent_id?: string | null;
   contact_id?: string | null;
   type: string;
+  status: string;
   sale_price: number;
   currency: string;
   agency_commission: number;
   agent_commission: number;
   closed_at?: string | null;
+  completed_at?: string | null;
   notes?: string | null;
+  legacy_import?: boolean;
+  legacy_import_reason?: string | null;
+  property_code_snapshot?: string | null;
+  property_title_snapshot?: string | null;
+  contact_name_snapshot?: string | null;
+  removal_jobs?: { id: string; portal: string; status: string; attempts: number; max_attempts: number; last_error?: string | null }[];
 }
 
-interface PropOpt { id: string; title: string; internal_code: string; price?: number; currency?: string; agent_id?: string | null; attributes?: any }
+interface PropOpt { id: string; title: string; internal_code: string; price?: number; currency?: string; agent_id?: string | null; attributes?: Record<string, unknown> }
 interface AgentOpt { id: string; name?: string; email?: string }
 interface ContactOpt { id: string; name: string }
+interface Pagination { page: number; page_size: number; total: number; pages: number }
 
 const money = (n: number, cur = 'EUR') => `${(n || 0).toLocaleString('ro-RO')} ${cur}`;
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';
-const num = (v: any) => { const n = parseFloat(String(v)); return Number.isFinite(n) ? n : 0; };
+const num = (v: unknown) => { const n = parseFloat(String(v)); return Number.isFinite(n) ? n : 0; };
 
 function propCommission(p: PropOpt): number {
   const a = p.attributes || {};
   const price = num(p.price);
   let prop = num(a.comision_prop_val) || (num(a.comision_prop_pct) ? price * num(a.comision_prop_pct) / 100 : 0);
-  let chir = num(a.comision_chir_val) || (num(a.comision_chir_pct) ? price * num(a.comision_chir_pct) / 100 : 0);
+  const chir = num(a.comision_chir_val) || (num(a.comision_chir_pct) ? price * num(a.comision_chir_pct) / 100 : 0);
   if (!prop && !chir && num(a.comision)) prop = price * num(a.comision) / 100;
   return Math.round(prop + chir);
 }
@@ -75,11 +85,12 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
     agent_id: editing?.agent_id || '',
     contact_id: editing?.contact_id || '',
     type: editing?.type || 'vanzare',
+    status: editing?.status || 'draft',
+    status_reason: '',
     sale_price: editing ? String(editing.sale_price) : '',
     currency: editing?.currency || 'EUR',
     agency_commission: editing ? String(editing.agency_commission) : '',
     agent_commission: editing ? String(editing.agent_commission) : '',
-    closed_at: editing?.closed_at || new Date().toISOString().slice(0, 10),
     notes: editing?.notes || '',
   });
   const [saving, setSaving] = useState(false);
@@ -101,20 +112,33 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.sale_price && !form.agency_commission) { setError('Completează cel puțin prețul sau comisionul agenției'); return; }
+    if (!form.property_id || !form.contact_id) { setError('Proprietatea și clientul sunt obligatorii.'); return; }
+    if (num(form.sale_price) <= 0) { setError('Prețul tranzacției trebuie să fie mai mare decât zero.'); return; }
+    if (editing && form.status === 'anulata' && !form.status_reason.trim()) { setError('Completează motivul anulării.'); return; }
     try {
       setSaving(true); setError('');
       const t = (await supabase.auth.getSession()).data.session?.access_token;
       if (!t) throw new Error('Sesiune expirată');
       const payload: Record<string, unknown> = { ...form };
       if (editing) payload.id = editing.id;
-      const res = await fetch('/api/transactions', {
+      let res = await fetch('/api/transactions', {
         method: editing ? 'PATCH' : 'POST',
         headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(editing && form.status === 'finalizata' && editing.status !== 'finalizata'
+          ? { ...payload, status: editing.status }
+          : payload),
       });
-      const d = await res.json();
+      let d = await res.json();
       if (!res.ok) throw new Error(d.error);
+      if (editing && form.status === 'finalizata' && editing.status !== 'finalizata') {
+        res = await fetch('/api/transactions', {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editing.id, status: 'finalizata' }),
+        });
+        d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+      }
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Eroare');
@@ -135,7 +159,7 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Proprietate</label>
             <select value={form.property_id} onChange={e => onSelectProperty(e.target.value)} className={ic}>
-              <option value="">— Fără proprietate —</option>
+              <option value="">— Selectează proprietatea —</option>
               {props.map(p => <option key={p.id} value={p.id}>{p.internal_code} · {p.title}</option>)}
             </select>
             <p className="text-[11px] text-gray-400 mt-1">Pre-completează prețul, comisionul agenției și agentul.</p>
@@ -155,6 +179,13 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
                 <option value="RON">RON</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Etapa tranzacției</label>
+            <select value={form.status} onChange={e => set('status', e.target.value)} className={ic} disabled={!editing}>
+              {TRANSACTION_STATUSES.map(status => <option key={status.code} value={status.code}>{status.label}</option>)}
+            </select>
+            {!editing && <p className="text-[11px] text-gray-400 mt-1">Tranzacția nouă se salvează ca Draft și poate fi avansată controlat.</p>}
           </div>
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Preț tranzacție</label>
@@ -177,19 +208,14 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
               {agents.map(a => <option key={a.id} value={a.id}>{a.name || a.email}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Client</label>
-              <select value={form.contact_id} onChange={e => set('contact_id', e.target.value)} className={ic}>
-                <option value="">— Fără —</option>
-                {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 mb-1 block">Data</label>
-              <input type="date" value={form.closed_at} onChange={e => set('closed_at', e.target.value)} className={ic} />
-            </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 mb-1 block">Client</label>
+            <select value={form.contact_id} onChange={e => set('contact_id', e.target.value)} className={ic}>
+              <option value="">— Selectează clientul —</option>
+              {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </div>
+          {editing && form.status === 'anulata' && <div><label className="text-xs font-medium text-gray-600 mb-1 block">Motiv anulare</label><input value={form.status_reason} onChange={e => set('status_reason', e.target.value)} className={ic} /></div>}
           <div>
             <label className="text-xs font-medium text-gray-600 mb-1 block">Note</label>
             <textarea value={form.notes} onChange={e => set('notes', e.target.value)} className={ic} rows={2} />
@@ -219,6 +245,9 @@ export default function FinancePage() {
   const [error, setError] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editing, setEditing] = useState<Tx | null>(null);
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, page_size: 25, total: 0, pages: 0 });
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
 
   const token = async () => (await supabase.auth.getSession()).data.session?.access_token;
 
@@ -229,28 +258,33 @@ export default function FinancePage() {
       const h = { Authorization: `Bearer ${t}` };
       const [ov, tx] = await Promise.all([
         fetch('/api/finance/overview', { headers: h }).then(r => r.json()),
-        fetch('/api/transactions', { headers: h }).then(r => r.json()),
+        fetch(`/api/transactions?page=${page}&page_size=25&search=${encodeURIComponent(search)}`, { headers: h }).then(r => r.json()),
       ]);
       if (ov.error) throw new Error(ov.error);
       setData(ov);
       setTxs(tx.transactions || []);
+      setPagination(tx.pagination || { page, page_size: 25, total: 0, pages: 0 });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Eroare');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, search]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- authenticated server data is loaded when filters change
     fetchAll();
+  }, [fetchAll]);
+
+  useEffect(() => {
     token().then(t => {
       if (!t) return;
       const h = { Authorization: `Bearer ${t}` };
-      fetch('/api/properties/list', { headers: h }).then(r => r.json()).then(d => setProps((d.properties || []).map((p: any) => ({ id: p.id, title: p.title, internal_code: p.internal_code, price: p.price, currency: p.currency, agent_id: p.agent_id, attributes: p.attributes })))).catch(() => {});
+      fetch('/api/properties/list', { headers: h }).then(r => r.json()).then(d => setProps((d.properties || []).map((p: PropOpt) => ({ id: p.id, title: p.title, internal_code: p.internal_code, price: p.price, currency: p.currency, agent_id: p.agent_id, attributes: p.attributes })))).catch(() => {});
       fetch('/api/agents/list', { headers: h }).then(r => r.json()).then(d => setAgents(d.agents || [])).catch(() => {});
       fetch('/api/contacts', { headers: h }).then(r => r.json()).then(d => setContacts(d.contacts || [])).catch(() => {});
     });
-  }, [fetchAll]);
+  }, []);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Ștergi această tranzacție?')) return;
@@ -260,8 +294,22 @@ export default function FinancePage() {
     if (res.ok) { setTxs(prev => prev.filter(x => x.id !== id)); fetchAll(); }
   };
 
-  const propLabel = (id?: string | null) => { const p = props.find(x => x.id === id); return p ? `${p.internal_code}` : '—'; };
+  const retryRemoval = async (jobId: string) => {
+    const t = await token();
+    if (!t) return;
+    const response = await fetch('/api/transactions/removals', {
+      method: 'POST', headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId }),
+    });
+    const result = await response.json();
+    if (!response.ok) setError(result.error || 'Retragerea nu a putut fi reluată.');
+    await fetchAll();
+  };
+
+  const propLabel = (transaction: Tx) => transaction.property_code_snapshot
+    || props.find(x => x.id === transaction.property_id)?.internal_code || '—';
   const agentLabel = (id?: string | null) => { const a = agents.find(x => x.id === id); return a?.name || a?.email || '—'; };
+  const statusLabel = (status: string) => TRANSACTION_STATUSES.find(item => item.code === status)?.label || status;
 
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect de mai sus)
   return (
@@ -356,7 +404,14 @@ export default function FinancePage() {
 
             {/* Lista tranzacții */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <h3 className="font-bold text-gray-900 mb-4">Tranzacții ({txs.length})</h3>
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-900">Tranzacții ({pagination.total})</h3>
+                <div className="flex gap-2">
+                  <input value={search} onChange={event => { setPage(1); setSearch(event.target.value); }}
+                    placeholder="Caută proprietate sau client" className="px-3 py-2 border rounded-lg text-sm w-full sm:w-64" />
+                  <button onClick={() => void fetchAll()} className="p-2 border rounded-lg" title="Reîmprospătează"><RefreshCw size={16} /></button>
+                </div>
+              </div>
               {txs.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-4">Nicio tranzacție înregistrată.</p>
               ) : (
@@ -366,20 +421,36 @@ export default function FinancePage() {
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${t.type === 'vanzare' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
                         {t.type === 'vanzare' ? 'Vânzare' : 'Închiriere'}
                       </span>
-                      <span className="text-sm font-medium text-gray-800">{propLabel(t.property_id)}</span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{statusLabel(t.status)}</span>
+                      <span className="text-sm font-medium text-gray-800">{propLabel(t)}</span>
+                      <span className="text-xs text-gray-500">{t.contact_name_snapshot || 'Client neidentificat'}</span>
                       <span className="text-xs text-gray-400 flex items-center gap-1"><Calendar size={11} />{t.closed_at || '—'}</span>
                       <span className="text-xs text-gray-500">{agentLabel(t.agent_id)}</span>
+                      {t.legacy_import && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-800" title={t.legacy_import_reason || ''}>Import istoric incomplet</span>}
+                      {(t.removal_jobs || []).map(job => (
+                        <span key={job.id} className={`text-[10px] px-2 py-0.5 rounded-full ${job.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700' : job.status === 'retry' || job.status === 'failed' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {job.portal}: {job.status}
+                          {(job.status === 'retry' || job.status === 'failed') && <button onClick={() => void retryRemoval(job.id)} className="ml-1 underline">reîncearcă</button>}
+                        </span>
+                      ))}
                       <div className="ml-auto flex items-center gap-3">
                         <span className="text-xs text-gray-600">Preț: <b>{money(t.sale_price, t.currency)}</b></span>
                         <span className="text-xs text-gray-600">Agenție: <b className="text-gray-800">{money(t.agency_commission, t.currency)}</b></span>
                         <span className="text-xs text-emerald-700">Agent: <b>{money(t.agent_commission, t.currency)}</b></span>
                         <button onClick={() => setEditing(t)} className="p-1 text-gray-400 hover:text-emerald-600" title="Editează"><Pencil size={14} /></button>
-                        <button onClick={() => handleDelete(t.id)} className="p-1 text-red-400 hover:text-red-600" title="Șterge"><Trash2 size={14} /></button>
+                        {t.status !== 'finalizata' && <button onClick={() => handleDelete(t.id)} className="p-1 text-red-400 hover:text-red-600" title="Șterge"><Trash2 size={14} /></button>}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+              <div className="flex items-center justify-between mt-4 text-xs text-gray-500">
+                <span>Pagina {pagination.page} din {Math.max(1, pagination.pages)}</span>
+                <div className="flex gap-2">
+                  <button disabled={page <= 1} onClick={() => setPage(current => current - 1)} className="p-2 border rounded-lg disabled:opacity-40"><ChevronLeft size={15} /></button>
+                  <button disabled={page >= pagination.pages} onClick={() => setPage(current => current + 1)} className="p-2 border rounded-lg disabled:opacity-40"><ChevronRight size={15} /></button>
+                </div>
+              </div>
             </div>
           </>
         )}

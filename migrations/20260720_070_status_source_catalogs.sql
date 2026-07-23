@@ -158,11 +158,14 @@ on conflict (code) do update set display_name=excluded.display_name, display_ord
 
 insert into public.transaction_statuses values
   ('draft', 'Draft', 10, 'open', 'gray', true, false, false),
-  ('negociere', 'Negociere', 20, 'open', 'orange', true, false, false),
-  ('rezervata', 'Rezervată', 30, 'closing', 'blue', true, false, false),
-  ('antecontract', 'Antecontract', 40, 'closing', 'yellow', true, false, false),
-  ('finalizata', 'Finalizată', 50, 'closed', 'emerald', true, true, false),
-  ('anulata', 'Anulată', 60, 'cancelled', 'red', true, true, false)
+  ('oferta', 'Ofertă', 20, 'open', 'sky', true, false, false),
+  ('negociere', 'Negociere', 30, 'open', 'orange', true, false, false),
+  ('rezervata', 'Rezervată', 40, 'closing', 'blue', true, false, false),
+  ('antecontract', 'Antecontract', 50, 'closing', 'yellow', true, false, false),
+  ('finantare', 'Finanțare', 60, 'closing', 'indigo', true, false, false),
+  ('notar', 'Notar', 70, 'closing', 'violet', true, false, false),
+  ('finalizata', 'Finalizată', 80, 'closed', 'emerald', true, true, false),
+  ('anulata', 'Anulată', 90, 'cancelled', 'red', true, true, false)
 on conflict (code) do update set display_name=excluded.display_name, display_order=excluded.display_order,
   category=excluded.category, ui_color=excluded.ui_color, is_active=excluded.is_active,
   is_terminal=excluded.is_terminal, requires_next_action=excluded.requires_next_action;
@@ -363,11 +366,14 @@ insert into public.crm_status_transitions(entity_type, from_code, to_code) value
   ('viewing','programata','confirmata'), ('viewing','programata','amanata'), ('viewing','programata','efectuata'), ('viewing','programata','anulata'),
   ('viewing','confirmata','amanata'), ('viewing','confirmata','efectuata'), ('viewing','confirmata','anulata'),
   ('viewing','amanata','programata'), ('viewing','amanata','confirmata'), ('viewing','amanata','efectuata'), ('viewing','amanata','anulata'), ('viewing','anulata','programata'),
-  ('transaction','draft','negociere'), ('transaction','draft','rezervata'), ('transaction','draft','antecontract'), ('transaction','draft','finalizata'), ('transaction','draft','anulata'),
-  ('transaction','negociere','draft'), ('transaction','negociere','rezervata'), ('transaction','negociere','antecontract'), ('transaction','negociere','finalizata'), ('transaction','negociere','anulata'),
-  ('transaction','rezervata','negociere'), ('transaction','rezervata','antecontract'), ('transaction','rezervata','finalizata'), ('transaction','rezervata','anulata'),
-  ('transaction','antecontract','negociere'), ('transaction','antecontract','finalizata'), ('transaction','antecontract','anulata'),
-  ('transaction','finalizata','draft'), ('transaction','anulata','draft')
+  ('transaction','draft','oferta'), ('transaction','draft','negociere'), ('transaction','draft','rezervata'), ('transaction','draft','antecontract'), ('transaction','draft','finantare'), ('transaction','draft','notar'), ('transaction','draft','finalizata'), ('transaction','draft','anulata'),
+  ('transaction','oferta','draft'), ('transaction','oferta','negociere'), ('transaction','oferta','rezervata'), ('transaction','oferta','anulata'),
+  ('transaction','negociere','draft'), ('transaction','negociere','oferta'), ('transaction','negociere','rezervata'), ('transaction','negociere','antecontract'), ('transaction','negociere','finantare'), ('transaction','negociere','notar'), ('transaction','negociere','finalizata'), ('transaction','negociere','anulata'),
+  ('transaction','rezervata','negociere'), ('transaction','rezervata','antecontract'), ('transaction','rezervata','finantare'), ('transaction','rezervata','notar'), ('transaction','rezervata','finalizata'), ('transaction','rezervata','anulata'),
+  ('transaction','antecontract','negociere'), ('transaction','antecontract','rezervata'), ('transaction','antecontract','finantare'), ('transaction','antecontract','notar'), ('transaction','antecontract','finalizata'), ('transaction','antecontract','anulata'),
+  ('transaction','finantare','antecontract'), ('transaction','finantare','notar'), ('transaction','finantare','finalizata'), ('transaction','finantare','anulata'),
+  ('transaction','notar','antecontract'), ('transaction','notar','finantare'), ('transaction','notar','finalizata'), ('transaction','notar','anulata'),
+  ('transaction','anulata','draft')
 on conflict (entity_type, from_code, to_code) do update set is_active=true;
 
 create or replace function public.enforce_crm_status_transition()
