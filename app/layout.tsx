@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Sora, Inter, Playfair_Display } from "next/font/google";
+import { connection } from "next/server";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { AuthProvider } from "@/lib/auth-context";
@@ -27,11 +28,14 @@ export const metadata: Metadata = {
   robots: 'noindex, nofollow, noarchive, nosnippet',
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // CSP nonces are request-specific, so the authenticated CRM shell must render dynamically.
+  await connection();
+
   return (
     <html
       lang="ro"

@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kira Imobiliare CRM
 
-## Getting Started
+CRM privat multi-agenție pentru proprietăți, clienți, cereri, vizionări, pipeline, tranzacții, portaluri și automatizări. Aplicația folosește Next.js 16, React 19, TypeScript strict și Supabase/PostgreSQL.
 
-First, run the development server:
+## Pornire locală
 
-```bash
+Cerințe: Node.js 20.9 sau mai nou, npm și un proiect Supabase separat de producție.
+
+```powershell
+Copy-Item .env.example .env.local
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Aplicația locală este disponibilă la `http://localhost:3000`. Nu copia cheile de producție într-un mediu de test și nu comite fișierul `.env.local`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Verificări obligatorii
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Înainte de orice commit sau deploy:
 
-## Learn More
+```powershell
+npm run lint
+npm test
+npx tsc --noEmit
+npm run build
+npm audit
+```
 
-To learn more about Next.js, take a look at the following resources:
+Rezultatul acceptat este: zero erori și avertismente lint, toate testele trecute, build reușit și zero vulnerabilități cunoscute.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Variabile de mediu
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Modelul complet, fără valori secrete, este în `.env.example`. Cheile `SUPABASE_SERVICE_ROLE_KEY`, `PORTAL_TOKEN_ENCRYPTION_KEY`, `STORIA_CLIENT_SECRET`, `STORIA_WEBHOOK_SECRET`, `FB_PAGE_TOKEN`, `ANTHROPIC_API_KEY` și `CRON_SECRET` sunt exclusiv server-side.
 
-## Deploy on Vercel
+Nicio variabilă secretă nu trebuie prefixată cu `NEXT_PUBLIC_`, afișată în interfață sau scrisă în loguri.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Bază de date și migrații
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Migrațiile se află în `migrations/`, sunt numerotate și au rollback separat. Ordinea sigură este:
+
+1. backup și audit al datelor;
+2. aplicare într-o bază de test goală;
+3. reaplicare pentru verificarea idempotentei;
+4. rularea aserțiunilor SQL;
+5. testarea rollback-ului;
+6. deploy controlat;
+7. aplicare în producție numai cu aprobare explicită.
+
+Nu rula automat fișiere SQL în producție și nu folosi endpointuri HTTP pentru execuție SQL.
+
+## Arhitectură pe scurt
+
+- `app/` — pagini și endpointuri Next.js;
+- `components/` — componente comune ale CRM-ului;
+- `lib/server/` — autorizare, criptare și logică server-side;
+- `migrations/` — schimbări PostgreSQL și rollback-uri;
+- `tests/` — teste unitare, de integrare structurală și de securitate;
+- `docs/` — definiții operaționale, runbook-uri și decizii de securitate.
+
+Autorizarea este verificată pe server și din nou prin politicile bazei de date. Interfața ascunde acțiunile nepermise, dar nu este considerată o barieră de securitate.
+
+## Securitate
+
+CRM-ul este `noindex`, folosește headere de securitate, CSP cu nonce unic pentru scripturi, secrete criptate pentru portaluri și verificări tenant/rol pe endpointurile private. Detaliile, excepțiile CSP și politica dependențelor sunt în [docs/security.md](docs/security.md).
+
+## Deploy
+
+Deploy-ul trebuie făcut dintr-un commit verificat, cu variabilele de mediu configurate în platformă și cu o bază de staging separată. După deploy se verifică manual autentificarea, proprietățile, clienții, Storia, WhatsApp, vizionările, tranzacțiile, cronurile și panoul de sănătate.
+
+Producția nu se modifică din această copie locală fără aprobare explicită și plan de revenire.

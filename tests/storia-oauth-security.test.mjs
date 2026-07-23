@@ -81,7 +81,11 @@ test('ciphertexts cannot be moved to another agency or token purpose', () => {
 test('tampered ciphertext and missing or weak keys fail closed', () => {
   const context = { agencyId: agencyA, portal: 'storia', purpose: 'access' };
   const ciphertext = encryptPortalToken('token', context, key);
-  const tampered = `${ciphertext.slice(0, -1)}${ciphertext.endsWith('A') ? 'B' : 'A'}`;
+  const parts = ciphertext.split('.');
+  const tag = Buffer.from(parts[2], 'base64url');
+  tag[0] ^= 1;
+  parts[2] = tag.toString('base64url');
+  const tampered = parts.join('.');
   assert.throws(
     () => decryptPortalToken(tampered, context, key),
     /portal_token_decryption_failed/,
