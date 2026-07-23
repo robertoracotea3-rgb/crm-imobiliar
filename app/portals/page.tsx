@@ -14,10 +14,20 @@ interface StoriaListing {
   property_id: string;
   property_title?: string;
   internal_code?: string;
+  agent_id?: string;
+  agent_name?: string;
   external_id?: string;
+  portal_ad_id?: string;
   status: string;
+  remote_status?: string;
+  remote_exists?: boolean | null;
+  verified_active?: boolean;
   advert_url?: string;
+  last_checked_at?: string;
+  last_check_result?: 'never' | 'verified' | 'not_found' | 'error';
   last_sync_at?: string;
+  last_error_at?: string;
+  last_error_code?: string;
   error_message?: string;
 }
 
@@ -30,6 +40,15 @@ interface StoriaStatus {
   last_refreshed_at: string | null;
   refresh_failure_count: number;
   last_refresh_error_code: string | null;
+  stale_count: number;
+  unverified_count: number;
+  sync_health: {
+    status: string;
+    last_success_at?: string | null;
+    last_error_at?: string | null;
+    last_error_code?: string | null;
+    next_run_at?: string | null;
+  } | null;
   credentials_configured: boolean;
   listings: StoriaListing[];
 }
@@ -70,6 +89,8 @@ const LISTING_STATUS_LABEL: Record<string, string> = {
   deleted:  'Șters',
   error:    'Eroare',
   limited:  'Limitat',
+  stale:    'Verificare expirată',
+  unverified: 'Neverificat',
 };
 const LISTING_STATUS_COLOR: Record<string, string> = {
   pending:  'bg-amber-100 text-amber-800',
@@ -81,6 +102,8 @@ const LISTING_STATUS_COLOR: Record<string, string> = {
   deleted:  'bg-gray-100 text-gray-500',
   error:    'bg-red-100 text-red-700',
   limited:  'bg-blue-100 text-blue-700',
+  stale:    'bg-orange-100 text-orange-700',
+  unverified: 'bg-gray-100 text-gray-600',
 };
 
 const STORIA_OAUTH_ERROR: Record<string, string> = {
@@ -108,6 +131,7 @@ export default function PortalsPage() {
   const [loadingStoria, setLoadingStoria] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [syncingStoria, setSyncingStoria] = useState(false);
 
   // Read URL params for OAuth callback result
   const [flashMsg, setFlashMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -195,6 +219,36 @@ export default function PortalsPage() {
       await fetchData(token);
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleStoriaSync = async () => {
+    setSyncingStoria(true);
+    try {
+      const response = await fetch('/api/portals/storia/sync', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setFlashMsg({
+          type: 'error',
+          text: result.error || 'Listările Storia nu au putut fi verificate.',
+        });
+      } else {
+        const summary = result.summary || {};
+        setFlashMsg({
+          type: summary.status === 'partial' ? 'error' : 'success',
+          text: `Verificare terminată: ${summary.checked || 0} listări, ${summary.errors || 0} erori, ${summary.missing || 0} absente.`,
+        });
+      }
+      await fetchData(token);
+    } finally {
+      setSyncingStoria(false);
     }
   };
 
@@ -328,9 +382,10 @@ export default function PortalsPage() {
                   <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                     <CheckCircle size={12} /> Conectat
                   </span>
-                  <button onClick={() => fetchData(token)}
-                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Reîncarcă">
-                    <RefreshCw size={14} />
+                  <button onClick={handleStoriaSync} disabled={syncingStoria}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-40"
+                    title="Verifică toate listările pe Storia">
+                    <RefreshCw size={14} className={syncingStoria ? 'animate-spin' : ''} />
                   </button>
                 </div>
               ) : (
@@ -409,20 +464,39 @@ export default function PortalsPage() {
                     </button>
                   )}
                 </div>
+                {(storia.stale_count > 0 || storia.unverified_count > 0) && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                    {storia.stale_count > 0 && (
+                      <span>{storia.stale_count} listări au verificarea expirată. </span>
+                    )}
+                    {storia.unverified_count > 0 && (
+                      <span>{storia.unverified_count} listări nu au fost încă verificate direct pe portal. </span>
+                    )}
+                    Apasă butonul de reîmprospătare pentru verificare imediată.
+                  </div>
+                )}
 
                 {/* Listings table */}
                 {storia.listings.length > 0 ? (
                   <div>
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Anunțuri publicate</h3>
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Listări Storia</h3>
+                      {storia.sync_health?.last_success_at && (
+                        <span className="text-[11px] text-gray-400">
+                          Job: {new Date(storia.sync_health.last_success_at).toLocaleString('ro-RO')}
+                        </span>
+                      )}
+                    </div>
+                    <div className="border border-gray-200 rounded-lg overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID intern</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Proprietate</th>
-                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID Storia</th>
+                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Agent</th>
+                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID portal</th>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Status</th>
-                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Ultima sincronizare</th>
+                            <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">Verificare / sincronizare</th>
                             <th className="px-3 py-2"></th>
                           </tr>
                         </thead>
@@ -439,7 +513,15 @@ export default function PortalsPage() {
                                   {l.property_title || l.property_id}
                                 </a>
                               </td>
-                              <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{l.external_id || '—'}</td>
+                              <td className="px-3 py-2.5 text-xs text-gray-600">{l.agent_name || '—'}</td>
+                              <td className="px-3 py-2.5">
+                                <div className="font-mono text-xs text-gray-700">{l.portal_ad_id || '—'}</div>
+                                {l.external_id && (
+                                  <div className="max-w-[120px] truncate font-mono text-[10px] text-gray-400" title={l.external_id}>
+                                    API: {l.external_id}
+                                  </div>
+                                )}
+                              </td>
                               <td className="px-3 py-2.5">
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LISTING_STATUS_COLOR[l.status] || 'bg-gray-100 text-gray-600'}`}>
                                   {LISTING_STATUS_LABEL[l.status] || l.status}
@@ -449,7 +531,12 @@ export default function PortalsPage() {
                                 )}
                               </td>
                               <td className="px-3 py-2.5 text-xs text-gray-500">
-                                {l.last_sync_at ? new Date(l.last_sync_at).toLocaleString('ro-RO') : '—'}
+                                <div>
+                                  Verificat: {l.last_checked_at ? new Date(l.last_checked_at).toLocaleString('ro-RO') : '—'}
+                                </div>
+                                <div className="text-[10px] text-gray-400">
+                                  Sincronizat: {l.last_sync_at ? new Date(l.last_sync_at).toLocaleString('ro-RO') : '—'}
+                                </div>
                               </td>
                               <td className="px-3 py-2.5">
                                 {l.advert_url && (

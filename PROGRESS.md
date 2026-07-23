@@ -1,6 +1,6 @@
 # CRM KIRA IMOBILIARE — Progres implementare
 
-**Ultima actualizare:** 2026-06-30  
+**Ultima actualizare:** 2026-07-23
 **Deploy live:** https://crm.kiraimobiliare.ro  
 **Stack:** Next.js 16 (App Router) + Supabase PostgreSQL + Tailwind v4 + Vercel
 
@@ -23,7 +23,7 @@
 - [x] **Documente proprietăți** — upload per categorie (PDF/JPG/PNG max 15MB), download signed URL, ștergere
 - [x] **Istoric modificări** — activity_logs pe proprietăți (cine, când, ce câmp, valoare veche→nouă)
 - [x] **Notificări persistente** — inbox unic cu dashboardul, badge din cont, priorități, arhivare, paginare și alerte operaționale deduplicate
-- [x] **Portaluri** — integrare Storia cu OAuth legat de agenție/sesiune, state anti-CSRF de unică folosință, tokenuri criptate, refresh serializat, revocare auditată, publish/unpublish, webhook și status sync
+- [x] **Portaluri** — integrare Storia cu OAuth legat de agenție/sesiune, state anti-CSRF de unică folosință, tokenuri criptate, refresh serializat, revocare auditată, publish/unpublish, webhook și verificare completă periodică a listărilor, cu URL/ID public, agent, istoric și alerte stale
 - [x] **Echipă** — membri, stats, activitate
 - [x] **Finanțe și tranzacții** — flux cu client și proprietate obligatorii, finalizare atomică, registru de comisioane și retrageri portal cu retry
 - [x] **Setări** — profil agenție, watermark fotografii
@@ -42,6 +42,7 @@ Supabase Dashboard → SQL Editor → rulează fișierele din migrations/:
   - migrations/2026-features.sql   → taskuri, documente, vizionări, activity_logs
   - migrations/2026-storia.sql     → tabele integrare Storia
   - migrations/20260720_140_storia_oauth_security.sql → OAuth multi-agency și tokenuri criptate
+  - migrations/20260720_150_storia_listing_sync.sql → verificare durabilă și alerte listări Storia
 ```
 
 ---

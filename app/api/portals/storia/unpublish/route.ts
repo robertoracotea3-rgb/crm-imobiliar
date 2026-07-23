@@ -43,7 +43,24 @@ export async function POST(request: Request) {
 
   await supabase.from('portal_listings').update({
     status:       'deleted',
+    remote_status: 'deleted',
+    remote_exists: false,
+    last_check_result: 'verified',
+    last_checked_at: new Date().toISOString(),
     last_sync_at: new Date().toISOString(),
+    last_check_payload: {
+      operation: 'DELETE',
+      external_id: listing.external_id,
+      remote_exists: false,
+      status: 'deleted',
+    },
+    consecutive_check_failures: 0,
+    verified_active_at: null,
+    next_check_at: null,
+    stale_alerted_at: null,
+    last_error_at: null,
+    last_error_code: null,
+    error_message: null,
     updated_at:   new Date().toISOString(),
   }).eq('id', listing.id).eq('agency_id', agencyId);
 

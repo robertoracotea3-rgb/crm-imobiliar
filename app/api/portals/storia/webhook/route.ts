@@ -193,15 +193,37 @@ async function processVerifiedEvent(
     const listing = await uniquePortalListing(admin, portalAdId, externalId);
     if (listing) {
       agencyId = listing.agency_id as string;
+      const receivedAt = new Date().toISOString();
       const { error } = await admin
         .from('portal_listings')
         .update({
           ...(portalAdId ? { portal_ad_id: portalAdId } : {}),
           ...(externalId ? { external_id: externalId } : {}),
+          ...(identity.advertUrl ? { advert_url: identity.advertUrl } : {}),
           status: mapped.status,
-          last_sync_at: new Date().toISOString(),
+          remote_status: mapped.status,
+          remote_exists: mapped.status !== 'deleted',
+          last_check_result: mapped.status === 'deleted' ? 'not_found' : 'verified',
+          last_checked_at: receivedAt,
+          last_sync_at: receivedAt,
+          last_check_payload: {
+            source: 'webhook',
+            transaction_id: transactionId,
+            external_id: externalId,
+            portal_ad_id: portalAdId,
+            advert_url: identity.advertUrl,
+            status: mapped.status,
+          },
+          consecutive_check_failures: 0,
+          verified_active_at: mapped.status === 'active' ? receivedAt : null,
+          next_check_at: mapped.status === 'deleted'
+            ? null
+            : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          stale_alerted_at: null,
+          last_error_at: mapped.error ? receivedAt : null,
+          last_error_code: mapped.error ? `webhook_${mapped.status}` : null,
           error_message: mapped.error,
-          updated_at: new Date().toISOString(),
+          updated_at: receivedAt,
         })
         .eq('id', listing.id)
         .eq('agency_id', listing.agency_id)

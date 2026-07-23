@@ -21,6 +21,7 @@ Implementarea urmează fluxul OAuth2 OLX RE Partner documentat la
 - `STORIA_API_KEY`
 - `STORIA_WEBHOOK_SECRET`
 - `PORTAL_TOKEN_ENCRYPTION_KEY`
+- `CRON_SECRET`
 - `NEXT_PUBLIC_APP_URL`
 
 `PORTAL_TOKEN_ENCRYPTION_KEY` trebuie să conțină exact 32 bytes, codificați Base64
@@ -44,7 +45,8 @@ se trimite prin chat.
 
 1. backup restaurabil și test de restore;
 2. configurarea `PORTAL_TOKEN_ENCRYPTION_KEY` în staging;
-3. aplicarea `migrations/20260720_140_storia_oauth_security.sql` în staging;
+3. aplicarea, în ordine, a `migrations/20260720_140_storia_oauth_security.sql`
+   și `migrations/20260720_150_storia_listing_sync.sql` în staging;
 4. deploy-ul aceleiași versiuni de aplicație în staging;
 5. test conectare/deconectare/reconectare cu două agenții sintetice;
 6. verificarea evenimentelor `portal_token_events` și a faptului că vechile

@@ -7,6 +7,10 @@ import {
   decryptPortalToken,
   encryptPortalToken,
 } from '@/lib/server/portal-token-crypto.mjs';
+import {
+  mapStoriaStatus,
+  parseStoriaMetadata,
+} from '@/lib/server/storia-listing-state.mjs';
 
 // Authorization redirect goes to the marketplace itself (Storia.ro, locale `ro`).
 // Format: https://www.storia.ro/ro/crm/authorization/?response_type=code&client_id=..&state=..
@@ -37,15 +41,17 @@ const CATEGORY_URNS: Record<string, Record<string, string>> = {
   teren:            { vanzare: 'urn:concept:lots-for-sale',        inchiriere: 'urn:concept:lots-for-rent' },
   spatiu_comercial: { vanzare: 'urn:concept:stores-for-sale',      inchiriere: 'urn:concept:stores-for-rent' },
   comercial:        { vanzare: 'urn:concept:stores-for-sale',      inchiriere: 'urn:concept:stores-for-rent' },
-  birou:            { vanzare: 'urn:concept:stores-for-sale',      inchiriere: 'urn:concept:stores-for-rent' },
+  birou:            { vanzare: 'urn:concept:offices-for-sale',     inchiriere: 'urn:concept:offices-for-rent' },
+  spatiu_industrial:{ vanzare: 'urn:concept:warehouses-for-sale',  inchiriere: 'urn:concept:warehouses-for-rent' },
   industrial:       { vanzare: 'urn:concept:warehouses-for-sale',  inchiriere: 'urn:concept:warehouses-for-rent' },
   hala:             { vanzare: 'urn:concept:warehouses-for-sale',  inchiriere: 'urn:concept:warehouses-for-rent' },
+  garaj:            { vanzare: 'urn:concept:garages-for-sale',     inchiriere: 'urn:concept:garages-for-rent' },
 };
 
-export function getCategoryUrn(category: string, transaction: string): string {
-  const cat = (category || 'apartament').toLowerCase();
-  const txn = (transaction || 'vanzare').toLowerCase();
-  return CATEGORY_URNS[cat]?.[txn] ?? 'urn:concept:apartments-for-sale';
+export function getCategoryUrn(category: string, transaction: string): string | null {
+  const cat = (category || '').trim().toLowerCase();
+  const txn = (transaction || '').trim().toLowerCase();
+  return CATEGORY_URNS[cat]?.[txn] ?? null;
 }
 
 // Group CRM categories into OLX attribute "families" with shared mandatory fields.
@@ -83,6 +89,7 @@ export function resolveCoords(
   const lat = parseCoord(property.latitude) ?? parseCoord(a.lat);
   const lon = parseCoord(property.longitude) ?? parseCoord(a.lon);
   if (lat == null || lon == null) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
   return { lat, lon };
 }
 
@@ -146,7 +153,13 @@ export function missingAdvertFields(
   if (title.trim().length < 5)  missing.push('Titlu (minim 5 caractere)');
   // In test mode the description is overridden with the OLX-mandated test string — skip check.
   if (!isTestMode() && desc.trim().length < 50) missing.push('Descriere (minim 50 caractere)');
-  if (!property.price || Number(property.price) <= 0) missing.push('Preț');
+  const price = Number(property.price);
+  if (!Number.isFinite(price) || price <= 0) missing.push('Preț');
+  if (!getCategoryUrn(String(property.category || ''), String(property.transaction || ''))) {
+    missing.push('Categorie/tranzacție acceptată de Storia');
+  }
+  const currency = String(property.currency || 'EUR').trim().toUpperCase();
+  if (!['EUR', 'RON'].includes(currency)) missing.push('Monedă acceptată de Storia (EUR sau RON)');
 
   // OLX's Mercury geocoder requires valid coordinates. Missing/zero coords are
   // rejected asynchronously with MercuryLatLonException — block early instead.
@@ -196,6 +209,14 @@ export function propertyToAdvert(
   const desc = testMode
     ? OLX_TEST_DESCRIPTION
     : (a.descriere || property.description || '') as string;
+  const categoryUrn = getCategoryUrn(
+    String(property.category || ''),
+    String(property.transaction || '')
+  );
+  if (!categoryUrn) {
+    throw new Error('Categoria sau tranzacția nu este acceptată de Storia.');
+  }
+  const currency = String(property.currency || 'EUR').trim().toUpperCase();
 
   // Photos live in attributes.photos as an array of public URL strings (varianta medium, 800px).
   // Trimitem varianta LARGE (1600px), nu medium — altfel pozele apar neclare când sunt
@@ -211,7 +232,7 @@ export function propertyToAdvert(
     site_urn:     testMode ? OTODOM_SITE_URN : STORIA_SITE_URN,
     title,
     description:  desc.slice(0, 9000),
-    category_urn: getCategoryUrn(property.category as string, property.transaction as string),
+    category_urn: categoryUrn,
     // Mandatory per-category attributes (rooms / area / market), verified via taxonomy.
     attributes:   buildAdvertAttributes(property, a),
     images,
@@ -220,7 +241,7 @@ export function propertyToAdvert(
   };
 
   if (property.price) {
-    advert.price = { value: Number(property.price), currency: (property.currency as string) || 'EUR' };
+    advert.price = { value: Number(property.price), currency };
   }
 
   // Only attach a location when we have valid, non-zero coordinates. Number('')
@@ -242,8 +263,6 @@ export function propertyToAdvert(
     };
   }
 
-  // NOTE: `attributes` (rooms/area/floor as OLX URNs) are site-specific and must be
-  // mapped from GET taxonomy before going fully live. Left out of the minimal payload.
   return advert;
 }
 
@@ -517,36 +536,113 @@ export async function olxFetch(path: string, accessToken: string, options: Reque
 // So TO_* are transient "pending" states, while POSTED/PUT/POST mean the
 // advert is live. Both PUT and POSTED must map to active.
 export function mapOlxStatus(raw: unknown): string {
-  const up = String(raw || '').toUpperCase();
-  if (up === 'POSTED' || up === 'POST') return 'active';
-  if (up === 'PUT')                     return 'active'; // update applied → live
-  if (up === 'TO_POST' || up === 'TO_PUT') return 'pending';
-  if (up === 'NOT_POSTED')   return 'error';
-  if (up === 'REJECTED')     return 'rejected';
-  if (up.includes('DELETE')) return 'deleted';
-  return String(raw || 'pending').toLowerCase();
+  return mapStoriaStatus(raw);
 }
 
-// Pull the live advert state straight from OLX — GET /advert/v1/{uuid}.
-// Used to recover from missed webhooks (status stuck at pending). Returns the
-// mapped status + an optional error reason, or null if the advert is gone (404).
+export interface StoriaAdvertCheck {
+  verified: boolean;
+  exists: boolean | null;
+  status: string;
+  externalId: string | null;
+  portalAdId: string | null;
+  advertUrl: string | null;
+  reason: string | null;
+  errorCode: string | null;
+  payload: Record<string, unknown>;
+  raw: unknown;
+}
+
+export class StoriaApiError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+  ) {
+    super(code);
+    this.name = 'StoriaApiError';
+  }
+}
+
+function metadataCheck(payload: unknown): StoriaAdvertCheck {
+  const metadata = parseStoriaMetadata(payload);
+  return {
+    verified: true,
+    exists: true,
+    status: metadata.status,
+    externalId: metadata.externalId,
+    portalAdId: metadata.portalAdId,
+    advertUrl: metadata.advertUrl,
+    reason: metadata.reason,
+    errorCode: metadata.status === 'error' || metadata.status === 'rejected'
+      ? `remote_${metadata.status}`
+      : null,
+    payload: metadata.payload,
+    raw: metadata.raw,
+  };
+}
+
+function safeOlxPath(value: string): string {
+  const url = new URL(value, OLX_API_BASE);
+  if (url.origin !== OLX_API_BASE || !url.pathname.startsWith('/advert/v1/')) {
+    throw new StoriaApiError('metadata_pagination_url_invalid', 502);
+  }
+  return `${url.pathname}${url.search}`;
+}
+
+// Safety reconciliation endpoint documented by OLX. Webhooks remain primary.
 export async function fetchAdvertStatus(
   externalId: string,
-  accessToken: string
-): Promise<{ status: string; reason: string | null; raw: unknown } | null> {
-  const res = await olxFetch(`/advert/v1/${externalId}`, accessToken, { method: 'GET' });
-  if (res.status === 404) return null; // advert no longer exists on OLX
-  const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-  if (!res.ok) {
-    return { status: 'error', reason: JSON.stringify(body).slice(0, 500), raw: body };
+  accessToken: string,
+): Promise<StoriaAdvertCheck> {
+  const safeId = encodeURIComponent(externalId);
+  const res = await olxFetch(`/advert/v1/${safeId}/meta`, accessToken, { method: 'GET' });
+  if (res.status === 404) {
+    return {
+      verified: true,
+      exists: false,
+      status: 'deleted',
+      externalId,
+      portalAdId: null,
+      advertUrl: null,
+      reason: 'Anunțul nu mai există în metadatele portalului.',
+      errorCode: null,
+      payload: { external_id: externalId, remote_exists: false, status: 'deleted' },
+      raw: {},
+    };
   }
-  const data = (body.data || body) as Record<string, unknown>;
-  const rawStatus = data.last_action_status || data.status;
-  // Extract validation errors from OLX's error.validation[] array (returned even on 2xx NOT_POSTED).
-  const olxErr = data.error as Record<string, unknown> | undefined;
-  const validation = olxErr?.validation as Array<{ detail: string }> | undefined;
-  const reason = validation?.length
-    ? validation.map(v => v.detail).join('; ')
-    : ((data.rejection_reason || data.error_message || data.reason || olxErr?.detail || null) as string | null);
-  return { status: mapOlxStatus(rawStatus), reason, raw: body };
+  const body = await res.json().catch(() => null) as Record<string, unknown> | null;
+  if (!res.ok) {
+    throw new StoriaApiError(`metadata_http_${res.status}`, res.status);
+  }
+  if (!body) throw new StoriaApiError('metadata_response_invalid', 502);
+  return metadataCheck(body);
+}
+
+// Fetches the complete paginated metadata catalog (100 adverts/page).
+export async function fetchAllAdvertStatuses(
+  accessToken: string,
+  maxPages = 100,
+): Promise<StoriaAdvertCheck[]> {
+  const checks: StoriaAdvertCheck[] = [];
+  let path = '/advert/v1/meta';
+  const visited = new Set<string>();
+
+  for (let page = 0; page < maxPages; page += 1) {
+    if (visited.has(path)) throw new StoriaApiError('metadata_pagination_loop', 502);
+    visited.add(path);
+    const response = await olxFetch(path, accessToken, { method: 'GET' });
+    const body = await response.json().catch(() => null) as {
+      data?: unknown;
+      links?: { next?: { href?: unknown } };
+    } | null;
+    if (!response.ok) throw new StoriaApiError(`metadata_http_${response.status}`, response.status);
+    if (!body || !Array.isArray(body.data)) {
+      throw new StoriaApiError('metadata_response_invalid', 502);
+    }
+    for (const item of body.data) checks.push(metadataCheck(item));
+
+    const nextHref = body.links?.next?.href;
+    if (typeof nextHref !== 'string' || !nextHref) return checks;
+    path = safeOlxPath(nextHref);
+  }
+  throw new StoriaApiError('metadata_page_limit_exceeded', 502);
 }
