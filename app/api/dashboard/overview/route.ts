@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { syncTimeBasedNotifications } from '@/lib/server/notifications';
 
 function monthKey(d: string) {
   const dt = new Date(d);
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const { admin, agencyId, role, user } = auth.context;
+    const { admin, serviceAdmin, agencyId, role, user } = auth.context;
     const { data: profile } = await admin
       .from('profiles')
       .select('full_name')
@@ -206,15 +207,18 @@ export async function GET(request: Request) {
       score: (agentPropMap[p.user_id]?.active || 0) * 2 + (agentPropMap[p.user_id]?.sold || 0) * 5 + (agentPropMap[p.user_id]?.clients || 0),
     })).sort((a, b) => b.score - a.score);
 
-    // ── Notifications ──
-    const notifications: { type: string; message: string; created_at: string; severity: string }[] = [];
-    clientsThisWeek.slice(0, 3).forEach(l =>
-      notifications.push({ type: 'client', message: `Client nou: ${l.contact_name || 'fără nume'}`, created_at: l.received_at, severity: 'success' })
-    );
-    noPhotos.slice(0, 2).forEach(p =>
-      notifications.push({ type: 'alert', message: `${p.internal_code}: Proprietate fără fotografii`, created_at: p.created_at, severity: 'warning' })
-    );
-    notifications.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    // Dashboard and inbox use the same persistent source of truth.
+    await syncTimeBasedNotifications(admin, serviceAdmin, agencyId, user.id);
+    const { data: notificationRows } = await admin.from('notifications')
+      .select('id,type,title,message,priority,action_url,read_at,created_at')
+      .eq('agency_id', agencyId).eq('user_id', user.id).is('dismissed_at', null)
+      .order('created_at', { ascending: false }).limit(10);
+    const notifications = (notificationRows || []).map((notification) => ({
+      id: notification.id, type: notification.type, title: notification.title, message: notification.message,
+      created_at: notification.created_at,
+      severity: notification.priority === 'urgent' ? 'alert' : notification.priority === 'high' ? 'warning' : 'info',
+      link: notification.action_url, read_at: notification.read_at,
+    }));
 
     // ── Recent activity ──
     const recentActivity = [

@@ -22,7 +22,7 @@
 - [x] **Taskuri** — creare, prioritate (mică/medie/mare), dată limită, atribuire agent, widget dashboard
 - [x] **Documente proprietăți** — upload per categorie (PDF/JPG/PNG max 15MB), download signed URL, ștergere
 - [x] **Istoric modificări** — activity_logs pe proprietăți (cine, când, ce câmp, valoare veche→nouă)
-- [x] **Notificări** — sistem în-app, badge count, marcare citit
+- [x] **Notificări persistente** — inbox unic cu dashboardul, badge din cont, priorități, arhivare, paginare și alerte operaționale deduplicate
 - [x] **Portaluri** — integrare Storia (OAuth, publish, unpublish, webhook, status sync) + publicare Facebook
 - [x] **Echipă** — membri, stats, activitate
 - [x] **Finanțe** — dashboard comisioane calculate din proprietăți vândute/închiriate

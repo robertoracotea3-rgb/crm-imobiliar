@@ -36,7 +36,7 @@ interface DashData {
     by_type: { type: string; count: number }[];
   };
   tasks?: { open: number; overdue: number; due_soon: number; high_priority: number };
-  notifications: { type: string; message: string; created_at: string; severity: string }[];
+  notifications: { id: string; type: string; title: string; message: string; created_at: string; severity: string; link?: string | null; read_at?: string | null }[];
   activity: { type: string; id: string; code: string; label: string; sub: string; created_at: string }[];
   months: string[];
 }
@@ -524,14 +524,15 @@ export default function DashboardPage() {
               <div className="text-center py-8 text-gray-300 text-sm">Nicio notificare</div>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {notifications.map((n, i) => (
-                  <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-sm ${notifBg[n.severity] || notifBg[n.type] || 'bg-gray-50 border-gray-200'}`}>
+                {notifications.map((n) => (
+                  <Link href={n.link || '/notifications'} key={n.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-sm ${notifBg[n.severity] || notifBg[n.type] || 'bg-gray-50 border-gray-200'} ${n.read_at ? 'opacity-70' : ''}`}>
                     <div className="mt-0.5 flex-shrink-0">{notifIcon[n.type] || notifIcon[n.severity] || <Bell size={14} />}</div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-800 text-xs leading-snug">{n.message}</p>
+                      <p className="font-semibold text-gray-800 text-xs leading-snug">{n.title}</p>
+                      <p className="text-gray-600 text-xs leading-snug">{n.message}</p>
                       <p className="text-gray-400 text-xs mt-0.5">{relativeTime(n.created_at)} în urmă</p>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

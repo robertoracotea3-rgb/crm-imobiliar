@@ -55,20 +55,25 @@ export function Sidebar() {
     const fetchCount = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const lastSeen = parseInt(localStorage.getItem('notif_last_seen') || '0', 10);
-      const res = await fetch('/api/notifications', {
+      const res = await fetch('/api/notifications?summary=1', {
         headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: 'no-store',
       });
       if (!res.ok) return;
       const d = await res.json();
-      const unseen = (d.notifications || []).filter(
-        (n: { created_at: string }) => new Date(n.created_at).getTime() > lastSeen
-      ).length;
-      setNotifCount(unseen);
+      setNotifCount(Number(d.unread_count || 0));
     };
-    fetchCount();
+    void fetchCount();
     const iv = setInterval(fetchCount, 60000);
-    return () => clearInterval(iv);
+    const refresh = () => void fetchCount();
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('crm:notifications-changed', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('crm:notifications-changed', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [user]);
 
   const handleLogout = async () => {
@@ -101,7 +106,6 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={() => { if (isNotif) { localStorage.setItem('notif_last_seen', Date.now().toString()); setNotifCount(0); } }}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
                 }`}
@@ -150,7 +154,6 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => { if (isNotif) { localStorage.setItem('notif_last_seen', Date.now().toString()); setNotifCount(0); } }}
               className={`flex-1 py-3 flex flex-col items-center gap-1 transition-colors ${
                 isActive ? 'text-emerald-700' : 'text-gray-600'
               }`}
