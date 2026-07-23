@@ -48,6 +48,22 @@ test('synthetic owner can verify the immutable audit journal', async ({ page }) 
   await expect(page.getByText(/IP pseudonimizat/)).toBeVisible();
 });
 
+test('synthetic owner sees the unified system health dashboard', async ({ page }) => {
+  await page.goto('/login');
+  await waitForLoginReady(page);
+  await page.getByLabel('Nume utilizator').fill(TEST_USER.username);
+  await page.getByLabel('Parola').fill(TEST_USER.password);
+  await page.getByRole('button', { name: 'Logare' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.goto('/system-health');
+  await expect(page.getByRole('heading', { name: 'Sănătatea sistemului' })).toBeVisible();
+  await expect(page.getByText('Necesită atenție').first()).toBeVisible();
+  await expect(page.getByText('Webhook Storia')).toBeVisible();
+  await expect(page.getByText('Coadă automatizări')).toBeVisible();
+  await expect(page.getByText(/1 joburi au eșuat/)).toBeVisible();
+});
+
 test('owner completes the required authenticator challenge before dashboard access', async ({ page }) => {
   const factor = {
     id: '00000000-0000-4000-8000-000000000044',

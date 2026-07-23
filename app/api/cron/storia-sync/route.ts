@@ -1,5 +1,10 @@
 import { getAdminClient } from '@/lib/server/api-auth';
 import { verifyCronAuthorization } from '@/lib/server/cron-auth.mjs';
+import {
+  finishSystemOperation,
+  startSystemOperation,
+  type SystemOperationHandle,
+} from '@/lib/server/observability';
 import { syncStoriaAgency } from '@/lib/server/storia-listing-sync';
 import type { StoriaSyncSummary } from '@/lib/server/storia-listing-sync';
 
@@ -26,15 +31,52 @@ export async function GET(request: Request) {
   const jobKey = new Date().toISOString().slice(0, 10);
   const summaries: StoriaSyncSummary[] = [];
   for (const connection of connections || []) {
+    let observation: SystemOperationHandle | null = null;
     try {
-      summaries.push(await syncStoriaAgency(
+      observation = await startSystemOperation(serviceAdmin, {
+        agencyId: connection.agency_id,
+        serviceCode: 'portal.storia',
+        operation: 'scheduled_sync',
+        triggerType: 'cron',
+        correlationKey: jobKey,
+        route: '/api/cron/storia-sync',
+        method: 'GET',
+      });
+    } catch {
+      // portal_sync_runs remains the source of truth when shared telemetry is unavailable.
+    }
+    try {
+      const summary = await syncStoriaAgency(
         serviceAdmin,
         connection.agency_id,
         'cron',
         jobKey,
-      ));
+      );
+      summaries.push(summary);
+      if (observation) {
+        await finishSystemOperation(serviceAdmin, observation, {
+          status: summary.status === 'completed'
+            ? 'succeeded'
+            : summary.status === 'failed' ? 'failed' : 'degraded',
+          httpStatus: summary.status === 'failed' ? 500 : summary.status === 'partial' ? 207 : 200,
+          processedCount: summary.checked,
+          successCount: summary.active,
+          errorCount: summary.errors,
+          retryCount: summary.stale,
+          errorCode: summary.error_code,
+          errorMessage: summary.error_code
+            ? 'Sincronizarea Storia necesită verificare în panoul Portaluri.'
+            : null,
+          nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          metadata: {
+            changed: summary.changed,
+            missing: summary.missing,
+            stale: summary.stale,
+          },
+        }).catch(() => undefined);
+      }
     } catch {
-      summaries.push({
+      const failedSummary: StoriaSyncSummary = {
         agency_id: connection.agency_id,
         run_id: null,
         status: 'failed',
@@ -45,7 +87,18 @@ export async function GET(request: Request) {
         missing: 0,
         errors: 1,
         stale: 0,
-      });
+      };
+      summaries.push(failedSummary);
+      if (observation) {
+        await finishSystemOperation(serviceAdmin, observation, {
+          status: 'failed',
+          httpStatus: 500,
+          errorCount: 1,
+          errorCode: 'sync_persistence_failed',
+          errorMessage: 'Sincronizarea Storia nu și-a putut salva rezultatul.',
+          nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        }).catch(() => undefined);
+      }
     }
   }
 

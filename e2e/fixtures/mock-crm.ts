@@ -70,6 +70,70 @@ export const dashboardFixture = {
   notifications: [],
 };
 
+export const systemHealthFixture = {
+  generated_at: '2026-07-23T09:15:00.000Z',
+  overall_status: 'degraded',
+  summary: { healthy: 2, degraded: 1, failed: 0, stalled: 0, running: 0, never: 0 },
+  services: [
+    {
+      code: 'webhook.storia',
+      label: 'Webhook Storia',
+      status: 'healthy',
+      last_started_at: '2026-07-23T09:10:00.000Z',
+      last_success_at: '2026-07-23T09:10:01.000Z',
+      last_error_at: null,
+      last_error_code: null,
+      last_error: null,
+      duration_ms: 820,
+      next_run_at: null,
+      retry_count: 0,
+      metrics: { processed_24h: 7, failed_24h: 0 },
+    },
+    {
+      code: 'automations.queue',
+      label: 'Coadă automatizări',
+      status: 'degraded',
+      last_started_at: '2026-07-23T08:47:00.000Z',
+      last_success_at: '2026-07-23T08:47:02.000Z',
+      last_error_at: '2026-07-23T08:48:00.000Z',
+      last_error_code: 'job_failed',
+      last_error: '1 joburi au eșuat.',
+      duration_ms: 2_100,
+      next_run_at: '2026-07-24T02:47:00.000Z',
+      retry_count: 1,
+      metrics: { pending: 2, failed: 1, stalled: 0 },
+    },
+    {
+      code: 'feed.xml',
+      label: 'Feeduri XML',
+      status: 'healthy',
+      last_started_at: '2026-07-23T08:30:00.000Z',
+      last_success_at: '2026-07-23T08:30:01.000Z',
+      last_error_at: null,
+      last_error_code: null,
+      last_error: null,
+      duration_ms: 700,
+      next_run_at: null,
+      retry_count: 0,
+      metrics: { generated_24h: 3, errors_24h: 0 },
+    },
+  ],
+  recent_runs: [{
+    id: '00000000-0000-4000-8000-000000000066',
+    service_code: 'automations',
+    operation: 'scheduled_batch',
+    status: 'degraded',
+    started_at: '2026-07-23T08:47:00.000Z',
+    finished_at: '2026-07-23T08:47:02.000Z',
+    duration_ms: 2_100,
+    error_code: 'automation_jobs_failed',
+    http_status: 207,
+    processed_count: 3,
+    error_count: 1,
+    retry_count: 1,
+  }],
+};
+
 export async function mockCrmBackend(page: Page) {
   await page.route('**/api/auth/login', async (route) => {
     const credentials = route.request().postDataJSON() as { username?: string; password?: string };
@@ -167,6 +231,7 @@ export async function mockCrmBackend(page: Page) {
     };
     return json(route, plainFixture);
   });
+  await page.route('**/api/system/health**', route => json(route, systemHealthFixture));
 }
 
 export async function waitForLoginReady(page: Page) {

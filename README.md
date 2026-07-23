@@ -61,7 +61,7 @@ Autorizarea este verificată pe server și din nou prin politicile bazei de date
 
 ## Securitate
 
-CRM-ul este `noindex`, folosește headere de securitate, CSP cu nonce unic pentru scripturi, secrete criptate pentru portaluri și verificări tenant/rol pe endpointurile private. Detaliile, excepțiile CSP și politica dependențelor sunt în [docs/security.md](docs/security.md), jurnalul imuabil este descris în [docs/audit-log.md](docs/audit-log.md), iar 2FA, sesiunile și blocarea autentificării sunt documentate în [docs/account-security.md](docs/account-security.md).
+CRM-ul este `noindex`, folosește headere de securitate, CSP cu nonce unic pentru scripturi, secrete criptate pentru portaluri și verificări tenant/rol pe endpointurile private. Detaliile, excepțiile CSP și politica dependențelor sunt în [docs/security.md](docs/security.md), jurnalul imuabil este descris în [docs/audit-log.md](docs/audit-log.md), 2FA, sesiunile și blocarea autentificării sunt documentate în [docs/account-security.md](docs/account-security.md), iar monitorizarea operațională este descrisă în [docs/observability.md](docs/observability.md).
 
 ## Deploy
 

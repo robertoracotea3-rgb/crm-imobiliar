@@ -22,10 +22,18 @@ import {
   Target,
   Ellipsis,
   ShieldCheck,
+  Activity,
   X,
 } from 'lucide-react';
 
-const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; module: CrmModule; action?: CrmAction }[] = [
+const menuItems: {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  module: CrmModule;
+  action?: CrmAction;
+  roles?: string[];
+}[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { href: '/properties', label: 'Proprietăți', icon: Building2, module: 'properties' },
   { href: '/contacts', label: 'Contacte', icon: BookUser, module: 'contacts' },
@@ -38,6 +46,7 @@ const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; mo
   { href: '/portals', label: 'Portaluri', icon: Globe, module: 'portals' },
   { href: '/team', label: 'Echipă', icon: Users, module: 'team' },
   { href: '/audit', label: 'Jurnal audit', icon: ShieldCheck, module: 'team', action: 'manage_permissions' },
+  { href: '/system-health', label: 'Sănătate sistem', icon: Activity, module: 'settings', roles: ['owner', 'admin'] },
   { href: '/notifications', label: 'Notificări', icon: Bell, module: 'notifications' },
   { href: '/settings', label: 'Setări', icon: Settings, module: 'settings' },
 ];
@@ -51,12 +60,15 @@ const mobilePrimaryItems = ['/dashboard', '/properties', '/clients', '/viewings'
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, signOut, can } = useAuth();
+  const { user, role, loading, signOut, can } = useAuth();
   const [notifCount, setNotifCount] = useState(0);
   const [moreOpenForPath, setMoreOpenForPath] = useState<string | null>(null);
   const moreOpen = moreOpenForPath === pathname;
 
-  const visibleItems = menuItems.filter(item => can(item.module, item.action || 'view'));
+  const visibleItems = menuItems.filter(item => (
+    can(item.module, item.action || 'view')
+    && (!item.roles || (role ? item.roles.includes(role) : false))
+  ));
   const primaryHrefs = new Set(mobilePrimaryItems.map(item => item.href));
   const mobileMoreItems = visibleItems.filter(item => !primaryHrefs.has(item.href));
   const moreIsActive = mobileMoreItems.some(item => (
