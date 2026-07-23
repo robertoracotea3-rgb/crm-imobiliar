@@ -620,7 +620,10 @@ export default function ActivitiesPage() {
     } finally { setLoading(false); }
   }, [agentFilter]);
 
-  useEffect(() => { loadEvents(); }, [loadEvents]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadEvents(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [loadEvents]);
 
   const saveEvent = async (data: Partial<CalEvent>) => {
     const { data: { session } } = await supabase.auth.getSession();

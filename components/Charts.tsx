@@ -53,7 +53,6 @@ export function BarChart({
 export function DonutChart({ data }: { data: { label: string; value: number; color: string }[] }) {
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
   const r = 40, cx = 50, cy = 50, stroke = 14;
-  let offset = 0;
   const circumference = 2 * Math.PI * r;
   return (
     <svg viewBox="0 0 100 100" className="w-full max-w-[140px]">
@@ -61,8 +60,8 @@ export function DonutChart({ data }: { data: { label: string; value: number; col
         const pct = d.value / total;
         const dash = pct * circumference;
         const gap = circumference - dash;
-        const rotation = offset * 360 - 90;
-        offset += pct;
+        const prior = data.slice(0, i).reduce((sum, item) => sum + item.value, 0);
+        const rotation = (prior / total) * 360 - 90;
         return (
           <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={d.color} strokeWidth={stroke}
             strokeDasharray={`${dash} ${gap}`} transform={`rotate(${rotation} ${cx} ${cy})`} className="transition-all duration-500" />

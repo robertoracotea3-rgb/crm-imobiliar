@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Image from 'next/image';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import {
-  ChevronLeft, Edit, Trash2, MapPin, DollarSign, Calendar,
-  Home, Building2, Ruler, Zap, Paintbrush, Trees, Megaphone, User, FileText,
+  ChevronLeft, Edit, Trash2, MapPin,
+  Building2, Ruler, Zap, Paintbrush, Trees, Megaphone, User, FileText,
   Target, CheckCircle, AlertCircle, ExternalLink, ChevronDown,
   Globe, Loader2, Link2Off, GripVertical, Save, X as XIcon, Images,
 } from 'lucide-react';
@@ -22,6 +23,35 @@ import {
   type PropertyStatus,
 } from '@/lib/crm-catalogs';
 
+type AttributeScalarKey =
+  | 'agent' | 'an_constructie' | 'an_renovare' | 'apartament_nr' | 'ascunde_adresa'
+  | 'bloc' | 'cartier' | 'certificat_energetic' | 'clasa_energetica' | 'cod_postal'
+  | 'comision' | 'compartimentare' | 'confort' | 'data_expirare' | 'data_preluarii'
+  | 'demisol' | 'descriere_en' | 'etaj' | 'exclusivitate' | 'front_stradal'
+  | 'judet' | 'lat' | 'localitate' | 'lon' | 'mansarda' | 'meta_desc' | 'mobilat'
+  | 'negociabil' | 'nr_bai' | 'nr_balcoane' | 'nr_bucatarii' | 'nr_camere'
+  | 'nr_dormitoare' | 'nr_etaje' | 'nr_parcare' | 'nr_terase' | 'numar'
+  | 'obs_interne' | 'parter' | 'prop_adresa' | 'prop_cnp' | 'prop_email'
+  | 'prop_nume' | 'prop_obs' | 'prop_tel' | 'prop_tel2' | 'regim_inaltime'
+  | 'risc_seismic' | 'stare_oferta' | 'strada' | 'structura' | 'subsol'
+  | 'sup_balcon' | 'sup_construita' | 'sup_curte' | 'sup_garaj_mp' | 'sup_pivnita'
+  | 'sup_terasa' | 'sup_teren' | 'sup_totala' | 'sup_utila' | 'sursa_lead'
+  | 'tags' | 'tip_oferta' | 'titlu_seo' | 'tva_inclus' | 'ultimul_etaj'
+  | 'utilat' | 'zona';
+
+type ScalarValue = string | number | boolean;
+
+interface PropertyAttributes extends Record<string, unknown>, Partial<Record<AttributeScalarKey, ScalarValue>> {
+  photos?: string[];
+  utilitati?: Record<string, boolean>;
+  dotari?: Record<string, boolean>;
+  publicare?: Record<string, boolean>;
+  incalzire?: Record<string, boolean | string | number>;
+  finisaje?: Record<string, boolean | string | number>;
+  teren?: Record<string, boolean | string | number>;
+  comercial?: Record<string, boolean | string | number>;
+}
+
 interface Property {
   id: string;
   internal_code: string;
@@ -29,13 +59,34 @@ interface Property {
   city?: string; county?: string; street?: string; street_number?: string;
   currency?: string; price: number | null; description: string;
   category: string; created_at: string; updated_at: string;
-  attributes?: Record<string, any>;
-  [key: string]: any;
+  status: string;
+  agent_id?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  attributes?: PropertyAttributes;
+}
+
+interface MatchedClient {
+  id: string;
+  score: number;
+  details: Record<string, string>;
+  message?: string | null;
+  source?: string | null;
+  contact_name?: string | null;
+  city?: string | null;
+  county?: string | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  currency?: string | null;
+  criteria?: {
+    nr_camere_min?: number | null;
+    nr_camere_max?: number | null;
+  } | null;
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function Row({ label, value }: { label: string; value?: string | number | null }) {
+function Row({ label, value }: { label: string; value?: string | number | boolean | null }) {
   if (value === null || value === undefined || value === '') return null;
   return (
     <div className="flex justify-between items-start py-1.5 border-b border-gray-50 last:border-0">
@@ -94,11 +145,12 @@ const SALE_STATUSES = new Set(['tranzactionata', 'inchiriata']);
 
 export default function PropertyDetailPage() {
   const params = useParams();
+  const propertyId = String(params.id);
   const router = useRouter();
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [matchedClients, setMatchedClients] = useState<any[] | null>(null);
+  const [matchedClients, setMatchedClients] = useState<MatchedClient[] | null>(null);
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
@@ -165,37 +217,63 @@ export default function PropertyDetailPage() {
   const [storiaPublishing, setStoriaPublishing] = useState(false);
   const [storiaUnpublishing, setStoriaUnpublishing] = useState(false);
 
-  useEffect(() => { fetchProperty(); }, [params.id]);
-
-  const fetchProperty = async () => {
-    try {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setError('Nu esti autentificat'); return; }
-      const res = await fetch(`/api/properties/get?id=${params.id}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
-      setProperty(d.property);
-      fetchMatchedDemands(session.access_token);
-      fetchStoriaStatus(session.access_token);
-    } catch (err) {
-      setError('Nu am putut incarca proprietatea');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStoriaStatus = async (tok: string) => {
-    const res = await fetch(`/api/portals/storia/status?property_id=${params.id}`, {
+  const fetchStoriaStatus = useCallback(async (tok: string) => {
+    const res = await fetch(`/api/portals/storia/status?property_id=${propertyId}`, {
       headers: { Authorization: `Bearer ${tok}` },
     });
     if (!res.ok) return;
     const d = await res.json();
     setStoriaConnected(d.connected && d.token_valid);
     setStoriaListing(d.listing || null);
-  };
+  }, [propertyId]);
+
+  const fetchMatchedDemands = useCallback(async (token: string) => {
+    try {
+      setLoadingMatches(true);
+      const res = await fetch(`/api/leads/match-for-property?property_id=${propertyId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (res.ok) setMatchedClients(d.matches || []);
+    } catch {
+      // Matching errors do not prevent the property page from loading.
+    } finally {
+      setLoadingMatches(false);
+    }
+  }, [propertyId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProperty() {
+      try {
+        setLoading(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          if (active) setError('Nu esti autentificat');
+          return;
+        }
+        const res = await fetch(`/api/properties/get?id=${propertyId}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        if (!active) return;
+        setProperty(d.property);
+        void fetchMatchedDemands(session.access_token);
+        void fetchStoriaStatus(session.access_token);
+      } catch {
+        if (active) setError('Nu am putut incarca proprietatea');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadProperty();
+    return () => {
+      active = false;
+    };
+  }, [fetchMatchedDemands, fetchStoriaStatus, propertyId]);
 
   const handleStoriaPublish = async () => {
     setStoriaPublishing(true);
@@ -363,21 +441,6 @@ export default function PropertyDetailPage() {
     }
   };
 
-  const fetchMatchedDemands = async (token: string) => {
-    try {
-      setLoadingMatches(true);
-      const res = await fetch(`/api/leads/match-for-property?property_id=${params.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const d = await res.json();
-      if (res.ok) setMatchedClients(d.matches || []);
-    } catch {
-      // non-blocking — just don't show
-    } finally {
-      setLoadingMatches(false);
-    }
-  };
-
   if (loading) return <div className="p-4 sm:p-6 lg:p-8 text-gray-400">Se incarca...</div>;
   if (error || !property) return (
     <div className="p-8">
@@ -388,7 +451,7 @@ export default function PropertyDetailPage() {
 
   const a = property.attributes || {};
   const fmt = (d: string) => new Date(d).toLocaleDateString('ro-RO');
-  const yn = (v: boolean | undefined) => v ? 'Da' : undefined;
+  const yn = (v: unknown) => v === true ? 'Da' : undefined;
 
   // Coordonate pentru hartă: preferă attributes.lat/lon, apoi coloanele latitude/longitude.
   const pickCoord = (...vals: unknown[]): number => {
@@ -543,8 +606,8 @@ export default function PropertyDetailPage() {
             {!editingPhotos && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {(a.photos as string[]).map((url: string, i: number) => (
-                  <div key={i} className="rounded-lg overflow-hidden bg-gray-100 aspect-video">
-                    <img src={url} alt={`Poza ${i + 1}`} className="w-full h-full object-cover" />
+                  <div key={i} className="relative rounded-lg overflow-hidden bg-gray-100 aspect-video">
+                    <Image src={url} alt={`Poza ${i + 1}`} fill sizes="(max-width: 768px) 50vw, 25vw" unoptimized className="object-cover" />
                   </div>
                 ))}
               </div>
@@ -571,7 +634,7 @@ export default function PropertyDetailPage() {
                     className={`relative rounded-lg overflow-hidden bg-gray-100 aspect-video cursor-grab border-2 transition-all ${
                       photoDragIdx === i ? 'border-emerald-400 opacity-50 scale-95' : 'border-transparent hover:border-emerald-300'
                     }`}>
-                    <img src={url} alt={`Poza ${i + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                    <Image src={url} alt={`Poza ${i + 1}`} fill sizes="(max-width: 768px) 50vw, 25vw" unoptimized draggable={false} className="object-cover pointer-events-none" />
                     {/* Overlay cu numărul și gripul */}
                     <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-end justify-between p-1.5">
                       <span className="bg-black/60 text-white text-xs px-1.5 py-0.5 rounded font-medium">{i + 1}</span>
@@ -946,7 +1009,7 @@ export default function PropertyDetailPage() {
                   const detailEntries = Object.entries(cl.details as Record<string, string>);
                   const okDetails = detailEntries.filter(([, v]) => isOk(v));
                   const badDetails = detailEntries.filter(([, v]) => !isOk(v));
-                  const msg = parseLeadMessage(cl.message, cl.source).text;
+                  const msg = parseLeadMessage(cl.message ?? undefined, cl.source ?? undefined).text;
 
                   return (
                     <div key={cl.id} className={`rounded-lg border p-3 ${scoreColor}`}>

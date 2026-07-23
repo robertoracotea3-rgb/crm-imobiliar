@@ -59,8 +59,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    load(ctrl.signal);
-    return () => ctrl.abort();
+    const timeout = window.setTimeout(() => void load(ctrl.signal), 0);
+    return () => {
+      window.clearTimeout(timeout);
+      ctrl.abort();
+    };
   }, [load]);
 
   const handleSave = async (patch: Record<string, string>) => {

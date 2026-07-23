@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader2 } from 'lucide-react';
+import type { LeafletMouseEvent, Map as LeafletMap, Marker } from 'leaflet';
 
 interface MapPickerProps {
   lat: string;
@@ -11,12 +12,18 @@ interface MapPickerProps {
 
 export function MapPicker({ lat, lon, onCoords }: MapPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markerRef = useRef<Marker | null>(null);
+  const onCoordsRef = useRef(onCoords);
   const [ready, setReady] = useState(false);
 
   const defaultLat = lat ? parseFloat(lat) : 45.8416;
   const defaultLon = lon ? parseFloat(lon) : 24.9731;
+  const initialCoordsRef = useRef({ lat: defaultLat, lon: defaultLon });
+
+  useEffect(() => {
+    onCoordsRef.current = onCoords;
+  }, [onCoords]);
 
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
@@ -25,7 +32,7 @@ export function MapPicker({ lat, lon, onCoords }: MapPickerProps) {
     import('leaflet').then((L) => {
       if (mapRef.current || !containerRef.current) return;
 
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -33,7 +40,7 @@ export function MapPicker({ lat, lon, onCoords }: MapPickerProps) {
       });
 
       const map = L.map(containerRef.current, {
-        center: [defaultLat, defaultLon],
+        center: [initialCoordsRef.current.lat, initialCoordsRef.current.lon],
         zoom: 13,
         zoomControl: true,
         preferCanvas: false,
@@ -44,16 +51,16 @@ export function MapPicker({ lat, lon, onCoords }: MapPickerProps) {
         maxZoom: 19,
       }).addTo(map);
 
-      const marker = L.marker([defaultLat, defaultLon], { draggable: true }).addTo(map);
+      const marker = L.marker([initialCoordsRef.current.lat, initialCoordsRef.current.lon], { draggable: true }).addTo(map);
 
       marker.on('dragend', () => {
         const pos = marker.getLatLng();
-        onCoords(pos.lat.toFixed(6), pos.lng.toFixed(6));
+        onCoordsRef.current(pos.lat.toFixed(6), pos.lng.toFixed(6));
       });
 
-      map.on('click', (e: any) => {
+      map.on('click', (e: LeafletMouseEvent) => {
         marker.setLatLng(e.latlng);
-        onCoords(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
+        onCoordsRef.current(e.latlng.lat.toFixed(6), e.latlng.lng.toFixed(6));
       });
 
       mapRef.current = map;

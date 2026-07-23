@@ -93,7 +93,7 @@ export default function SetupPage() {
                 supabase.com → Account → Access Tokens
               </a>
             </li>
-            <li>Click <strong>"Generate new token"</strong>, dă-i un nume (ex: CRM fix)</li>
+            <li>Click <strong>„Generate new token”</strong>, dă-i un nume (ex: CRM fix)</li>
             <li>Copiaza token-ul generat și lipeste-l mai jos</li>
           </ol>
         </div>

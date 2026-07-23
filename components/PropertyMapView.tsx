@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader2 } from 'lucide-react';
+import type { Map as LeafletMap } from 'leaflet';
 
 interface Props {
   lat: number;
@@ -13,7 +14,7 @@ interface Props {
 /** Read-only Leaflet map showing a single property pin. CSS is preloaded in layout.tsx. */
 export function PropertyMapView({ lat, lon, label, height = 280 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export function PropertyMapView({ lat, lon, label, height = 280 }: Props) {
     import('leaflet').then((L) => {
       if (mapRef.current || !containerRef.current) return;
 
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
       L.Icon.Default.mergeOptions({
         iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',

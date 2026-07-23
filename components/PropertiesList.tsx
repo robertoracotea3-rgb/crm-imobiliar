@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { Trash2, MapPin, Home, User } from 'lucide-react';
 import { ActivityStatus } from './ActivityStatus';
 
@@ -102,13 +103,15 @@ export function PropertiesList({
                 </div>
               )}
               {/* Foto */}
-              <div className="w-28 md:w-36 flex-shrink-0">
+              <div className="relative w-28 md:w-36 flex-shrink-0">
                 {firstPhoto ? (
-                  <img
+                  <Image
                     src={firstPhoto}
                     alt={property.title}
-                    className="w-full h-full object-cover"
-                    style={{ minHeight: '90px' }}
+                    fill
+                    sizes="(max-width: 768px) 112px, 144px"
+                    unoptimized
+                    className="object-cover"
                   />
                 ) : (
                   <div className="w-full h-full bg-gray-100 flex items-center justify-center" style={{ minHeight: '90px' }}>

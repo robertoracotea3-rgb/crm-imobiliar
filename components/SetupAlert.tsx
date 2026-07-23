@@ -103,7 +103,7 @@ export function SetupAlert({ message }: { message: string }) {
               Obține token-ul de la{' '}
               <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noopener noreferrer"
                 className="underline font-medium">supabase.com → Account → Access Tokens</a>
-              {' '}→ "Generate new token"
+              {' '}→ „Generate new token”
             </p>
             <div className="flex gap-2">
               <input

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import Image from 'next/image';
 import { X, ChevronRight, ChevronLeft, Upload, ImageIcon, UserPlus, Search, Wand2, Loader2, Copy, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -413,11 +414,22 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
           // pre-select current user
           if (user?.id) setFd(prev => ({ ...prev, agent_id: user.id }));
         });
-      // fetch next sequential code
-      fetchNextCode(fd.tip_proprietate, session.access_token)
-        .then(code => setFd(prev => ({ ...prev, internal_code: code })));
     });
   }, [isOpen, user]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      fetchNextCode(fd.tip_proprietate, session.access_token).then((code) => {
+        if (active) setFd(prev => ({ ...prev, internal_code: code }));
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, fd.tip_proprietate]);
 
   // ── Auto-pin pe hartă: geocodează adresa (debounced) când se schimbă județ/localitate/stradă/număr.
   // Nu suprascrie dacă utilizatorul a mutat manual pinul (click/drag pe hartă).
@@ -824,7 +836,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                       const label = photoAnalyses?.photos?.[i]?.room_type;
                       return (
                         <div key={i} className="relative group">
-                          <img src={p} alt="" className="w-full h-20 object-cover rounded-lg border border-gray-200" />
+                           <Image src={p} alt="" width={160} height={80} unoptimized className="w-full h-20 object-cover rounded-lg border border-gray-200" />
                           <button onClick={() => removePhoto(i)}
                             className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <X size={12} />

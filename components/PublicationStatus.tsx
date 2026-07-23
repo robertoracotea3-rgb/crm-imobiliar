@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { CheckCircle2, AlertCircle, Clock, X } from 'lucide-react';
 
 interface PublicationRecord {
@@ -22,7 +21,6 @@ interface PublicationStatusProps {
 }
 
 export function PublicationStatus({
-  propertyId,
   publications,
   onToggle,
 }: PublicationStatusProps) {
@@ -120,7 +118,7 @@ export function PublicationStatus({
 
       {publications.length === 0 && (
         <p className="text-sm text-gray-500 py-4">
-          Nicio publicare configurata. Mergi la meniul "Portaluri" pentru a configura.
+          Nicio publicare configurata. Mergi la meniul „Portaluri” pentru a configura.
         </p>
       )}
     </div>

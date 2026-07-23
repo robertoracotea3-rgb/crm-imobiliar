@@ -23,7 +23,7 @@ export default function LoginPage() {
       const email = usernameToEmail(username);
       await signIn(email, password);
       router.push('/dashboard');
-    } catch (err) {
+    } catch {
       setError('Nume utilizator sau parola incorecta.');
     } finally {
       setLoading(false);

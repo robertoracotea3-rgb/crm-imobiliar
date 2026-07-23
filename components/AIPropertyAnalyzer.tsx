@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Wand2, Copy, ChevronRight, AlertCircle } from 'lucide-react';
+import { Wand2, ChevronRight, AlertCircle } from 'lucide-react';
 
 interface AnalyzedData {
   title: string;

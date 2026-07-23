@@ -51,7 +51,10 @@ export function PropertyDocuments({ propertyId }: { propertyId: string }) {
     }
   }, [propertyId]);
 
-  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void fetchDocs(), 0);
+    return () => window.clearTimeout(timeout);
+  }, [fetchDocs]);
 
   const handleUpload = async (category: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
