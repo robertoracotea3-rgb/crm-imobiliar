@@ -35,6 +35,8 @@ interface Tx {
   currency: string;
   agency_commission: number;
   agent_commission: number;
+  reservation_at?: string | null;
+  reservation_amount?: number | null;
   closed_at?: string | null;
   completed_at?: string | null;
   notes?: string | null;
@@ -91,6 +93,8 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
     currency: editing?.currency || 'EUR',
     agency_commission: editing ? String(editing.agency_commission) : '',
     agent_commission: editing ? String(editing.agent_commission) : '',
+    reservation_at: editing?.reservation_at ? editing.reservation_at.slice(0, 16) : '',
+    reservation_amount: editing?.reservation_amount != null ? String(editing.reservation_amount) : '',
     notes: editing?.notes || '',
   });
   const [saving, setSaving] = useState(false);
@@ -114,6 +118,7 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
     e.preventDefault();
     if (!form.property_id || !form.contact_id) { setError('Proprietatea și clientul sunt obligatorii.'); return; }
     if (num(form.sale_price) <= 0) { setError('Prețul tranzacției trebuie să fie mai mare decât zero.'); return; }
+    if (editing && form.status === 'rezervata' && !form.reservation_at) { setError('Data rezervării este obligatorie.'); return; }
     if (editing && form.status === 'anulata' && !form.status_reason.trim()) { setError('Completează motivul anulării.'); return; }
     try {
       setSaving(true); setError('');
@@ -191,6 +196,18 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
             <label className="text-xs font-medium text-gray-600 mb-1 block">Preț tranzacție</label>
             <input type="number" value={form.sale_price} onChange={e => set('sale_price', e.target.value)} className={ic} placeholder="ex: 75000" />
           </div>
+          {editing && form.status === 'rezervata' && (
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <div>
+                <label className="text-xs font-medium text-blue-900 mb-1 block">Data rezervării *</label>
+                <input type="datetime-local" value={form.reservation_at} onChange={e => set('reservation_at', e.target.value)} className={ic} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-blue-900 mb-1 block">Avans / sumă rezervare</label>
+                <input type="number" min="0" value={form.reservation_amount} onChange={e => set('reservation_amount', e.target.value)} className={ic} placeholder="opțional" />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Comision agenție</label>

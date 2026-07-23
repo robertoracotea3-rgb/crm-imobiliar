@@ -8,7 +8,14 @@ import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { ReplyLeadDialog } from '@/components/ReplyLeadDialog';
 import { UnmatchedStoriaMessages } from '@/components/UnmatchedStoriaMessages';
 import { ScheduleViewingDialog } from '@/components/ScheduleViewingDialog';
+import { PipelineStageControl } from '@/components/PipelineStageControl';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
+import {
+  LEAD_PIPELINE_STAGES,
+  LEAD_PIPELINE_TAB_GROUPS,
+  pipelineMeta,
+  pipelineStage,
+} from '@/lib/crm-pipeline';
 import {
   STATUS_ORDER, CLIENT_TABS, statusLabel, statusColor,
   initials, avatarColor, parseLeadMessage,
@@ -39,6 +46,8 @@ interface Client {
   property_code?: string;
   property_public_url?: string;
   status: string;
+  pipeline_stage?: string;
+  pipeline_stage_changed_at?: string;
   received_at: string;
   first_response_at?: string;
   source?: string;
@@ -529,38 +538,16 @@ export default function ClientsPage() {
   }), [clients, onlyMine, selectedAgent, user, fCity, fCategory, fSource, search]);
 
   const inTab = (c: Client, key: string) => {
-    const t = CLIENT_TABS.find((x) => x.key === key);
-    if (!t || t.statuses === null) return true;
-    return t.statuses.includes(c.status);
+    const stages = LEAD_PIPELINE_TAB_GROUPS[key as keyof typeof LEAD_PIPELINE_TAB_GROUPS];
+    if (!stages) return true;
+    return stages.includes(pipelineStage(c.pipeline_stage, c.status));
   };
   const tabCount = (key: string) => scoped.filter((c) => inTab(c, key)).length;
 
-  const visible = useMemo(() => scoped.filter((c) => inTab(c, tab) && (!fStatus || c.status === fStatus)), [scoped, tab, fStatus]);
+  const visible = useMemo(() => scoped.filter((c) => (
+    inTab(c, tab) && (!fStatus || pipelineStage(c.pipeline_stage, c.status) === fStatus)
+  )), [scoped, tab, fStatus]);
 
-  const changeStatus = async (id: string, status: string) => {
-    const current = clients.find((client) => client.id === id);
-    if (!current || !isLeadStatus(current.status) || !isLeadStatus(status)) return;
-    if (!canTransition(LEAD_STATUS_TRANSITIONS, current.status, status)) {
-      setError('Această tranziție de status nu este permisă');
-      return;
-    }
-    const payload: Record<string, unknown> = { id, status };
-    if (status === 'lost') {
-      const reason = window.prompt('Motivul pierderii leadului:')?.trim();
-      if (!reason) return;
-      const note = window.prompt('Observație despre motivul pierderii:')?.trim();
-      if (!note) return;
-      payload.status_reason = reason;
-      payload.status_note = note;
-      payload.lost_to_competitor = window.prompt('Concurent / altă agenție (opțional):')?.trim() || null;
-    }
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-    const response = await fetch('/api/leads/update', { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(payload) });
-    const result = await response.json();
-    if (!response.ok) { setError(result.error || 'Statusul nu a putut fi schimbat'); return; }
-    setClients((prev) => prev.map((client) => client.id === id ? { ...client, ...result.lead } : client));
-  };
   const scheduleViewing = (c: Client) => { setViewingClient(c); setMenuOpen(null); };
   const remove = async (id: string) => {
     if (!confirm('Ștergi acest client din CRM?')) return;
@@ -651,6 +638,7 @@ export default function ClientsPage() {
           <div><h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Clienți</h1>
             <p className="text-sm text-gray-500 mt-1">{clients.length} clienți</p></div>
           <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <Link href="/pipeline" className="mobile-touch-target flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800 sm:flex-none sm:px-4"><Target size={17} />Pipeline operațional</Link>
             <Link href="/matches" className="mobile-touch-target flex flex-1 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 sm:flex-none sm:px-4"><Target size={17} />Cereri și potriviri</Link>
             {(role === 'owner' || role === 'admin' || role === 'manager') && <Link href="/clients/duplicates" className="mobile-touch-target flex flex-1 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 sm:flex-none sm:px-4"><History size={17} />Verifică duplicate</Link>}
             <button onClick={() => setAddOpen(true)} className="mobile-touch-target flex flex-1 items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium text-white hover:opacity-90 sm:flex-none sm:px-4" style={{ backgroundColor: '#0E6B54' }}>
@@ -680,7 +668,7 @@ export default function ClientsPage() {
             </div>
             <select value={fCity} onChange={(e) => setFCity(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate orașele</option>{cities.map((c) => <option key={c} value={c}>{c}</option>)}</select>
             <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate categoriile</option>{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_LABEL(c)}</option>)}</select>
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate statusurile</option>{STATUS_ORDER.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}</select>
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate etapele pipeline</option>{LEAD_PIPELINE_STAGES.map((stage) => <option key={stage.code} value={stage.code}>{stage.label}</option>)}</select>
             <button onClick={() => setShowFilters((s) => !s)} className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"><Filter size={14} /> Filtre <ChevronDown size={14} /></button>
           </div>
           {showFilters && (
@@ -732,6 +720,7 @@ export default function ClientsPage() {
               const normalizedSource = c.source_normalized || normalizeLeadSource(c.source);
               const parsed = parseLeadMessage(c.message, leadSourceLabel(normalizedSource));
               const agentName = c.agent_id ? (agentNames[c.agent_id] || '') : '';
+              const operationalStage = pipelineMeta(c.pipeline_stage, c.status);
               return (
                 <div key={c.id} className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 transition-colors p-4">
                   <div className="flex items-start gap-3">
@@ -743,7 +732,8 @@ export default function ClientsPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             {c.contact_id ? <Link href={`/clients/${c.contact_id}`} className="font-semibold text-gray-900 hover:text-emerald-700 hover:underline">{c.contact_name}</Link> : <span className="font-semibold text-gray-900">{c.contact_name}</span>}
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusColor(c.status)}`}>{statusLabel(c.status)}</span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${operationalStage.color}`}>{operationalStage.label}</span>
+                            <span title="Status istoric păstrat" className={`text-[10px] font-medium px-2 py-0.5 rounded-full opacity-70 ${statusColor(c.status)}`}>{statusLabel(c.status)}</span>
                             {(c.lead_count || 0) > 1 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{c.lead_count} leaduri</span>}
                             {(c.demand_count || 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{c.demand_count} cereri</span>}
                           </div>
@@ -791,9 +781,13 @@ export default function ClientsPage() {
                         <button onClick={() => setReplyClient(c)} title="WhatsApp" className="p-1.5 rounded-lg text-gray-500 hover:bg-green-50 hover:text-green-600"><MessageCircle size={16} /></button>
                         {c.contact_email && <a href={`mailto:${c.contact_email}`} title="Email" className="p-1.5 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600"><Mail size={16} /></a>}
                         <button onClick={() => setReplyClient(c)} title="Răspunde" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Send size={16} /></button>
-                        <select value={c.status} onChange={(e) => changeStatus(c.id, e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
-                          {STATUS_ORDER.filter((s) => isLeadStatus(c.status) && canTransition(LEAD_STATUS_TRANSITIONS, c.status, s)).map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-                        </select>
+                        <PipelineStageControl
+                          lead={c}
+                          compact
+                          onChanged={(stage, changedAt) => setClients((current) => current.map((client) => client.id === c.id
+                            ? { ...client, pipeline_stage: stage, pipeline_stage_changed_at: changedAt || new Date().toISOString() }
+                            : client))}
+                        />
                         <button onClick={() => setEditClient(c)} title="Editează" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Pencil size={16} /></button>
                         <div className="relative ml-auto">
                           <button onClick={(e) => { e.stopPropagation(); setMenuOpen(menuOpen === c.id ? null : c.id); }} className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><MoreVertical size={16} /></button>

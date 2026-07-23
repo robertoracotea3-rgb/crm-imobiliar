@@ -11,6 +11,7 @@ import {
 
 interface Lead {
   id: string;
+  property_id?: string;
   contact_name: string;
   contact_phone: string;
   message: string;
@@ -46,6 +47,7 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
+  const [shareIdempotencyKey, setShareIdempotencyKey] = useState('');
 
   useEffect(() => {
     if (!isOpen || !lead) return;
@@ -54,6 +56,7 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
       setSelectedTemplate('');
       setError('');
       setWarning('');
+      setShareIdempotencyKey(crypto.randomUUID());
       setNextActionAt(defaultNextAction());
       setMessage(buildDefaultWhatsAppMessage({
         clientName: lead.contact_name,
@@ -98,6 +101,10 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
       body: JSON.stringify({
         lead_id: lead.id,
         action,
+        property_id: action === 'confirmed_sent' ? lead.property_id || null : null,
+        share_idempotency_key: action === 'confirmed_sent' && lead.property_id
+          ? shareIdempotencyKey
+          : null,
         next_action_at: ['confirmed_sent', 'unreachable'].includes(action)
           ? new Date(nextActionAt).toISOString()
           : null,
@@ -105,6 +112,9 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Rezultatul nu a putut fi salvat');
+    return typeof data.property_share_warning === 'string'
+      ? data.property_share_warning
+      : null;
   };
 
   const openWhatsApp = () => {
@@ -134,8 +144,12 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
     setLoading(true);
     setError('');
     try {
-      await recordOutcome(action);
+      const outcomeWarning = await recordOutcome(action);
       onSuccess?.();
+      if (outcomeWarning) {
+        setWarning(outcomeWarning);
+        return;
+      }
       onClose();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Rezultatul nu a putut fi salvat');

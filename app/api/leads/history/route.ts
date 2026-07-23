@@ -33,6 +33,26 @@ export async function GET(request: Request) {
       // Tabela activities poate lipsi in instalari vechi.
     }
 
+    try {
+      const { data: pipelineEvents } = await admin
+        .from('lead_pipeline_events')
+        .select('from_stage,to_stage,reason,note,source,created_at')
+        .eq('agency_id', agencyId)
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false });
+      events = [
+        ...events,
+        ...(pipelineEvents || []).map((event) => ({
+          type: 'pipeline_stage',
+          title: 'Etapă pipeline',
+          description: `${event.from_stage || 'Început'} → ${event.to_stage}${event.reason ? ` · ${event.reason}` : ''}${event.note ? ` · ${event.note}` : ''}`,
+          created_at: event.created_at,
+        })),
+      ].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+    } catch {
+      // Pipeline-ul este aditiv și poate lipsi până la aplicarea migrării fazei 18.
+    }
+
     return Response.json({ events, received_at: lead.received_at });
   } catch (err) {
     return Response.json({ error: err instanceof Error ? err.message : 'Eroare' }, { status: 500 });

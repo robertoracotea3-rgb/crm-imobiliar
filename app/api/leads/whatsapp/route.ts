@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { buildPublicPropertyUrl } from '@/lib/public-property-url';
 
 const ACTIONS = ['opened', 'confirmed_sent', 'not_sent', 'unreachable'] as const;
 type WhatsAppAction = typeof ACTIONS[number];
@@ -48,5 +49,32 @@ export async function POST(request: Request) {
       error: status === 404 ? 'Client negăsit' : 'Rezultatul contactării nu a putut fi salvat',
     }, { status });
   }
-  return Response.json(data);
+  let propertyShareWarning: string | null = null;
+  if (action === 'confirmed_sent'
+    && typeof body.property_id === 'string'
+    && typeof body.share_idempotency_key === 'string') {
+    const { data: property } = await admin.from('properties')
+      .select('id,internal_code,title,category,city,attributes')
+      .eq('id', body.property_id)
+      .eq('agency_id', agencyId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (property) {
+      const { error: shareError } = await serviceAdmin.rpc('crm_record_lead_property_share', {
+        p_agency_id: agencyId,
+        p_actor_id: user.id,
+        p_lead_id: leadId,
+        p_property_id: property.id,
+        p_channel: 'whatsapp',
+        p_public_url: buildPublicPropertyUrl(property),
+        p_idempotency_key: body.share_idempotency_key,
+      });
+      if (shareError) {
+        propertyShareWarning = 'Contactul a fost salvat, dar proprietatea trimisă nu a putut fi înregistrată în pipeline.';
+      }
+    } else {
+      propertyShareWarning = 'Contactul a fost salvat, dar proprietatea nu mai este disponibilă în agenție.';
+    }
+  }
+  return Response.json({ ...data, property_share_warning: propertyShareWarning });
 }

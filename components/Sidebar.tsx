@@ -29,6 +29,7 @@ const menuItems: { href: string; label: string; icon: typeof LayoutDashboard; mo
   { href: '/properties', label: 'Proprietăți', icon: Building2, module: 'properties' },
   { href: '/contacts', label: 'Contacte', icon: BookUser, module: 'contacts' },
   { href: '/clients', label: 'Clienți', icon: MessageSquare, module: 'leads' },
+  { href: '/pipeline', label: 'Pipeline', icon: Target, module: 'leads' },
   { href: '/prospects', label: 'Particulari', icon: Target, module: 'prospects' },
   { href: '/viewings', label: 'Vizionări', icon: Eye, module: 'viewings' },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, module: 'calendar' },

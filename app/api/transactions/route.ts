@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     const pageSize = positiveInt(params.get('page_size'), 25, PAGE_SIZE_MAX);
     const from = (page - 1) * pageSize;
     let query = admin.from('transactions').select(
-      'id,property_id,agent_id,contact_id,lead_id,type,status,status_reason,sale_price,currency,agency_commission,agent_commission,closed_at,completed_at,notes,legacy_import,legacy_import_reason,property_code_snapshot,property_title_snapshot,contact_name_snapshot,created_at,updated_at',
+      'id,property_id,agent_id,contact_id,lead_id,type,status,status_reason,sale_price,currency,agency_commission,agent_commission,reservation_at,reservation_amount,closed_at,completed_at,notes,legacy_import,legacy_import_reason,property_code_snapshot,property_title_snapshot,contact_name_snapshot,created_at,updated_at',
       { count: 'exact' },
     ).eq('agency_id', agencyId).is('deleted_at', null);
     const status = params.get('status');
@@ -160,7 +160,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     if (typeof body.id !== 'string') return Response.json({ error: 'ID lipsă.' }, { status: 400 });
     const { data: existing } = await admin.from('transactions')
-      .select('id,status,property_id,contact_id,agent_id,lead_id,legacy_import')
+      .select('id,status,property_id,contact_id,agent_id,lead_id,legacy_import,sale_price,reservation_at,reservation_amount')
       .eq('id', body.id).eq('agency_id', agencyId).is('deleted_at', null).maybeSingle();
     if (!existing) return Response.json({ error: 'Tranzacția nu există.' }, { status: 404 });
 
@@ -218,6 +218,31 @@ export async function PATCH(request: Request) {
         return Response.json({ error: 'Valorile financiare sunt invalide.' }, { status: 400 });
       }
       safe[field] = value;
+    }
+    if (body.reservation_amount !== undefined) {
+      const value = body.reservation_amount === '' || body.reservation_amount === null
+        ? null
+        : nonNegativeMoney(body.reservation_amount);
+      if (body.reservation_amount !== '' && body.reservation_amount !== null && value === null) {
+        return Response.json({ error: 'Suma rezervării nu poate fi negativă.' }, { status: 400 });
+      }
+      safe.reservation_amount = value;
+    }
+    if (body.reservation_at !== undefined) {
+      const reservationAt = body.reservation_at ? new Date(body.reservation_at) : null;
+      if (body.reservation_at && (!reservationAt || Number.isNaN(reservationAt.getTime()))) {
+        return Response.json({ error: 'Data rezervării este invalidă.' }, { status: 400 });
+      }
+      safe.reservation_at = reservationAt?.toISOString() || null;
+    }
+    if (nextStatus === 'rezervata') {
+      const effectiveSalePrice = Number(safe.sale_price ?? existing.sale_price);
+      const effectiveReservationAt = safe.reservation_at ?? existing.reservation_at;
+      if (!refs.property_id || !refs.contact_id || effectiveSalePrice <= 0 || !effectiveReservationAt) {
+        return Response.json({
+          error: 'Rezervarea cere proprietate, client, sumă și data rezervării.',
+        }, { status: 400 });
+      }
     }
     if (body.notes !== undefined) safe.notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 3000) || null : null;
     if (nextStatus === 'anulata') {
