@@ -1,657 +1,398 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
-import { ProtectedLayout } from '@/components/ProtectedLayout';
 import {
-  Home, TrendingUp, TrendingDown, Users, Target, Bell, Zap,
-  AlertTriangle, CheckCircle, Eye, ArrowRight, Building2, Phone,
-  Star, Award, ChevronRight, RefreshCw, Image, FileText, DollarSign,
-  Activity, MessageSquare, Search, Calendar, Clock,
+  AlertTriangle, Banknote, Bell, Building2, CalendarDays, CheckCircle2,
+  CircleDollarSign, Clock3, FileWarning, Info, ListTodo, Loader2,
+  MessageSquareText, Percent, RefreshCw, Send, Target, UserRoundCheck, Users,
 } from 'lucide-react';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface DashData {
+import { ProtectedLayout } from '@/components/ProtectedLayout';
+import { supabase } from '@/lib/supabase';
+
+type Period = '7d' | '30d' | '90d' | 'month' | 'year';
+
+interface MoneyValue { currency: string; amount: number }
+interface SourceValue { source: string; count: number }
+interface PortalValue {
+  portal: string; total: number; active: number; errors: number;
+  pending: number; removed: number; success_rate: number;
+}
+interface AgentValue {
+  user_id: string; name: string; role: string; leads: number; viewings: number;
+  transactions: number; average_response_minutes: number; conversion_rate: number;
+}
+interface NotificationValue {
+  id: string; title: string; message: string; priority: string;
+  action_url: string | null; read_at: string | null; created_at: string;
+}
+interface DashboardData {
   user: { name: string; role: string };
-  properties: {
-    total: number; active: number; sold: number; rented: number; withdrawn: number;
-    this_month: number; last_month: number; this_week: number;
-    no_photos: number; no_description: number; total_value: number;
-    by_category: { category: string; count: number }[];
-    by_month: { month: string; count: number }[];
-    sold_by_month: { month: string; count: number }[];
-    recent: { id: string; internal_code: string; title: string; status: string; category: string; city: string; price: number; currency: string; created_at: string }[];
-    quality_alerts: { type: string; id: string; code: string; title: string; message: string; severity: string }[];
+  scope: 'agency' | 'mine';
+  period: Period;
+  generated_at: string;
+  kpis: {
+    new_leads: number;
+    uncontacted_leads: number;
+    average_response_minutes: number;
+    viewings: number;
+    offers: number;
+    reservations: number;
+    transactions: number;
+    active_properties: number;
+    expired_properties: number;
+    listing_errors: number;
+    open_tasks: number;
+    overdue_tasks: number;
+    followups: number;
+    leads_without_next_action: number;
+    conversion_rate: number;
   };
-  contacts: { total: number; this_month: number; last_month: number; by_month: { month: string; count: number }[] };
-  clients: {
-    total: number; noi: number; resunat: number; tranzactionati: number; retrasi: number; won: number; lost: number;
-    today: number; this_week: number; this_month: number; last_month: number;
-    without_agent: number; old_uncontacted: number; by_source: { source: string; count: number }[];
-  };
-  team: { total: number; leaderboard: { user_id: string; name: string; role: string; active: number; sold: number; clients: number; activities: number; score: number }[] };
-  activities: {
-    total: number; today: number; completed_today: number; overdue: number; upcoming: number; pending: number;
-    by_type: { type: string; count: number }[];
-  };
-  tasks?: { open: number; overdue: number; due_soon: number; high_priority: number };
-  notifications: { id: string; type: string; title: string; message: string; created_at: string; severity: string; link?: string | null; read_at?: string | null }[];
-  activity: { type: string; id: string; code: string; label: string; sub: string; created_at: string }[];
-  months: string[];
+  revenue_by_currency: MoneyValue[];
+  estimated_commission_by_currency: MoneyValue[];
+  lead_sources: SourceValue[];
+  portal_performance: PortalValue[];
+  agent_performance: AgentValue[];
+  definitions: Record<string, string>;
+  notifications: NotificationValue[];
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const CAT_LABELS: Record<string, string> = {
-  apartament: 'Apartament', casa_vila: 'Casă/Vilă', spatiu_comercial: 'Comercial',
-  spatiu_industrial: 'Industrial', teren: 'Teren', pensiune_hotel: 'Hotel',
-  birou: 'Birou', garaj: 'Garaj',
+const PERIOD_LABELS: Record<Period, string> = {
+  '7d': 'Ultimele 7 zile',
+  '30d': 'Ultimele 30 zile',
+  '90d': 'Ultimele 90 zile',
+  month: 'Luna curentă',
+  year: 'Anul curent',
 };
-const CAT_COLORS = ['#0E6B54','#1a9070','#34c28e','#60d6b0','#93e4cc','#b8eedf','#d4f5ec','#e8faf5'];
-const MONTH_ABBR = ['Ian','Feb','Mar','Apr','Mai','Iun','Iul','Aug','Sep','Oct','Nov','Dec'];
 
-function monthLabel(m: string) {
-  const [, mon] = m.split('-');
-  return MONTH_ABBR[parseInt(mon, 10) - 1] || m;
+const SOURCE_LABELS: Record<string, string> = {
+  storia: 'Storia', olx: 'OLX', site: 'Site propriu', whatsapp: 'WhatsApp',
+  recomandare: 'Recomandare', manual: 'Manual', necunoscuta: 'Necunoscută',
+};
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 1 }).format(Number(value || 0));
 }
 
-function trendColor(current: number, prev: number) {
-  if (prev === 0) return 'text-gray-400';
-  return current >= prev ? 'text-emerald-600' : 'text-red-500';
+function formatMoney(values: MoneyValue[]) {
+  if (!values?.length) return '0';
+  return values.map(({ amount, currency }) =>
+    `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 0 }).format(Number(amount || 0))} ${currency}`,
+  ).join(' · ');
 }
 
-function trendPct(current: number, prev: number) {
-  if (prev === 0) return current > 0 ? '+100%' : '0%';
-  const pct = Math.round(((current - prev) / prev) * 100);
-  return pct >= 0 ? `+${pct}%` : `${pct}%`;
+function formatMinutes(value: number) {
+  const minutes = Math.max(0, Number(value || 0));
+  if (!minutes) return '0 min';
+  if (minutes < 60) return `${formatNumber(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = Math.round(minutes % 60);
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
 
-function formatVal(n: number) {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return String(n);
+function relativeTime(value: string) {
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ore`;
+  return `${Math.floor(hours / 24)} zile`;
 }
 
-function relativeTime(d: string) {
-  const diff = Date.now() - new Date(d).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}z`;
-}
-
-// ─── SVG Bar Chart ────────────────────────────────────────────────────────────
-function BarChart({ data, color = '#0E6B54', height = 120 }: { data: { month: string; count: number }[]; color?: string; height?: number }) {
-  const max = Math.max(...data.map(d => d.count), 1);
-  const W = 100 / data.length;
-  return (
-    <svg viewBox={`0 0 ${data.length * 24} ${height + 24}`} className="w-full" preserveAspectRatio="none">
-      {data.map((d, i) => {
-        const barH = (d.count / max) * height;
-        const x = i * 24 + 2;
-        const y = height - barH;
-        const isLast = i === data.length - 1;
-        return (
-          <g key={d.month}>
-            <rect x={x} y={y} width={20} height={barH}
-              rx={3} fill={isLast ? color : `${color}70`}
-              className="transition-all duration-300" />
-            {d.count > 0 && (
-              <text x={x + 10} y={y - 4} textAnchor="middle" fontSize={7} fill="#6b7280">{d.count}</text>
-            )}
-            <text x={x + 10} y={height + 16} textAnchor="middle" fontSize={7} fill={isLast ? color : '#9ca3af'}>
-              {monthLabel(d.month)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-// ─── SVG Donut Chart ──────────────────────────────────────────────────────────
-function DonutChart({ data }: { data: { label: string; value: number; color: string }[] }) {
-  const total = data.reduce((s, d) => s + d.value, 0) || 1;
-  const r = 40, cx = 50, cy = 50, stroke = 14;
-  let offset = 0;
-  const circumference = 2 * Math.PI * r;
-  return (
-    <svg viewBox="0 0 100 100" className="w-full max-w-[140px]">
-      {data.map((d, i) => {
-        const pct = d.value / total;
-        const dash = pct * circumference;
-        const gap = circumference - dash;
-        const rotation = offset * 360 - 90;
-        offset += pct;
-        return (
-          <circle key={i} cx={cx} cy={cy} r={r} fill="none"
-            stroke={d.color} strokeWidth={stroke}
-            strokeDasharray={`${dash} ${gap}`}
-            transform={`rotate(${rotation} ${cx} ${cy})`}
-            className="transition-all duration-500" />
-        );
-      })}
-      <text x={cx} y={cy - 4} textAnchor="middle" fontSize={11} fontWeight="bold" fill="#111827">{total}</text>
-      <text x={cx} y={cy + 8} textAnchor="middle" fontSize={7} fill="#6b7280">total</text>
-    </svg>
-  );
-}
-
-// ─── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ icon, label, value, prev, color, sub, mini }: {
-  icon: React.ReactNode; label: string; value: number | string; prev?: number; color: string; sub?: string; mini?: boolean;
+function KpiCard({
+  label, value, icon, definition, href, danger = false,
+}: {
+  label: string;
+  value: string | number;
+  icon: ReactNode;
+  definition: string;
+  href?: string;
+  danger?: boolean;
 }) {
-  const numVal = typeof value === 'number' ? value : 0;
-  const showTrend = prev !== undefined && typeof value === 'number';
-  return (
-    <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5 ${mini ? 'p-4' : ''}`}>
-      <div className="flex items-start justify-between mb-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>{icon}</div>
-        {showTrend && (
-          <span className={`flex items-center gap-0.5 text-xs font-semibold ${trendColor(numVal, prev!)}`}>
-            {numVal >= prev! ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-            {trendPct(numVal, prev!)}
-          </span>
-        )}
+  const body = (
+    <div className={`h-full rounded-2xl border bg-white p-4 shadow-sm transition sm:p-5 ${
+      danger ? 'border-red-200' : 'border-gray-100'
+    } ${href ? 'hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md' : ''}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+          danger ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'
+        }`}>{icon}</div>
+        <span title={definition} aria-label={`Definiție: ${definition}`}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300 hover:bg-gray-50 hover:text-gray-500">
+          <Info size={15} />
+        </span>
       </div>
-      <p className="text-3xl font-black text-gray-900 leading-none mb-1">
-        {typeof value === 'number' ? formatVal(value) : value}
-      </p>
-      <p className="text-sm font-medium text-gray-500">{label}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+      <p className={`mt-4 break-words text-2xl font-black sm:text-3xl ${danger ? 'text-red-700' : 'text-gray-950'}`}>{value}</p>
+      <p className="mt-1 text-sm font-medium text-gray-500">{label}</p>
     </div>
   );
+  return href ? <Link href={href}>{body}</Link> : body;
 }
 
-// ─── Section Header ───────────────────────────────────────────────────────────
-function SectionTitle({ icon, title, action }: { icon: React.ReactNode; title: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between mb-4">
-      <div className="flex items-center gap-2">
-        <span className="text-emerald-600">{icon}</span>
-        <h2 className="text-base font-bold text-gray-900">{title}</h2>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
-  const [data, setData] = useState<DashData | null>(null);
+  const [period, setPeriod] = useState<Period>('30d');
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { setError('Sesiune expirată'); return; }
-      const res = await fetch('/api/dashboard/overview', {
+      if (!session) throw new Error('Sesiunea a expirat.');
+      const response = await fetch(`/api/dashboard/overview?period=${period}`, {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        signal,
+        cache: 'no-store',
       });
-      if (signal?.aborted) return;
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error);
-      setData(d);
-      setLastRefresh(new Date());
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Eroare la încărcare');
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Dashboardul nu a putut fi încărcat.');
+      setData(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Dashboardul nu a putut fi încărcat.');
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      setLoading(false);
     }
-  }, []);
-
-  const refresh = useCallback(() => { load(); }, [load]);
+  }, [period]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    load(controller.signal);
-    return () => controller.abort();
+    const timeout = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timeout);
   }, [load]);
 
-  const now = new Date();
-  const hour = now.getHours();
-  const greeting = hour < 12 ? 'Bună dimineața' : hour < 18 ? 'Bună ziua' : 'Bună seara';
-  const dayName = now.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-  if (loading) {
-    return (
-      <ProtectedLayout module="dashboard">
-        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-          <div className="animate-pulse space-y-4">
-            <div className="h-24 bg-gray-100 rounded-2xl" />
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              {[...Array(5)].map((_, i) => <div key={i} className="h-28 bg-gray-100 rounded-2xl" />)}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-64 bg-gray-100 rounded-2xl" />)}
-            </div>
-          </div>
-        </div>
-      </ProtectedLayout>
-    );
-  }
-
-  if (error) {
-    return (
-      <ProtectedLayout module="dashboard">
-        <div className="p-6 text-center">
-          <p className="text-red-600 font-medium">{error}</p>
-          <button onClick={refresh} className="mt-3 px-4 py-2 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#0E6B54' }}>
-            Încearcă din nou
-          </button>
-        </div>
-      </ProtectedLayout>
-    );
-  }
-
-  if (!data) return null;
-
-  const { properties: p, contacts, clients, team, activities, notifications, activity } = data;
-
-  const donutData = p.by_category.map((c, i) => ({
-    label: CAT_LABELS[c.category] || c.category,
-    value: c.count,
-    color: CAT_COLORS[i % CAT_COLORS.length],
-  }));
-
-  const notifBg: Record<string, string> = {
-    success: 'bg-emerald-50 border-emerald-200',
-    warning: 'bg-amber-50 border-amber-200',
-    info: 'bg-blue-50 border-blue-200',
-    alert: 'bg-red-50 border-red-200',
-  };
-  const notifIcon: Record<string, React.ReactNode> = {
-    success: <CheckCircle size={14} className="text-emerald-600" />,
-    warning: <AlertTriangle size={14} className="text-amber-600" />,
-    info: <Bell size={14} className="text-blue-600" />,
-    alert: <AlertTriangle size={14} className="text-red-600" />,
-    client: <MessageSquare size={14} className="text-purple-600" />,
-  };
-
-  const actIcon: Record<string, React.ReactNode> = {
-    property: <Home size={14} className="text-emerald-600" />,
-    contact: <Users size={14} className="text-purple-600" />,
-    client: <MessageSquare size={14} className="text-orange-500" />,
-  };
+  const maxSource = useMemo(
+    () => Math.max(1, ...(data?.lead_sources || []).map((source) => Number(source.count))),
+    [data?.lead_sources],
+  );
 
   return (
     <ProtectedLayout module="dashboard">
-      <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
-
-        {/* ── Welcome Banner ── */}
-        <div className="rounded-2xl p-5 md:p-6 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0E6B54 0%, #1a9070 60%, #22c68a 100%)' }}>
-          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, white 0%, transparent 60%)' }} />
-          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <p className="text-emerald-100 text-sm capitalize">{dayName}</p>
-              <h1 className="text-2xl md:text-3xl font-black mt-1">
-                {greeting}{data.user.name ? `, ${data.user.name.split(' ')[0]}!` : '!'}
-              </h1>
-              <p className="text-emerald-100 text-sm mt-1">
-                {p.active} proprietăți active · {p.this_week} adăugate această săptămână
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 rounded-xl px-4 py-3 text-center min-w-[90px]">
-                <p className="text-2xl font-black">{p.active}</p>
-                <p className="text-xs text-emerald-100">Active</p>
-              </div>
-              <div className="bg-white/20 rounded-xl px-4 py-3 text-center min-w-[90px]">
-                <p className="text-2xl font-black">{clients.noi}</p>
-                <p className="text-xs text-emerald-100">Clienți noi</p>
-              </div>
-              <button onClick={refresh} className="p-2.5 bg-white/20 hover:bg-white/30 rounded-xl transition-colors" title="Reîmprospătează">
-                <RefreshCw size={18} />
-              </button>
-            </div>
+      <main className="mx-auto max-w-[1500px] space-y-5 p-4 pb-24 sm:p-6 lg:p-8">
+        <header className="flex flex-col gap-4 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-950 to-emerald-700 p-5 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-7">
+          <div>
+            <p className="text-sm text-emerald-100">Bun venit, {data?.user.name || '...'}</p>
+            <h1 className="mt-1 text-2xl font-black sm:text-3xl">
+              {data?.scope === 'mine' ? 'Activitatea mea' : 'Performanța agenției'}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm text-emerald-100">
+              Cifre agregate direct din baza de date, fără limite de 200/500 de rezultate.
+            </p>
           </div>
-        </div>
-
-        {/* ── KPI Row 1 ── */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-          <KpiCard icon={<Home size={20} className="text-emerald-600" />} label="Proprietăți active" value={p.active} prev={p.last_month} color="bg-emerald-50" sub={`${p.this_month} luna aceasta`} />
-          <KpiCard icon={<CheckCircle size={20} className="text-blue-600" />} label="Tranzacționate" value={p.sold} color="bg-blue-50" sub="toate timpurile" />
-          <KpiCard icon={<Target size={20} className="text-purple-600" />} label="Clienți NOI" value={clients.noi} prev={clients.last_month} color="bg-purple-50" sub={`${clients.this_month} luna aceasta`} />
-          <KpiCard icon={<Users size={20} className="text-orange-600" />} label="Contacte" value={contacts.total} prev={contacts.last_month} color="bg-orange-50" sub={`+${contacts.this_month} luna aceasta`} />
-          <KpiCard icon={<MessageSquare size={20} className="text-pink-600" />} label="Clienți în pipeline" value={clients.resunat} color="bg-pink-50" sub="contactați / vizionare / negociere" />
-          <KpiCard icon={<DollarSign size={20} className="text-teal-600" />} label="Valoare portofoliu" value={p.total_value} color="bg-teal-50" sub={`${p.active} prop. active`} />
-        </div>
-
-        {/* ── Clienți — Contor Zilnic ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Target size={18} className="text-purple-600" />
-              <h3 className="font-bold text-gray-900">Clienți — Contor Zilnic</h3>
-            </div>
-            <span className="text-xs text-gray-400">{new Date().toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+          <div className="flex w-full gap-2 sm:w-auto">
+            <select value={period} onChange={(event) => setPeriod(event.target.value as Period)}
+              className="mobile-touch-target min-w-0 flex-1 rounded-xl border border-white/20 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-950 sm:w-48">
+              {(Object.keys(PERIOD_LABELS) as Period[]).map((key) => (
+                <option key={key} value={key}>{PERIOD_LABELS[key]}</option>
+              ))}
+            </select>
+            <button onClick={() => void load()} disabled={loading}
+              className="mobile-touch-target inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 px-3 text-white hover:bg-white/20 disabled:opacity-50"
+              aria-label="Reîmprospătează dashboardul">
+              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+            </button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-purple-700">{clients.today}</p>
-              <p className="text-xs font-medium text-purple-600 mt-1">Noi azi</p>
-            </div>
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-emerald-700">{clients.total}</p>
-              <p className="text-xs font-medium text-emerald-600 mt-1">Total clienți</p>
-            </div>
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-blue-700">{clients.won}</p>
-              <p className="text-xs font-medium text-blue-600 mt-1">Câștigați</p>
-            </div>
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-amber-700">{clients.resunat}</p>
-              <p className="text-xs font-medium text-amber-600 mt-1">În pipeline</p>
-            </div>
-          </div>
-          {clients.without_agent > 0 && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              <AlertTriangle size={14} className="flex-shrink-0" />
-              <span>{clients.without_agent} clienți fără agent responsabil</span>
-              <Link href="/clients" className="ml-auto font-medium underline hover:text-amber-900">Alocă</Link>
-            </div>
-          )}
-        </div>
+        </header>
 
-        {/* ── Activități — Statistici ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Calendar size={18} className="text-blue-600" />
-              <h3 className="font-bold text-gray-900">Activități — Statistici</h3>
-            </div>
-            <Link href="/calendar" className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1">
-              Vezi toate <ChevronRight size={12} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-blue-700">{(activities || { today: 0 }).today}</p>
-              <p className="text-xs font-medium text-blue-600 mt-1">Programate azi</p>
-            </div>
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-emerald-700">{(activities || { completed_today: 0 }).completed_today}</p>
-              <p className="text-xs font-medium text-emerald-600 mt-1">Finalizate azi</p>
-            </div>
-            <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-red-700">{(activities || { overdue: 0 }).overdue}</p>
-              <p className="text-xs font-medium text-red-600 mt-1">Restante</p>
-            </div>
-            <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 text-center">
-              <p className="text-3xl font-black text-purple-700">{(activities || { upcoming: 0 }).upcoming}</p>
-              <p className="text-xs font-medium text-purple-600 mt-1">Viitoare</p>
-            </div>
-          </div>
-          {activities && activities.by_type.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {activities.by_type.map(t => {
-                const typeColors: Record<string, string> = {
-                  vizionare: 'bg-blue-100 text-blue-700',
-                  preluare: 'bg-emerald-100 text-emerald-700',
-                  cerere: 'bg-purple-100 text-purple-700',
-                  intalnire: 'bg-orange-100 text-orange-700',
-                  followup: 'bg-teal-100 text-teal-700',
-                  task: 'bg-gray-100 text-gray-600',
-                };
-                const typeLabels: Record<string, string> = {
-                  vizionare: 'Vizionare', preluare: 'Preluare', cerere: 'Cerere',
-                  intalnire: 'Întâlnire', followup: 'Follow-up', task: 'Task',
-                };
-                return (
-                  <span key={t.type} className={`px-2.5 py-1 rounded-full text-xs font-semibold ${typeColors[t.type] || 'bg-gray-100 text-gray-600'}`}>
-                    {typeLabels[t.type] || t.type}: {t.count}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          {activities && activities.overdue > 0 && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              <AlertTriangle size={14} className="flex-shrink-0" />
-              <span>{activities.overdue} activități restante — verifică și actualizează statusul</span>
-              <Link href="/calendar" className="ml-auto font-medium underline hover:text-red-900">Deschide</Link>
-            </div>
-          )}
-        </div>
-
-        {/* ── Quick Alerts ── */}
-        {(p.no_photos > 0 || p.no_description > 0 || clients.old_uncontacted > 0) && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {p.no_photos > 0 && (
-              <Link href="/properties" className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4 hover:bg-amber-100 transition-colors">
-                <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0"><Image size={18} className="text-amber-600" /></div>
-                <div><p className="font-bold text-amber-800 text-sm">{p.no_photos} proprietăți fără poze</p><p className="text-xs text-amber-600">Adaugă fotografii pentru mai multe vizualizări</p></div>
-              </Link>
-            )}
-            {p.no_description > 0 && (
-              <Link href="/properties" className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4 hover:bg-blue-100 transition-colors">
-                <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0"><FileText size={18} className="text-blue-600" /></div>
-                <div><p className="font-bold text-blue-800 text-sm">{p.no_description} fără descriere</p><p className="text-xs text-blue-600">Completează descrierile pentru SEO mai bun</p></div>
-              </Link>
-            )}
-            {clients.old_uncontacted > 0 && (
-              <Link href="/clients" className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-4 hover:bg-red-100 transition-colors">
-                <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0"><Clock size={18} className="text-red-600" /></div>
-                <div><p className="font-bold text-red-800 text-sm">{clients.old_uncontacted} clienți neatinși</p><p className="text-xs text-red-600">Clienți noi mai vechi de 14 zile, fără răspuns</p></div>
-              </Link>
-            )}
+        {error && (
+          <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <AlertTriangle size={18} />{error}
           </div>
         )}
 
-        {/* ── Charts Row ── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Monthly Bar Chart */}
-          <div className="md:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle icon={<Activity size={18} />} title="Proprietăți adăugate — 12 luni" />
-            <BarChart data={p.by_month} />
-            <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded" style={{ backgroundColor: '#0E6B54' }} />Luna curentă</span>
-              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded" style={{ backgroundColor: '#0E6B5470' }} />Luni anterioare</span>
-            </div>
+        {loading && !data ? (
+          <div className="flex min-h-80 items-center justify-center rounded-2xl border border-gray-100 bg-white">
+            <Loader2 className="animate-spin text-emerald-700" size={28} />
           </div>
+        ) : data ? (
+          <>
+            <section>
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-950">Indicatori operaționali</h2>
+                  <p className="text-sm text-gray-500">{PERIOD_LABELS[period]} · stocurile curente sunt marcate în definiție</p>
+                </div>
+                <span className="hidden text-xs text-gray-400 sm:block">
+                  Calculat la {new Date(data.generated_at).toLocaleString('ro-RO')}
+                </span>
+              </div>
 
-          {/* Category Donut */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle icon={<Building2 size={18} />} title="Pe categorii" />
-            {donutData.length > 0 ? (
-              <div className="flex items-center gap-4">
-                <DonutChart data={donutData} />
-                <div className="space-y-2 flex-1">
-                  {donutData.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-gray-600 truncate">{d.label}</span>
+              {data.scope === 'agency' ? (
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-5">
+                  <KpiCard label="Leaduri noi" value={data.kpis.new_leads} icon={<Users size={20} />}
+                    definition={data.definitions.new_leads} href="/clients" />
+                  <KpiCard label="Leaduri necontactate" value={data.kpis.uncontacted_leads} icon={<MessageSquareText size={20} />}
+                    definition={data.definitions.uncontacted_leads} href="/clients" danger={data.kpis.uncontacted_leads > 0} />
+                  <KpiCard label="Timp mediu de răspuns" value={formatMinutes(data.kpis.average_response_minutes)} icon={<Clock3 size={20} />}
+                    definition={data.definitions.average_response_minutes} />
+                  <KpiCard label="Vizionări" value={data.kpis.viewings} icon={<CalendarDays size={20} />}
+                    definition={data.definitions.viewings} href="/viewings" />
+                  <KpiCard label="Oferte" value={data.kpis.offers} icon={<Send size={20} />}
+                    definition={data.definitions.offers} href="/pipeline" />
+                  <KpiCard label="Rezervări" value={data.kpis.reservations} icon={<UserRoundCheck size={20} />}
+                    definition={data.definitions.reservations} href="/pipeline" />
+                  <KpiCard label="Tranzacții" value={data.kpis.transactions} icon={<CheckCircle2 size={20} />}
+                    definition={data.definitions.transactions} href="/finance" />
+                  <KpiCard label="Venit înregistrat" value={formatMoney(data.revenue_by_currency)} icon={<Banknote size={20} />}
+                    definition={data.definitions.revenue} href="/finance" />
+                  <KpiCard label="Comisioane estimate" value={formatMoney(data.estimated_commission_by_currency)} icon={<CircleDollarSign size={20} />}
+                    definition={data.definitions.estimated_commission} href="/finance" />
+                  <KpiCard label="Rată de conversie" value={`${formatNumber(data.kpis.conversion_rate)}%`} icon={<Percent size={20} />}
+                    definition={data.definitions.conversion_rate} />
+                  <KpiCard label="Proprietăți active" value={data.kpis.active_properties} icon={<Building2 size={20} />}
+                    definition={data.definitions.active_properties} href="/properties" />
+                  <KpiCard label="Proprietăți expirate" value={data.kpis.expired_properties} icon={<AlertTriangle size={20} />}
+                    definition={data.definitions.expired_properties} href="/properties" danger={data.kpis.expired_properties > 0} />
+                  <KpiCard label="Listări cu erori" value={data.kpis.listing_errors} icon={<FileWarning size={20} />}
+                    definition={data.definitions.listing_errors} href="/portals" danger={data.kpis.listing_errors > 0} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <KpiCard label="Leadurile mele" value={data.kpis.new_leads} icon={<Users size={20} />}
+                    definition={data.definitions.new_leads} href="/clients" />
+                  <KpiCard label="Taskurile mele" value={data.kpis.open_tasks} icon={<ListTodo size={20} />}
+                    definition={data.definitions.open_tasks} href="/tasks" danger={data.kpis.overdue_tasks > 0} />
+                  <KpiCard label="Vizionările mele" value={data.kpis.viewings} icon={<CalendarDays size={20} />}
+                    definition={data.definitions.viewings} href="/viewings" />
+                  <KpiCard label="Follow-up-uri" value={data.kpis.followups} icon={<MessageSquareText size={20} />}
+                    definition={data.definitions.followups} href="/tasks" />
+                  <KpiCard label="Proprietățile mele" value={data.kpis.active_properties} icon={<Building2 size={20} />}
+                    definition={data.definitions.active_properties} href="/properties" />
+                  <KpiCard label="Tranzacțiile mele" value={data.kpis.transactions} icon={<CheckCircle2 size={20} />}
+                    definition={data.definitions.transactions} href="/finance" />
+                  <KpiCard label="Comision estimat" value={formatMoney(data.estimated_commission_by_currency)} icon={<CircleDollarSign size={20} />}
+                    definition={data.definitions.estimated_commission} href="/finance" />
+                  <KpiCard label="Fără următoarea acțiune" value={data.kpis.leads_without_next_action} icon={<Target size={20} />}
+                    definition={data.definitions.leads_without_next_action} href="/clients" danger={data.kpis.leads_without_next_action > 0} />
+                </div>
+              )}
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <h2 className="font-bold text-gray-950">Sursa leadurilor</h2>
+                <p className="mt-1 text-sm text-gray-500">Leaduri primite în perioada selectată</p>
+                <div className="mt-5 space-y-4">
+                  {data.lead_sources.length ? data.lead_sources.map((source) => (
+                    <div key={source.source}>
+                      <div className="mb-1.5 flex items-center justify-between text-sm">
+                        <span className="font-medium text-gray-700">{SOURCE_LABELS[source.source] || source.source}</span>
+                        <span className="font-bold text-gray-950">{source.count}</span>
                       </div>
-                      <span className="font-bold text-gray-800 ml-2">{d.value}</span>
+                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-full rounded-full bg-emerald-600"
+                          style={{ width: `${Math.max(3, (source.count / maxSource) * 100)}%` }} />
+                      </div>
                     </div>
-                  ))}
+                  )) : <p className="py-8 text-center text-sm text-gray-400">Nu există leaduri în perioadă.</p>}
                 </div>
               </div>
-            ) : (
-              <div className="flex items-center justify-center h-32 text-gray-300 text-sm">Nicio proprietate</div>
-            )}
-          </div>
-        </div>
 
-        {/* ── Middle Row: Agent Leaderboard + Notifications ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Agent Leaderboard */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle
-              icon={<Award size={18} />}
-              title="Performanță agenți"
-              action={<Link href="/team" className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1">Echipă <ChevronRight size={12} /></Link>}
-            />
-            {team.leaderboard.length === 0 ? (
-              <div className="text-center py-8 text-gray-300 text-sm">Niciun agent</div>
-            ) : (
-              <div className="space-y-3">
-                {team.leaderboard.slice(0, 5).map((agent, i) => (
-                  <div key={agent.user_id} className="flex items-center gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0 ${i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-gray-100 text-gray-600' : i === 2 ? 'bg-orange-100 text-orange-600' : 'bg-gray-50 text-gray-400'}`}>
-                      {i + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{agent.name}</p>
-                        <span className="text-xs font-bold text-emerald-600 ml-2">{agent.score}p</span>
-                      </div>
-                      <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
-                        <span><span className="font-medium text-gray-600">{agent.active}</span> active</span>
-                        <span><span className="font-medium text-gray-600">{agent.sold}</span> vândate</span>
-                        <span><span className="font-medium text-gray-600">{agent.clients}</span> clienți</span>
-                        <span><span className="font-medium text-blue-600">{agent.activities || 0}</span> activit.</span>
-                      </div>
-                    </div>
-                    {i === 0 && <Star size={14} className="text-yellow-500 flex-shrink-0" />}
+              <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-bold text-gray-950">Notificări operaționale</h2>
+                    <p className="mt-1 text-sm text-gray-500">Aceeași sursă persistentă ca inboxul CRM</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Notifications */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle icon={<Bell size={18} />} title="Notificări & Alerte" />
-            {notifications.length === 0 ? (
-              <div className="text-center py-8 text-gray-300 text-sm">Nicio notificare</div>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {notifications.map((n) => (
-                  <Link href={n.link || '/notifications'} key={n.id} className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-sm ${notifBg[n.severity] || notifBg[n.type] || 'bg-gray-50 border-gray-200'} ${n.read_at ? 'opacity-70' : ''}`}>
-                    <div className="mt-0.5 flex-shrink-0">{notifIcon[n.type] || notifIcon[n.severity] || <Bell size={14} />}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-800 text-xs leading-snug">{n.title}</p>
-                      <p className="text-gray-600 text-xs leading-snug">{n.message}</p>
-                      <p className="text-gray-400 text-xs mt-0.5">{relativeTime(n.created_at)} în urmă</p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── AI Suggestions + Quality ── */}
-        {p.quality_alerts.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle icon={<Zap size={18} />} title="Sugestii AI — Calitate portofoliu" />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {p.quality_alerts.map((a, i) => {
-                const sev = a.severity === 'high' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50';
-                const ic = a.severity === 'high' ? <AlertTriangle size={14} className="text-red-600" /> : <Eye size={14} className="text-amber-600" />;
-                const typeIcon = a.type === 'no_photos' ? <Image size={14} className="text-gray-400" /> : a.type === 'no_description' ? <FileText size={14} className="text-gray-400" /> : <DollarSign size={14} className="text-gray-400" />;
-                return (
-                  <Link key={i} href={`/properties/${a.id}`} className={`flex items-center gap-3 p-3 rounded-xl border ${sev} hover:opacity-80 transition-opacity`}>
-                    <div className="flex-shrink-0">{ic}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        {typeIcon}
-                        <p className="text-xs font-mono text-gray-400">{a.code}</p>
+                  <Link href="/notifications" className="text-sm font-semibold text-emerald-700 hover:underline">Vezi toate</Link>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {data.notifications.length ? data.notifications.map((notification) => (
+                    <Link key={notification.id} href={notification.action_url || '/notifications'}
+                      className={`flex items-start gap-3 rounded-xl border p-3 transition hover:bg-gray-50 ${
+                        notification.priority === 'urgent' ? 'border-red-200 bg-red-50/50' : 'border-gray-100'
+                      } ${notification.read_at ? 'opacity-65' : ''}`}>
+                      <Bell size={16} className="mt-0.5 shrink-0 text-emerald-700" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-gray-900">{notification.title}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{notification.message}</p>
                       </div>
-                      <p className="text-xs font-medium text-gray-800 truncate">{a.title}</p>
-                      <p className="text-xs text-gray-500">{a.message}</p>
-                    </div>
-                    <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ── Bottom Row: Recent Props + Activity ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Recent Properties */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle
-              icon={<Home size={18} />}
-              title="Proprietăți recente"
-              action={<Link href="/properties" className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1">Vezi toate <ChevronRight size={12} /></Link>}
-            />
-            {p.recent.length === 0 ? (
-              <div className="text-center py-8 text-gray-300 text-sm">Nicio proprietate</div>
-            ) : (
-              <div className="space-y-2.5">
-                {p.recent.map(prop => {
-                  const statusC: Record<string, string> = { activa: 'bg-emerald-100 text-emerald-700', rezervata: 'bg-amber-100 text-amber-700', tranzactionata: 'bg-blue-100 text-blue-700', vanduta_noi: 'bg-blue-100 text-blue-700', vanduta_altii: 'bg-teal-100 text-teal-700', inchiriata: 'bg-purple-100 text-purple-700', retrasa: 'bg-gray-100 text-gray-500', expirata: 'bg-orange-100 text-orange-600', draft: 'bg-yellow-100 text-yellow-700', arhivata: 'bg-gray-100 text-gray-500' };
-                  const statusL: Record<string, string> = { activa: 'Activă', rezervata: 'Rezervată', tranzactionata: 'Tranzacț.', vanduta_noi: 'Vândută', vanduta_altii: 'Vândută', inchiriata: 'Închiriată', retrasa: 'Retrasă', expirata: 'Expirată', draft: 'Draft', arhivata: 'Arhivată' };
-                  return (
-                    <Link key={prop.id} href={`/properties/${prop.id}`} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50 transition-colors group">
-                      <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Home size={15} className="text-emerald-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-emerald-700">{prop.title || prop.internal_code}</p>
-                        <p className="text-xs text-gray-400">{CAT_LABELS[prop.category] || prop.category} · {prop.city}</p>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusC[prop.status] || 'bg-gray-100 text-gray-500'}`}>{statusL[prop.status] || prop.status}</span>
-                        <p className="text-xs text-gray-400 mt-0.5">{relativeTime(prop.created_at)}</p>
-                      </div>
+                      <span className="shrink-0 text-[11px] text-gray-400">{relativeTime(notification.created_at)}</span>
                     </Link>
-                  );
-                })}
+                  )) : <p className="py-8 text-center text-sm text-gray-400">Nu există notificări.</p>}
+                </div>
               </div>
-            )}
-          </div>
+            </section>
 
-          {/* Activity Feed */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <SectionTitle icon={<Activity size={18} />} title="Activitate recentă" />
-            {activity.length === 0 ? (
-              <div className="text-center py-8 text-gray-300 text-sm">Nicio activitate</div>
-            ) : (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
-                {activity.map((ev, i) => (
-                  <div key={i} className="flex items-start gap-2.5 py-2 border-b border-gray-50 last:border-0">
-                    <div className="w-6 h-6 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-                      {actIcon[ev.type] || <Activity size={12} className="text-gray-400" />}
+            {data.scope === 'agency' && (
+              <>
+                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="font-bold text-gray-950">Performanță portaluri</h2>
+                      <p className="mt-1 text-sm text-gray-500">Starea curentă a tuturor listărilor din portofoliu</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-800 leading-snug">{ev.label}</p>
-                      {ev.sub && <p className="text-xs text-gray-400 capitalize">{ev.sub}</p>}
+                    <Link href="/portals" className="text-sm font-semibold text-emerald-700 hover:underline">Portaluri</Link>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {data.portal_performance.length ? data.portal_performance.map((portal) => (
+                      <article key={portal.portal} className="rounded-xl border border-gray-100 p-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-bold capitalize text-gray-950">{portal.portal}</h3>
+                          <span className={`rounded-full px-2 py-1 text-xs font-bold ${
+                            portal.errors ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'
+                          }`}>{formatNumber(portal.success_rate)}% active</span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+                          {[['Total', portal.total], ['Active', portal.active], ['Erori', portal.errors], ['În lucru', portal.pending]].map(([label, value]) => (
+                            <div key={String(label)} className="rounded-lg bg-gray-50 p-2">
+                              <p className="font-black text-gray-900">{value}</p>
+                              <p className="text-[10px] text-gray-500">{label}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </article>
+                    )) : <p className="py-8 text-sm text-gray-400">Nu există listări pe portaluri.</p>}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="font-bold text-gray-950">Performanță agenți</h2>
+                      <p className="mt-1 text-sm text-gray-500">Aceeași perioadă și aceleași definiții pentru fiecare agent</p>
                     </div>
-                    <span className="text-xs text-gray-300 flex-shrink-0">{relativeTime(ev.created_at)}</span>
+                    <Link href="/team" className="text-sm font-semibold text-emerald-700 hover:underline">Echipă</Link>
+                  </div>
+                  <div className="mt-4 overflow-x-auto rounded-xl border border-gray-100">
+                    <table className="min-w-[760px] w-full text-sm">
+                      <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3">Agent</th><th className="px-4 py-3 text-right">Leaduri</th>
+                          <th className="px-4 py-3 text-right">Răspuns mediu</th><th className="px-4 py-3 text-right">Vizionări</th>
+                          <th className="px-4 py-3 text-right">Tranzacții</th><th className="px-4 py-3 text-right">Conversie</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.agent_performance.map((agent) => (
+                          <tr key={agent.user_id} className="border-t border-gray-100">
+                            <td className="px-4 py-3"><p className="font-semibold text-gray-900">{agent.name}</p><p className="text-xs text-gray-400">{agent.role}</p></td>
+                            <td className="px-4 py-3 text-right font-semibold">{agent.leads}</td>
+                            <td className="px-4 py-3 text-right">{formatMinutes(agent.average_response_minutes)}</td>
+                            <td className="px-4 py-3 text-right">{agent.viewings}</td>
+                            <td className="px-4 py-3 text-right">{agent.transactions}</td>
+                            <td className="px-4 py-3 text-right font-bold text-emerald-700">{formatNumber(agent.conversion_rate)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
+
+            <details className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+              <summary className="cursor-pointer font-bold text-gray-950">Cum sunt calculați indicatorii</summary>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {Object.entries(data.definitions).map(([key, definition]) => (
+                  <div key={key} className="rounded-xl bg-gray-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">{key.replaceAll('_', ' ')}</p>
+                    <p className="mt-1 text-sm text-gray-600">{definition}</p>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* ── Clienți — Rezumat (câte o casetă per tab din pagina Clienți) ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: 'Clienți NOI', value: clients.noi, color: 'bg-emerald-500', icon: <MessageSquare size={16} className="text-white" /> },
-            { label: 'Clienți', value: clients.resunat, color: 'bg-blue-500', icon: <Activity size={16} className="text-white" /> },
-            { label: 'Clienți Tranzacționați', value: clients.tranzactionati, color: 'bg-indigo-500', icon: <CheckCircle size={16} className="text-white" /> },
-            { label: 'Clienți retrași', value: clients.retrasi, color: 'bg-gray-400', icon: <AlertTriangle size={16} className="text-white" /> },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-              <div className={`w-9 h-9 ${s.color} rounded-xl flex items-center justify-center flex-shrink-0`}>{s.icon}</div>
-              <div>
-                <p className="text-2xl font-black text-gray-900">{s.value}</p>
-                <p className="text-xs text-gray-500">{s.label}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <p className="text-center text-xs text-gray-300 pb-2">
-          Actualizat la {lastRefresh.toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}
-          {' '}·{' '}
-          <button onClick={refresh} className="text-emerald-400 hover:text-emerald-600">Reîmprospătează</button>
-        </p>
-      </div>
+            </details>
+          </>
+        ) : null}
+      </main>
     </ProtectedLayout>
   );
 }

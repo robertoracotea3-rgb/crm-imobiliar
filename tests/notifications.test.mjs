@@ -40,7 +40,8 @@ test('inbox is persistent, paginated and never uses browser-local read state', a
 test('dashboard and inbox use the same notifications table', async () => {
   const route = await read('app/api/dashboard/overview/route.ts');
   assert.match(route, /\.from\('notifications'\)/);
-  assert.match(route, /syncTimeBasedNotifications/);
+  assert.match(route, /\.eq\('user_id', user\.id\)/);
+  assert.match(route, /\.is\('dismissed_at', null\)/);
   assert.doesNotMatch(route, /new_client_agent_|no_photos_batch|demand_match_\$\{/);
 });
 
