@@ -1,6 +1,11 @@
 // Upload poze din client: redimensionează în browser, trimite în LOTURI mici
 // (fiecare request rămâne sub timeout-ul Vercel), verifică fiecare răspuns.
 import { resizeAll } from './resize-image';
+import {
+  PROPERTY_PHOTO_ALLOWED_MIME,
+  PROPERTY_PHOTO_MAX_FILES,
+  PROPERTY_PHOTO_MAX_UPLOAD_BYTES,
+} from './property-media';
 
 const BATCH_SIZE = 4; // poze per request → fiecare upload se termină rapid
 
@@ -11,17 +16,44 @@ export interface UploadResult {
   error?: string;
 }
 
+export interface ExistingPhotoInput {
+  url: string;
+  alt_text?: string;
+  description?: string | null;
+}
+
 export async function uploadPropertyPhotos(opts: {
   propertyId: string;
+  /** @deprecated Agenția este determinată exclusiv pe server din sesiune. */
   agencyId: string;
   photos: File[];
   token: string;
   replacePhotos?: boolean;
   existingPhotos?: string[];
+  existingMedia?: ExistingPhotoInput[];
   enhance?: boolean;
   onProgress?: (done: number, total: number) => void;
 }): Promise<UploadResult> {
-  const { propertyId, agencyId, photos, token, replacePhotos, existingPhotos, enhance, onProgress } = opts;
+  const { propertyId, photos, token, replacePhotos, existingPhotos, existingMedia, enhance, onProgress } = opts;
+  const retainedMedia = existingMedia ?? (existingPhotos || []).map((url) => ({ url }));
+  if (retainedMedia.length + photos.length > PROPERTY_PHOTO_MAX_FILES) {
+    return {
+      ok: false,
+      uploaded: 0,
+      total: photos.length,
+      error: `Galeria poate conține maximum ${PROPERTY_PHOTO_MAX_FILES} fotografii.`,
+    };
+  }
+  for (const file of photos) {
+    if (!PROPERTY_PHOTO_ALLOWED_MIME.has(file.type) || file.size <= 0 || file.size > PROPERTY_PHOTO_MAX_UPLOAD_BYTES) {
+      return {
+        ok: false,
+        uploaded: 0,
+        total: photos.length,
+        error: `Fișier invalid: ${file.name}. Sunt acceptate JPEG, PNG, WebP și HEIC, maximum 10 MB.`,
+      };
+    }
+  }
 
   // Caz „reordonare/ștergere fără poze noi": trimitem un singur request care
   // persistă ordinea/ștergerile existentelor (replacePhotos + existingPhotos).
@@ -29,9 +61,8 @@ export async function uploadPropertyPhotos(opts: {
     if (replacePhotos) {
       const form = new FormData();
       form.append('propertyId', propertyId);
-      form.append('agencyId', agencyId);
       form.append('replacePhotos', 'true');
-      form.append('existingPhotos', JSON.stringify(existingPhotos ?? []));
+      form.append('existingMedia', JSON.stringify(retainedMedia));
       try {
         const res = await fetch('/api/properties/upload-photos', {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
@@ -56,12 +87,11 @@ export async function uploadPropertyPhotos(opts: {
     const batch = resized.slice(i, i + BATCH_SIZE);
     const form = new FormData();
     form.append('propertyId', propertyId);
-    form.append('agencyId', agencyId);
     if (enhance) form.append('enhance', 'true');
     // replacePhotos doar pe primul lot; loturile următoare se adaugă
     if (replacePhotos && i === 0) {
       form.append('replacePhotos', 'true');
-      if (existingPhotos) form.append('existingPhotos', JSON.stringify(existingPhotos));
+      form.append('existingMedia', JSON.stringify(retainedMedia));
     }
     batch.forEach(f => form.append('photos', f));
 

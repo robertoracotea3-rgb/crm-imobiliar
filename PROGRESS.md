@@ -13,7 +13,7 @@
 - [x] **Multi-tenant** — izolare completă prin `agency_id` în toate interogările
 - [x] **RBAC** — roluri: `owner`, `admin`, `agent`; protecție rute Finance/Portals/Team/Settings
 - [x] **Dashboard** — KPI-uri, activitate recentă, widget taskuri scadente
-- [x] **Proprietăți** — CRUD complet, upload poze, hartă (MapPicker + vizualizare), AI assistant
+- [x] **Proprietăți** — editor canonic, validare unitară, hartă, AI și galerie atomică cu ordine, copertă, ALT, variante comprimate și cleanup sigur
 - [x] **Contacte** — CRUD, căutare
 - [x] **Cereri & potriviri** — cereri clienți, matching automat cu proprietăți
 - [x] **Lead-uri** — pipeline Kanban drag & drop, wait time formatat (59m / 2h 30m / 1z 5h)

@@ -23,6 +23,7 @@ const externalOrDisabledRoutes = new Set([
   'app/api/portals/storia/callback/route.ts',
   'app/api/portals/storia/webhook/route.ts',
   'app/api/supabase-run-sql/route.ts',
+  'app/api/properties/update/route.ts',
   'app/api/transactions/create/route.ts',
 ]);
 

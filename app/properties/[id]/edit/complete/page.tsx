@@ -2,9 +2,9 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { ChevronRight, ChevronLeft, Upload, ImageIcon, Search, Trash2, GripVertical, Star, ArrowLeft, ArrowRight, Copy, CheckCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/lib/auth-context';
 import { JUDETE, getCities, filterOptions } from '@/lib/romania-locations';
 import { uploadPropertyPhotos } from '@/lib/upload-photos-client';
 import { MapPicker } from '@/components/MapPicker';
@@ -140,12 +140,6 @@ const TIP_PROPRIETATE = [
   'Birou', 'Hală', 'Industrial', 'Hotel/Pensiune', 'Garaj', 'Fermă',
 ];
 
-const CODE_PREFIX: Record<string, string> = {
-  'Apartament': 'AP', 'Casă/Vilă': 'CV', 'Teren': 'TR',
-  'Spațiu comercial': 'SC', 'Birou': 'BR', 'Hală': 'HL',
-  'Industrial': 'IN', 'Hotel/Pensiune': 'PH', 'Garaj': 'GR', 'Fermă': 'FR',
-};
-
 interface FD {
   title: string; internal_code: string; tip_oferta: string;
   tip_proprietate: string; price: string; currency: string;
@@ -254,13 +248,13 @@ const EMPTY: FD = {
 export default function EditPropertyPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
 
   const [step, setStep] = useState(1);
   const [fd, setFd] = useState<FD>(EMPTY);
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
+  const [photoDetails, setPhotoDetails] = useState<Record<string, { alt_text: string; description: string }>>({});
   const [enhancePhotos, setEnhancePhotos] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -288,11 +282,7 @@ export default function EditPropertyPage() {
   const [contactOpen, setContactOpen] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchProperty();
-  }, [params.id]);
-
-  const fetchProperty = async () => {
+  const fetchProperty = useCallback(async () => {
     try {
       setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
@@ -308,7 +298,16 @@ export default function EditPropertyPage() {
       const attrs = p.attributes || {};
 
       setAgencyId(p.agency_id || null);
+      setSelectedContactId(p.owner_contact_id || null);
       setExistingPhotos(attrs.photos || []);
+      setPhotoDetails(Object.fromEntries(
+        (d.property_media || [])
+          .filter((media: { public_url?: string }) => media.public_url)
+          .map((media: { public_url: string; alt_text?: string; description?: string }) => [
+            media.public_url,
+            { alt_text: media.alt_text || '', description: media.description || '' },
+          ]),
+      ));
 
       const formData: FD = {
         title: p.title || '',
@@ -469,7 +468,12 @@ export default function EditPropertyPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load authenticated property data when the route changes
+    void fetchProperty();
+  }, [fetchProperty]);
 
   const filteredContacts = contactSearch.length > 0
     ? contacts.filter(c =>
@@ -717,30 +721,33 @@ export default function EditPropertyPage() {
           longitude: fd.lon ? parseFloat(fd.lon) : null,
           attributes,
           agent_id: fd.agent_id || null,
+          owner_contact_id: selectedContactId,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Eroare server');
 
-      // Handle photos — redimensionate + în loturi, cu verificare
-      if (photos.length > 0 || existingPhotos.length > 0) {
-        const up = await uploadPropertyPhotos({
-          propertyId: String(params.id),
-          agencyId: agencyId || '',
-          photos,
-          token: session.access_token,
-          replacePhotos: true,
-          existingPhotos,
-          enhance: enhancePhotos,
-          onProgress: (done, total) => setStatus(`Se incarca pozele... ${done}/${total}`),
-        });
-        if (!up.ok) {
-          setStatus('');
-          setError(`Datele s-au salvat, dar pozele au eșuat: ${up.error}. Reîncearcă din editare.`);
-          setLoading(false);
-          return;
-        }
+      // Sincronizarea galeriei rulează și când toate fotografiile au fost șterse.
+      const up = await uploadPropertyPhotos({
+        propertyId: String(params.id),
+        agencyId: agencyId || '',
+        photos,
+        token: session.access_token,
+        replacePhotos: true,
+        existingMedia: existingPhotos.map(url => ({
+          url,
+          alt_text: photoDetails[url]?.alt_text || '',
+          description: photoDetails[url]?.description || null,
+        })),
+        enhance: enhancePhotos,
+        onProgress: (done, total) => setStatus(`Se incarca pozele... ${done}/${total}`),
+      });
+      if (!up.ok) {
+        setStatus('');
+        setError(`Datele s-au salvat, dar pozele au eșuat: ${up.error}. Reîncearcă din editare.`);
+        setLoading(false);
+        return;
       }
 
       // Auto-unpublish from Storia/OLX when user turns off the checkbox
@@ -1411,7 +1418,9 @@ export default function EditPropertyPage() {
                           dragIndex === i ? 'border-emerald-500 ring-2 ring-emerald-300 opacity-60' : 'border-gray-200 hover:border-emerald-300'
                         }`}
                       >
-                        <img src={url} alt="" className="w-full h-20 object-cover rounded-lg pointer-events-none" />
+                        <div className="relative">
+                        <Image src={url} alt={photoDetails[url]?.alt_text || ''} width={320} height={160}
+                          className="w-full h-20 object-cover rounded-t-lg pointer-events-none" />
 
                         {/* Order index */}
                         <span className="absolute top-1 left-1 bg-black/60 text-white text-[10px] font-semibold w-4 h-4 flex items-center justify-center rounded-full">
@@ -1452,6 +1461,31 @@ export default function EditPropertyPage() {
                             <ArrowRight size={11} />
                           </button>
                         </div>
+                        </div>
+                        <div className="space-y-1 p-1.5" onPointerDown={e => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            maxLength={160}
+                            value={photoDetails[url]?.alt_text || ''}
+                            onChange={e => setPhotoDetails(current => ({
+                              ...current,
+                              [url]: { ...current[url], alt_text: e.target.value, description: current[url]?.description || '' },
+                            }))}
+                            placeholder="Text ALT (ce se vede în fotografie)"
+                            className="w-full rounded border border-gray-200 px-1.5 py-1 text-[10px] text-gray-700"
+                          />
+                          <input
+                            type="text"
+                            maxLength={500}
+                            value={photoDetails[url]?.description || ''}
+                            onChange={e => setPhotoDetails(current => ({
+                              ...current,
+                              [url]: { ...current[url], alt_text: current[url]?.alt_text || '', description: e.target.value },
+                            }))}
+                            placeholder="Descriere fotografie"
+                            className="w-full rounded border border-gray-200 px-1.5 py-1 text-[10px] text-gray-700"
+                          />
+                        </div>
                       </div>
                     );
                   })}
@@ -1465,7 +1499,8 @@ export default function EditPropertyPage() {
                 <div className="grid grid-cols-4 gap-2">
                   {previews.map((p, i) => (
                     <div key={i} className="relative group">
-                      <img src={p} alt="" className="w-full h-20 object-cover rounded-lg border border-gray-200" />
+                      <Image src={p} alt={`Fotografie nouă ${i + 1}`} width={320} height={160} unoptimized
+                        className="w-full h-20 object-cover rounded-lg border border-gray-200" />
                       <button onClick={() => removePhoto(i)}
                         className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Trash2 size={12} />

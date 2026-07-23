@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { logActivity, diffFields, getUserName } from '@/lib/activity-log';
+import { normalizePropertyWrite } from '@/lib/property-form';
 import { requireApiAuth } from '@/lib/server/api-auth';
 import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 
@@ -14,12 +15,6 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
-function num(v: unknown): number | null {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 export async function POST(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
@@ -27,57 +22,68 @@ export async function POST(request: Request) {
     const { admin, serviceAdmin, user, agencyId } = auth.context;
 
     const body = await request.json();
-    const { id, title, price, currency, description, county, city, zone, street, street_number, latitude, longitude, attributes, agent_id } = body;
-
-    if (!id || typeof title !== 'string' || !title.trim()) {
-      return Response.json({ error: 'ID sau titlu lipsă' }, { status: 400 });
-    }
-    if (price !== '' && price != null && (!Number.isFinite(Number(price)) || Number(price) < 0)) {
-      return Response.json({ error: 'Preț invalid' }, { status: 400 });
+    const { id } = body;
+    if (typeof id !== 'string' || !id) return Response.json({ error: 'ID lipsă.' }, { status: 400 });
+    const normalized = normalizePropertyWrite(body, { mode: 'update' });
+    if (normalized.errors.length) {
+      return Response.json({ error: normalized.errors[0], errors: normalized.errors }, { status: 400 });
     }
 
-    if (agent_id) {
+    if (normalized.agentId) {
       const { data: assignedAgent } = await admin
         .from('profiles')
         .select('user_id')
-        .eq('user_id', agent_id)
+        .eq('user_id', normalized.agentId)
         .eq('agency_id', agencyId)
+        .eq('status', 'active')
         .maybeSingle();
       if (!assignedAgent) {
-        return Response.json({ error: 'Agentul selectat nu aparține agenției' }, { status: 400 });
+        return Response.json({ error: 'Agentul selectat nu este activ în agenție.' }, { status: 400 });
+      }
+    }
+    if (normalized.ownerContactId) {
+      const { data: ownerContact } = await admin.from('contacts').select('id')
+        .eq('id', normalized.ownerContactId).eq('agency_id', agencyId)
+        .is('deleted_at', null).eq('merge_status', 'active').maybeSingle();
+      if (!ownerContact) {
+        return Response.json({ error: 'Proprietarul selectat nu este accesibil.' }, { status: 400 });
       }
     }
 
-    if (!id || !title) return Response.json({ error: 'ID sau titlu lipsă' }, { status: 400 });
-
     const updateData: Record<string, unknown> = {
-      title: title.trim(),
-      price: num(price),
-      currency: currency || 'EUR',
-      description: description || null,
-      county: county || null,
-      city: city || null,
-      zone: zone || null,
-      street: street || null,
-      street_number: street_number || null,
-      latitude: num(latitude),
-      longitude: num(longitude),
-      attributes: attributes || {},
+      ...normalized.columns,
       updated_at: new Date().toISOString(),
     };
-    // agent_id: doar dacă a fost trimis (string = atribuit, '' / null = neasignat)
-    if (agent_id !== undefined) updateData.agent_id = agent_id || null;
+    if (normalized.attributes !== undefined) {
+      updateData.attributes = normalized.attributes;
+      updateData.vat_included = Boolean(normalized.attributes.tva_inclus);
+      updateData.negotiable = Boolean(normalized.attributes.negociabil);
+      updateData.show_exact_location = !normalized.attributes.ascunde_adresa;
+      updateData.exclusive = Boolean(normalized.attributes.exclusivitate);
+    }
+    if (normalized.agentId !== undefined) updateData.agent_id = normalized.agentId;
+    if (normalized.ownerContactId !== undefined) updateData.owner_contact_id = normalized.ownerContactId;
 
     // Snapshot current values for the activity log
     const { data: old } = await admin
-      .from('properties')
-      .select('title, price, currency, description, county, city, zone, street, street_number')
+      .from('properties').select('*')
       .eq('id', id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
       .maybeSingle();
 
     if (!old) return Response.json({ error: 'Proprietatea nu există' }, { status: 404 });
+    if (normalized.attributes !== undefined) {
+      const oldAttributes = old.attributes && typeof old.attributes === 'object'
+        ? old.attributes as Record<string, unknown>
+        : {};
+      updateData.attributes = {
+        ...normalized.attributes,
+        // Galeria este sincronizată numai de fluxul media atomic. Salvarea
+        // formularului nu are voie să o golească înainte de confirmarea lui.
+        photos: Array.isArray(oldAttributes.photos) ? oldAttributes.photos : [],
+      };
+    }
 
     const { error } = await admin
       .from('properties')
@@ -92,11 +98,7 @@ export async function POST(request: Request) {
     if (old) {
       const changes = diffFields(
         old as Record<string, unknown>,
-        {
-          title, price: num(price), currency: currency || 'EUR',
-          description: description || null, county: county || null, city: city || null,
-          zone: zone || null, street: street || null, street_number: street_number || null,
-        },
+        updateData,
         {
           title: 'Titlu', price: 'Preț', currency: 'Monedă', description: 'Descriere',
           county: 'Județ', city: 'Localitate', zone: 'Zonă/Cartier', street: 'Stradă', street_number: 'Număr',
