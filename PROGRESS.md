@@ -29,6 +29,7 @@
 - [x] **Setări** — profil agenție, watermark fotografii
 - [x] **Experiență mobilă** — navigație „Mai mult” după permisiuni, safe-area, ținte tactile, carduri pentru tabele, formulare și modale responsive
 - [x] **Pipeline operațional** — 16 etape verificabile, tranziții controlate, istoric separat și dovezi pentru proprietăți trimise
+- [x] **Automatizări configurabile** — 10 reguli centrale, activare/dezactivare, intervale, deduplicare, retry și jurnal de execuție
 - [x] **Căutare AI** — natural language → filtre structurate (Claude Haiku)
 - [x] **Funcționalități AI** — analiză/îmbunătățire poze, generator descrieri SEO
 - [x] **Operațiuni în masă** — mutare agent + publicare în masă, pin automat hartă
@@ -46,6 +47,7 @@ Supabase Dashboard → SQL Editor → rulează fișierele din migrations/:
   - migrations/20260720_140_storia_oauth_security.sql → OAuth multi-agency și tokenuri criptate
   - migrations/20260720_150_storia_listing_sync.sql → verificare durabilă și alerte listări Storia
   - migrations/20260720_160_operational_pipeline.sql → pipeline operațional și dovezi de etapă
+  - migrations/20260720_170_automation_engine.sql → motorul central și cele 10 reguli configurabile
 ```
 
 ---

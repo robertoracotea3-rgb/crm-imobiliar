@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NOTIFICATION_PRIORITIES, syncTimeBasedNotifications } from '@/lib/server/notifications';
+import { runAutomationBatch } from '@/lib/server/automation-engine';
 import { requireApiAuth } from '@/lib/server/api-auth';
 
 const PAGE_SIZE_MAX = 50;
@@ -19,6 +20,12 @@ export async function GET(request: Request) {
     const { admin, serviceAdmin, agencyId, user } = auth.context;
     const params = new URL(request.url).searchParams;
     const sync = await syncTimeBasedNotifications(admin, serviceAdmin, agencyId, user.id);
+    try {
+      await runAutomationBatch(serviceAdmin, { agencyId, limit: 10, sweep: true });
+    } catch (automationError) {
+      // Keep the inbox available during rollout or a transient worker failure.
+      sync.warnings.push(`automatizări: ${automationError instanceof Error ? automationError.message : String(automationError)}`);
+    }
     const unreadQuery = admin.from('notifications').select('id', { count: 'exact', head: true })
       .eq('agency_id', agencyId).eq('user_id', user.id).is('read_at', null).is('dismissed_at', null);
     const { count: unreadCount, error: unreadError } = await unreadQuery;

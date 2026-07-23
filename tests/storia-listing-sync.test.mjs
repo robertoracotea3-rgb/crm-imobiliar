@@ -136,10 +136,10 @@ test('Vercel cron is daily and secured with CRON_SECRET', async () => {
     read('app/api/cron/storia-sync/route.ts'),
   ]);
   const config = JSON.parse(configText);
-  assert.deepEqual(config.crons, [{
+  assert.deepEqual(config.crons.find((cron) => cron.path === '/api/cron/storia-sync'), {
     path: '/api/cron/storia-sync',
     schedule: '17 2 * * *',
-  }]);
+  });
   assert.match(route, /verifyCronAuthorization/);
   assert.match(route, /process\.env\.CRON_SECRET/);
   assert.match(route, /syncStoriaAgency/);
