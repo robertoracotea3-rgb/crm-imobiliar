@@ -151,15 +151,15 @@ export default function ContactsPage() {
 
   return (
     <ProtectedLayout module="contacts">
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+      <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+        <div className="flex flex-col items-start justify-between gap-3 mb-6 sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
             <Users size={26} style={{ color: '#0E6B54' }} />
             <h1 className="text-2xl font-bold" style={{ color: '#0E6B54' }}>Contacte</h1>
             <span className="bg-gray-100 text-gray-600 text-sm px-2.5 py-0.5 rounded-full font-medium">{contacts.length}</span>
           </div>
           <button onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2.5 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors"
+            className="mobile-touch-target flex w-full items-center justify-center gap-2 px-4 py-2.5 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors sm:w-auto"
             style={{ backgroundColor: '#0E6B54' }}>
             <Plus size={18} /> Adaugă contact
           </button>
@@ -176,7 +176,7 @@ export default function ContactsPage() {
               <div className="mb-3 bg-red-50 border border-red-200 rounded p-2 text-red-700 text-sm">{formErr}</div>
             )}
             <form onSubmit={handleSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Nume *</label>
                   <input type="text" value={form.name} onChange={e => sf('name', e.target.value)} required className={ic} placeholder="Ion Popescu" />
@@ -191,7 +191,7 @@ export default function ContactsPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
                   <input type="tel" value={form.phone} onChange={e => sf('phone', e.target.value)} className={ic} placeholder="07xx xxx xxx" />
@@ -201,7 +201,7 @@ export default function ContactsPage() {
                   <input type="tel" value={form.phone2} onChange={e => sf('phone2', e.target.value)} className={ic} placeholder="07xx xxx xxx" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
                   <input type="email" value={form.email} onChange={e => sf('email', e.target.value)} className={ic} placeholder="email@example.com" />
@@ -243,8 +243,8 @@ export default function ContactsPage() {
 
         {/* Delete confirm */}
         {deleteConfirm && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 shadow-xl max-w-sm w-full mx-4">
+          <div className="mobile-dialog-backdrop fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="mobile-dialog-panel bg-white rounded-xl p-6 shadow-xl max-w-sm w-full">
               <div className="flex items-start gap-3 mb-4">
                 <AlertTriangle size={22} className="text-red-500 flex-shrink-0 mt-0.5" />
                 <div>

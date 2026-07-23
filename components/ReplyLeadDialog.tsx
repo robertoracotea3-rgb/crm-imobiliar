@@ -147,8 +147,8 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
   if (!isOpen || !lead) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="mobile-dialog-panel max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
         <header className="flex items-center justify-between border-b border-gray-200 p-5">
           <div>
             <h2 className="text-xl font-bold text-emerald-800">Contactează pe WhatsApp</h2>

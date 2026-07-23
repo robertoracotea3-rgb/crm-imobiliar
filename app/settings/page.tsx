@@ -170,7 +170,7 @@ export default function SettingsPage() {
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
   return (
     <ProtectedLayout module="settings">
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-3xl mx-auto">
         <div className="flex items-center gap-3 mb-8">
           <Settings size={26} style={{ color: '#0E6B54' }} />
           <h1 className="text-2xl font-bold" style={{ color: '#0E6B54' }}>Setări</h1>
@@ -188,12 +188,12 @@ export default function SettingsPage() {
         ) : (
           <>
             {/* Tabs */}
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6">
+            <div className="flex max-w-full gap-1 overflow-x-auto bg-gray-100 p-1 rounded-xl mb-6">
               {tabs.map(t => {
                 const Icon = t.icon;
                 return (
                   <button key={t.id} onClick={() => setActiveTab(t.id)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    className={`mobile-touch-target flex shrink-0 items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-colors sm:flex-1 ${
                       activeTab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                     }`}>
                     <Icon size={16} />{t.label}
@@ -216,7 +216,7 @@ export default function SettingsPage() {
 
             {/* Profile Tab */}
             {activeTab === 'profile' && (
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
                 <h2 className="font-semibold text-gray-800 mb-4">Informații personale</h2>
                 {data?.profile && (
                   <div className="mb-4 p-3 bg-gray-50 rounded-lg text-sm">

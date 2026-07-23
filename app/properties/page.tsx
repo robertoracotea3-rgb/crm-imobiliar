@@ -363,13 +363,13 @@ export default function PropertiesPage() {
 
   return (
     <ProtectedLayout module="properties">
-    <div className="p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>
             Proprietati
           </h1>
-          <div className="flex gap-3 mt-2">
+          <div className="flex flex-wrap gap-2 mt-2">
             <span className="text-xs font-medium bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
               {activeCount} active
             </span>
@@ -390,7 +390,7 @@ export default function PropertiesPage() {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 md:w-auto">
           {/* Toggle Listă / Hartă */}
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button onClick={() => setView('list')}
@@ -404,7 +404,7 @@ export default function PropertiesPage() {
           </div>
           <Link
             href="/properties/ai-assistant"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white transition-colors hover:opacity-90"
+            className="mobile-touch-target flex flex-1 items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium text-white transition-colors hover:opacity-90 sm:flex-none sm:px-4"
             style={{ backgroundColor: '#B57514' }}
           >
             <Wand2 size={20} />
@@ -412,7 +412,7 @@ export default function PropertiesPage() {
           </Link>
           <button
             onClick={() => setIsAddDialogOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white transition-colors hover:opacity-90"
+            className="mobile-touch-target flex flex-1 items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium text-white transition-colors hover:opacity-90 sm:flex-none sm:px-4"
             style={{ backgroundColor: '#0E6B54' }}
           >
             <Plus size={20} />

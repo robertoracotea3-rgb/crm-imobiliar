@@ -36,3 +36,72 @@ textarea,
 select {
   color: #111827;
 }
+
+.mobile-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (max-width: 767px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  input,
+  textarea,
+  select {
+    /* Previne zoom-ul automat al formularelor în Safari iOS. */
+    font-size: 16px;
+  }
+
+  .mobile-touch-target {
+    min-width: 44px;
+    min-height: 44px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-dialog-backdrop {
+    align-items: flex-end;
+    padding: 0;
+    overscroll-behavior: contain;
+    z-index: 60;
+  }
+
+  .mobile-dialog-panel {
+    width: 100%;
+    max-width: none;
+    max-height: 100dvh;
+    min-width: 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+
+  .mobile-dialog-panel .grid.grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-dialog-panel .grid.grid-cols-3,
+  .mobile-dialog-panel .grid.grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mobile-form-page .grid.grid-cols-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-form-page .grid.grid-cols-3,
+  .mobile-form-page .grid.grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

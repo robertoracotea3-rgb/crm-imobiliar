@@ -67,8 +67,8 @@ function AddTaskDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess:
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-2xl shadow-2xl w-full max-w-md">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-bold text-gray-900">Task nou</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -169,7 +169,7 @@ export default function TasksPage() {
 
   return (
     <ProtectedLayout module="tasks">
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Taskuri</h1>
@@ -179,7 +179,7 @@ export default function TasksPage() {
             </p>
           </div>
           <button onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90"
+            className="mobile-touch-target flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 sm:w-auto"
             style={{ backgroundColor: '#0E6B54' }}>
             <Plus size={18} />Adaugă task
           </button>

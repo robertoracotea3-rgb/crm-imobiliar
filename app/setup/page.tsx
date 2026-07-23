@@ -67,7 +67,7 @@ export default function SetupPage() {
   const allOk = results && Object.values(results).every(v => v === 'ok' || v === 'done');
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold mb-1" style={{ color: '#0E6B54' }}>Setup Baza de Date</h1>
       <p className="text-gray-500 text-sm mb-6">
         Configureaza schema bazei de date. Trebuie facut o singura data.

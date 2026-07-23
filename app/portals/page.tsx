@@ -319,7 +319,7 @@ export default function PortalsPage() {
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect)
   return (
     <ProtectedLayout module="portals">
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <Globe size={26} style={{ color: '#0E6B54' }} />
           <h1 className="text-2xl font-bold" style={{ color: '#0E6B54' }}>Portaluri</h1>
@@ -360,13 +360,13 @@ export default function PortalsPage() {
 
         {/* ──────────────────── STORIA / OLX CARD ──────────────────── */}
         <div className="bg-white rounded-xl border border-gray-200 mb-4 overflow-hidden">
-          <div className="flex items-center gap-4 px-5 py-4 border-b border-gray-100">
+          <div className="flex flex-col items-start gap-3 px-4 py-4 border-b border-gray-100 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
             {/* Logo placeholder */}
             <div className="w-12 h-12 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0">
               <Building2 size={24} className="text-orange-500" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="font-bold text-gray-900">Storia + OLX Imobiliare</h2>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">OLX RE Partner API</span>
               </div>
@@ -374,11 +374,11 @@ export default function PortalsPage() {
                 Publici pe Storia → apare automat și pe OLX Imobiliare
               </p>
             </div>
-            <div className="flex-shrink-0">
+            <div className="w-full flex-shrink-0 sm:w-auto">
               {loadingStoria ? (
                 <Loader2 size={20} className="text-gray-300 animate-spin" />
               ) : storia?.connected && storia.token_valid ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2 sm:justify-start">
                   <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                     <CheckCircle size={12} /> Conectat
                   </span>
@@ -396,7 +396,7 @@ export default function PortalsPage() {
             </div>
           </div>
 
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             {/* Credentials not configured */}
             {!storia?.credentials_configured && !loadingStoria && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
@@ -450,7 +450,7 @@ export default function PortalsPage() {
             {/* Connected state */}
             {storia?.connected && storia.token_valid && (
               <>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col items-start justify-between gap-3 mb-4 sm:flex-row sm:items-center">
                   <p className="text-sm text-gray-600">
                     {storia.connected_at
                       ? `Conectat pe ${new Date(storia.connected_at).toLocaleDateString('ro-RO')}`
@@ -487,8 +487,62 @@ export default function PortalsPage() {
                         </span>
                       )}
                     </div>
-                    <div className="border border-gray-200 rounded-lg overflow-x-auto">
-                      <table className="w-full text-sm">
+                    <div className="space-y-3 md:hidden" aria-label="Listări Storia">
+                      {storia.listings.map(l => (
+                        <article key={l.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <a
+                                href={`/properties/${l.property_id}`}
+                                className="block truncate text-sm font-bold text-emerald-800 hover:underline"
+                              >
+                                {l.property_title || l.internal_code || 'Proprietate'}
+                              </a>
+                              <p className="mt-1 truncate text-xs text-gray-500">
+                                {l.agent_name || 'Agent neasociat'}
+                              </p>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${LISTING_STATUS_COLOR[l.status] || 'bg-gray-100 text-gray-600'}`}>
+                              {LISTING_STATUS_LABEL[l.status] || l.status}
+                            </span>
+                          </div>
+                          {l.error_message && (
+                            <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">{l.error_message}</p>
+                          )}
+                          <div className="mt-3 flex items-center gap-2">
+                            <a
+                              href={`/properties/${l.property_id}`}
+                              className="mobile-touch-target flex min-h-11 flex-1 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800"
+                            >
+                              Vezi proprietatea
+                            </a>
+                            {l.advert_url && (
+                              <a
+                                href={l.advert_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mobile-touch-target flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white"
+                              >
+                                <ExternalLink size={13} /> Storia
+                              </a>
+                            )}
+                          </div>
+                          <details className="mt-2 rounded-lg border border-gray-100 px-3 py-2 text-xs text-gray-500">
+                            <summary className="mobile-touch-target flex min-h-11 cursor-pointer items-center font-semibold text-gray-700">
+                              ID-uri și sincronizare
+                            </summary>
+                            <dl className="space-y-1.5 border-t border-gray-100 pt-2">
+                              <div className="flex justify-between gap-3"><dt>ID intern</dt><dd className="font-mono text-gray-700">{l.internal_code || '—'}</dd></div>
+                              <div className="flex justify-between gap-3"><dt>ID public</dt><dd className="font-mono text-gray-700">{l.portal_ad_id || '—'}</dd></div>
+                              <div className="flex justify-between gap-3"><dt>Verificat</dt><dd className="text-right">{l.last_checked_at ? new Date(l.last_checked_at).toLocaleString('ro-RO') : '—'}</dd></div>
+                              <div className="flex justify-between gap-3"><dt>Sincronizat</dt><dd className="text-right">{l.last_sync_at ? new Date(l.last_sync_at).toLocaleString('ro-RO') : '—'}</dd></div>
+                            </dl>
+                          </details>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="hidden rounded-lg border border-gray-200 md:block md:overflow-x-auto">
+                      <table className="min-w-[900px] w-full text-sm">
                         <thead className="bg-gray-50 border-b border-gray-200">
                           <tr>
                             <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600">ID intern</th>

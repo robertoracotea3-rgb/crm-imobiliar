@@ -188,8 +188,8 @@ function ClientDialog({ client, agents, onClose, onSaved }: {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
           <h3 className="font-bold text-gray-900">{isEdit ? 'Editează client' : 'Client nou'}</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -319,8 +319,8 @@ function HistoryModal({ client, onClose }: { client: Client; onClose: () => void
   const fmt = (s: string) => new Date(s).toLocaleString('ro-RO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl max-h-[85vh] flex flex-col">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-md shadow-2xl max-h-[85vh] flex flex-col">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div><h3 className="font-bold text-gray-900">Istoric client</h3><p className="text-xs text-gray-500">{client.contact_name}</p></div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -370,8 +370,8 @@ function MatchModal({ client, onClose }: { client: Client; onClose: () => void }
   const scoreColor = (s: number) => s >= 80 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : s >= 55 ? 'text-yellow-700 bg-yellow-50 border-yellow-200' : 'text-gray-600 bg-gray-50 border-gray-200';
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div><h3 className="font-bold text-gray-900">Proprietăți potrivite</h3><p className="text-xs text-gray-500">{client.contact_name}</p></div>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -417,8 +417,8 @@ function NoteModal({ client, onClose, onSaved }: { client: Client; onClose: () =
     } catch (e) { setErr(e instanceof Error ? e.message : 'Eroare'); } finally { setSaving(false); }
   };
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-md shadow-2xl">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="font-bold text-gray-900">Adaugă notiță</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -645,15 +645,15 @@ export default function ClientsPage() {
 
   return (
     <ProtectedLayout module="leads">
-      <div className="p-6 max-w-7xl mx-auto" onClick={() => menuOpen && setMenuOpen(null)}>
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto" onClick={() => menuOpen && setMenuOpen(null)}>
         {/* Header */}
-        <div className="flex justify-between items-center gap-4 mb-5">
+        <div className="flex flex-col justify-between items-start gap-4 mb-5 sm:flex-row sm:items-center">
           <div><h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Clienți</h1>
             <p className="text-sm text-gray-500 mt-1">{clients.length} clienți</p></div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/matches" className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"><Target size={17} />Cereri și potriviri</Link>
-            {(role === 'owner' || role === 'admin' || role === 'manager') && <Link href="/clients/duplicates" className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100"><History size={17} />Verifică duplicate</Link>}
-            <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90" style={{ backgroundColor: '#0E6B54' }}>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <Link href="/matches" className="mobile-touch-target flex flex-1 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 sm:flex-none sm:px-4"><Target size={17} />Cereri și potriviri</Link>
+            {(role === 'owner' || role === 'admin' || role === 'manager') && <Link href="/clients/duplicates" className="mobile-touch-target flex flex-1 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 sm:flex-none sm:px-4"><History size={17} />Verifică duplicate</Link>}
+            <button onClick={() => setAddOpen(true)} className="mobile-touch-target flex flex-1 items-center justify-center gap-2 px-3 py-2.5 rounded-lg font-medium text-white hover:opacity-90 sm:flex-none sm:px-4" style={{ backgroundColor: '#0E6B54' }}>
               <Plus size={18} /> Adaugă client
             </button>
           </div>
@@ -674,13 +674,13 @@ export default function ClientsPage() {
         {/* Filters */}
         <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4 space-y-3">
           <div className="flex flex-wrap gap-2 items-center">
-            <div className="relative flex-1 min-w-[220px]">
+            <div className="relative min-w-0 flex-[1_1_220px]">
               <Search size={15} className="absolute left-3 top-2.5 text-gray-400" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Caută după nume, telefon, email, mesaj..." className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
             </div>
-            <select value={fCity} onChange={(e) => setFCity(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate orașele</option>{cities.map((c) => <option key={c} value={c}>{c}</option>)}</select>
-            <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate categoriile</option>{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_LABEL(c)}</option>)}</select>
-            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate statusurile</option>{STATUS_ORDER.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}</select>
+            <select value={fCity} onChange={(e) => setFCity(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate orașele</option>{cities.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+            <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate categoriile</option>{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_LABEL(c)}</option>)}</select>
+            <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate statusurile</option>{STATUS_ORDER.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}</select>
             <button onClick={() => setShowFilters((s) => !s)} className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"><Filter size={14} /> Filtre <ChevronDown size={14} /></button>
           </div>
           {showFilters && (
@@ -824,8 +824,8 @@ export default function ClientsPage() {
       {matchClient && <MatchModal client={matchClient} onClose={() => setMatchClient(null)} />}
       {noteClient && <NoteModal client={noteClient} onClose={() => setNoteClient(null)} onSaved={fetchClients} />}
       {linkClient && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl max-h-[86vh] flex flex-col">
+        <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-2xl shadow-2xl max-h-[86vh] flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <div>
                 <h3 className="font-bold text-gray-900">Leagă proprietatea</h3>

@@ -222,7 +222,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <ProtectedLayout module="dashboard">
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
           <div className="animate-pulse space-y-4">
             <div className="h-24 bg-gray-100 rounded-2xl" />
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

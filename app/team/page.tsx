@@ -192,8 +192,8 @@ function AgentDialog({
   );
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-xl">
         <div className="border-b px-6 py-4 flex justify-between items-center flex-shrink-0">
           <h2 className="text-xl font-bold" style={{ color: '#0E6B54' }}>
             {isEdit ? 'Editează Agent' : 'Adaugă Agent Nou'}
@@ -294,17 +294,17 @@ function AgentDialog({
             {openSec.perms && (
               <div className="overflow-x-auto">
                 <p className="text-xs text-gray-500 mb-2">Bifate automat după rol — poți personaliza.</p>
-                <table className="w-full text-xs border-collapse">
+                <table className="min-w-[680px] w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-gray-50">
-                      <th className="text-left py-2 px-3 font-semibold text-gray-600">Modul</th>
+                      <th className="sticky left-0 z-10 bg-gray-50 text-left py-2 px-3 font-semibold text-gray-600">Modul</th>
                       {ACTIONS.map(a => <th key={a} className="py-2 px-2 font-semibold text-gray-600 text-center capitalize">{a}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {MODULES.map(m => (
                       <tr key={m.key} className="border-t border-gray-100">
-                        <td className="py-2 px-3 font-medium text-gray-700">{m.label}</td>
+                        <td className="sticky left-0 bg-white py-2 px-3 font-medium text-gray-700">{m.label}</td>
                         {ACTIONS.map(a => (
                           <td key={a} className="py-2 px-2 text-center">
                             <button type="button" onClick={() => togglePerm(m.key, a)}
@@ -340,8 +340,8 @@ function AgentDialog({
 // ── Profile Modal ─────────────────────────────────────────────────────────────
 function ProfileModal({ member, onClose, onEdit }: { member: Member; onClose: () => void; onEdit: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
         {/* Header */}
         <div className="px-6 pb-6">
           <div className="flex items-center justify-between pt-5 mb-4">
@@ -452,8 +452,8 @@ function DeleteDialog({ member, members, token, onClose, onSuccess }: {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl p-6">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-md shadow-2xl p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
             <AlertTriangle size={20} className="text-red-600" />
@@ -516,7 +516,7 @@ function PermissionsMatrix() {
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="min-w-[680px] w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700 w-40">Modul</th>
@@ -655,7 +655,7 @@ export default function TeamPage() {
 
   return (
     <ProtectedLayout module="team">
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
@@ -665,7 +665,7 @@ export default function TeamPage() {
           {can('team', 'create') && (
             <button
               onClick={() => setDialogMember(null)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90 transition-colors"
+              className="mobile-touch-target flex w-full items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium text-white hover:opacity-90 transition-colors sm:w-auto"
               style={{ backgroundColor: '#0E6B54' }}>
               <UserPlus size={18} />Adaugă Agent
             </button>
@@ -692,10 +692,10 @@ export default function TeamPage() {
         )}
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+        <div className="flex max-w-full gap-1 overflow-x-auto bg-gray-100 rounded-xl p-1 mb-6 sm:w-fit">
           {TABS.filter(t => t.id !== 'permissions' || can('team', 'manage_permissions')).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              className={`mobile-touch-target flex shrink-0 items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
               {t.icon}{t.label}
             </button>
           ))}

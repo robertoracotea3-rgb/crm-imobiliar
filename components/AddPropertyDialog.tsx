@@ -758,17 +758,17 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const STEPS = ['Poze', 'Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media', 'Promovare'];
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl">
 
         {/* Header */}
-        <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 flex-shrink-0">
+        <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="text-lg font-bold" style={{ color: '#0E6B54' }}>Adaugă Proprietate</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded"><X size={22} /></button>
         </div>
 
         {/* Steps bar */}
-        <div className="px-6 py-3 flex gap-1 border-b border-gray-100 flex-shrink-0 overflow-x-auto">
+        <div className="px-4 sm:px-6 py-3 flex gap-1 border-b border-gray-100 flex-shrink-0 overflow-x-auto">
           {STEPS.map((label, i) => {
             const s = i + 1;
             return (
@@ -789,7 +789,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
           {error && (
             <div className="mb-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-sm">{error}</div>
@@ -1757,29 +1757,29 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-200 flex-shrink-0">
+        <div className="flex gap-2 sm:gap-3 px-4 sm:px-6 py-4 border-t border-gray-200 flex-shrink-0">
           {step > 1 && (
             <button onClick={prev}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1 text-sm transition-colors">
+              className="mobile-touch-target flex flex-1 items-center justify-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-gray-50 sm:flex-none sm:px-4">
               <ChevronLeft size={16} /> Înapoi
             </button>
           )}
-          <div className="flex-1" />
+          <div className="hidden flex-1 sm:block" />
           {/* Salvează — mereu vizibil */}
           <button onClick={handleSave} disabled={loading}
-            className="px-5 py-2 border border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-40 text-sm font-medium transition-colors">
+            className="mobile-touch-target flex-1 rounded-lg border border-emerald-600 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40 sm:flex-none sm:px-5">
             {loading ? (status || 'Se salvează...') : 'Salvează'}
           </button>
           {step < 9 && (
             <button onClick={next}
-              className="px-5 py-2 text-white rounded-lg hover:opacity-90 flex items-center gap-1 text-sm font-medium transition-colors"
+              className="mobile-touch-target flex flex-1 items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 sm:flex-none sm:px-5"
               style={{ backgroundColor: '#0E6B54' }}>
               Înainte <ChevronRight size={16} />
             </button>
           )}
           {step === 9 && (
             <button onClick={handleSave} disabled={loading}
-              className="px-6 py-2 text-white rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium transition-colors"
+              className="mobile-touch-target flex-1 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50 sm:flex-none sm:px-6"
               style={{ backgroundColor: '#0E6B54' }}>
               {loading ? (status || 'Se salvează...') : 'Salvează Proprietatea'}
             </button>

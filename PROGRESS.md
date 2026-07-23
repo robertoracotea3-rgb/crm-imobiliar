@@ -27,6 +27,7 @@
 - [x] **Echipă** — membri, stats, activitate
 - [x] **Finanțe și tranzacții** — flux cu client și proprietate obligatorii, finalizare atomică, registru de comisioane și retrageri portal cu retry
 - [x] **Setări** — profil agenție, watermark fotografii
+- [x] **Experiență mobilă** — navigație „Mai mult” după permisiuni, safe-area, ținte tactile, carduri pentru tabele, formulare și modale responsive
 - [x] **Căutare AI** — natural language → filtre structurate (Claude Haiku)
 - [x] **Funcționalități AI** — analiză/îmbunătățire poze, generator descrieri SEO
 - [x] **Operațiuni în masă** — mutare agent + publicare în masă, pin automat hartă

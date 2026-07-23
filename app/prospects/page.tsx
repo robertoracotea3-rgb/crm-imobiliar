@@ -187,7 +187,7 @@ export default function ProspectsPage() {
             <p className="text-sm text-gray-500 mt-1">{pagination.total.toLocaleString('ro-RO')} rezultate în toate paginile · maximum 25 afișate odată</p>
           </div>
           <button onClick={refresh} disabled={refreshing || activeSources.length === 0}
-            className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white bg-[#0E6B54] disabled:opacity-50">
+            className="mobile-touch-target flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white bg-[#0E6B54] disabled:opacity-50 sm:w-auto">
             {refreshing ? <Loader2 size={18} className="animate-spin" /> : <RefreshCw size={18} />}
             {refreshing ? 'Se actualizează…' : 'Actualizează sursele'}
           </button>
@@ -228,7 +228,7 @@ export default function ProspectsPage() {
           <div className="flex flex-wrap gap-2 items-center">
             <Filter size={16} className="text-gray-400" />
             <input value={filters.q} onChange={(event) => setFilter('q', event.target.value)} placeholder="Caută titlu, vânzător, localitate…"
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 min-w-56" />
+              className="min-w-0 flex-[1_1_14rem] rounded-lg border border-gray-300 px-3 py-2 text-sm" />
             <select value={filters.status} onChange={(event) => setFilter('status', event.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
               <option value="">Toate stările</option>
               {Object.entries(STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}

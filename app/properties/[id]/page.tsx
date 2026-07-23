@@ -378,7 +378,7 @@ export default function PropertyDetailPage() {
     }
   };
 
-  if (loading) return <div className="p-8 text-gray-400">Se incarca...</div>;
+  if (loading) return <div className="p-4 sm:p-6 lg:p-8 text-gray-400">Se incarca...</div>;
   if (error || !property) return (
     <div className="p-8">
       <button onClick={() => router.back()} className="flex items-center gap-2 mb-4 text-gray-600"><ChevronLeft size={18} />Inapoi</button>
@@ -448,7 +448,7 @@ export default function PropertyDetailPage() {
 
   return (
     <ProtectedLayout module="properties">
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <button onClick={() => router.back()} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm">
@@ -1008,8 +1008,8 @@ export default function PropertyDetailPage() {
     </div>
       {/* Dialog comision — apare la tranzactionata / inchiriata */}
       {commDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <div className="mobile-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="mobile-dialog-panel bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
             <h2 className="text-lg font-bold text-gray-900 mb-1">Finalizare {pendingStatus === 'inchiriata' ? 'închiriere' : 'vânzare'}</h2>
             <p className="text-sm text-gray-500 mb-5">
               Proprietatea va fi marcată ca <strong>{STATUS_LABELS[pendingStatus!]}</strong>

@@ -222,8 +222,8 @@ function EventModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
 
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
@@ -433,8 +433,8 @@ function CloseCommentModal({ event, onConfirm, onCancel }: {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-xl w-full max-w-md shadow-2xl">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="font-bold text-gray-900">Finalizare cerere</h3>
           <button onClick={onCancel} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500"><X size={20} /></button>
@@ -692,16 +692,16 @@ export default function ActivitiesPage() {
             <h1 className="text-2xl font-bold" style={{ color: '#0E6B54' }}>Activități</h1>
             <p className="text-sm text-gray-500 mt-0.5">{counts.today} azi · {counts.upcoming} viitoare</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex w-full items-center gap-2 flex-wrap sm:w-auto">
             {isOwner && (
               <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-700">
+                className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-700 sm:flex-none">
                 <option value="">Toți agenții</option>
                 {agents.map(a => <option key={a.id} value={a.id}>{a.email}</option>)}
               </select>
             )}
             <button onClick={() => { setEditEvent(null); setShowModal(true); }}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg hover:opacity-90"
+              className="mobile-touch-target flex flex-1 items-center justify-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-lg hover:opacity-90 sm:flex-none"
               style={{ backgroundColor: '#0E6B54' }}>
               <Plus size={16} /> Activitate nouă
             </button>

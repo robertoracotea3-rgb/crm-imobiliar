@@ -51,7 +51,7 @@ export default function RootLayout({
         <AuthProvider>
           <div className="flex flex-col md:flex-row min-h-full">
             <Sidebar />
-            <main className="flex-1 md:ml-64 pb-24 md:pb-0">
+            <main className="min-w-0 w-full flex-1 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:ml-64 md:pb-0">
               {children}
             </main>
           </div>

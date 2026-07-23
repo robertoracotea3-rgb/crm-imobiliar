@@ -126,7 +126,7 @@ function MatchDialog({ demand, onClose }: { demand: DemandListItem; onClose: () 
     setUpdating('');
   };
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+  return <div className="mobile-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"><div className="mobile-dialog-panel flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
     <div className="flex items-center justify-between border-b px-6 py-4"><div><h2 className="font-bold text-gray-900">Potriviri explicate · {demand.internal_code}</h2><p className="text-xs text-gray-500">Rezultatele au fost filtrate pe server. Nicio recomandare nu este trimisă automat clientului.</p></div><button onClick={onClose} className="rounded-lg p-2 hover:bg-gray-100"><X size={20} /></button></div>
     <div className="flex-1 space-y-3 overflow-y-auto p-5">
       {!matches && !error && <p className="py-12 text-center text-gray-500">Se calculează potrivirile…</p>}

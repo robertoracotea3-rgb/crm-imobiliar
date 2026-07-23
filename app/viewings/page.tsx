@@ -141,8 +141,8 @@ function ViewingDialog({ editing, onClose, onSuccess }: { editing?: Viewing | nu
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
           <h2 className="text-lg font-bold text-gray-900">{editing ? 'Editează vizionare' : 'Programează vizionare'}</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -311,14 +311,14 @@ export default function ViewingsPage() {
 
   return (
     <ProtectedLayout module="viewings">
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold" style={{ color: '#0E6B54' }}>Vizionări</h1>
             <p className="text-sm text-gray-500 mt-1">{viewings.length} total · {upcoming} programate</p>
           </div>
           <button onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90"
+            className="mobile-touch-target flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 sm:w-auto"
             style={{ backgroundColor: '#0E6B54' }}>
             <Plus size={18} />Programează vizionare
           </button>
@@ -368,17 +368,17 @@ export default function ViewingsPage() {
                       {v.property_title && <p className="text-xs text-emerald-700 mt-1 flex items-center gap-1"><Home size={12} />{v.property_code} · {v.property_title}</p>}
                       {v.description && <p className="text-xs text-gray-500 mt-1">{v.description}</p>}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-shrink-0">
                       <select value={v.status || 'programata'} onChange={e => changeStatus(v, e.target.value)}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                        className="min-h-11 min-w-0 flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 sm:flex-none">
                         {Object.entries(STATUS_META).filter(([k]) => canTransition(
                           VIEWING_STATUS_TRANSITIONS,
                           (v.status || 'programata') as ViewingStatus,
                           k as ViewingStatus,
                         )).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
                       </select>
-                      <button onClick={() => setEditing(v)} className="p-1.5 text-gray-400 hover:text-emerald-600" title="Editează"><Pencil size={15} /></button>
-                      <button onClick={() => handleDelete(v.id)} className="p-1.5 text-red-400 hover:text-red-600" title="Șterge"><Trash2 size={15} /></button>
+                      <button onClick={() => setEditing(v)} className="mobile-touch-target flex h-11 w-11 items-center justify-center text-gray-400 hover:text-emerald-600" title="Editează"><Pencil size={15} /></button>
+                      <button onClick={() => handleDelete(v.id)} className="mobile-touch-target flex h-11 w-11 items-center justify-center text-red-400 hover:text-red-600" title="Șterge"><Trash2 size={15} /></button>
                     </div>
                   </div>
                 </div>

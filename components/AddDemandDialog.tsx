@@ -248,14 +248,14 @@ export function AddDemandDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
-      <form onSubmit={submit} className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+    <div className="mobile-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3">
+      <form onSubmit={submit} className="mobile-dialog-panel flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4 sm:px-6">
           <div><h2 className="text-xl font-bold text-emerald-800">{demand ? `Editează ${demand.internal_code || 'cererea'}` : 'Cerere nouă'}</h2><p className="text-xs text-gray-500">Criteriile necunoscute nu reduc și nu cresc artificial scorul.</p></div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-gray-100" aria-label="Închide"><X size={20} /></button>
         </div>
 
-        <div className="grid flex-1 gap-5 overflow-y-auto p-6 md:grid-cols-2">
+        <div className="grid flex-1 gap-5 overflow-y-auto p-4 sm:p-6 md:grid-cols-2">
           <section className="space-y-4">
             <h3 className="font-bold text-gray-900">Client și scop</h3>
             <div><label className="mb-1 block text-xs font-semibold text-gray-600">Client *</label><div className="flex gap-2"><select value={form.contact_id} onChange={(event) => set('contact_id', event.target.value)} className={inputClass}><option value="">Selectează clientul</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.full_name || contact.name || 'Client'}{contact.phone ? ` · ${contact.phone}` : ''}</option>)}</select><button type="button" onClick={() => setShowNewContact((value) => !value)} className="rounded-lg border border-emerald-300 px-3 text-emerald-700" title="Client nou"><Plus size={18} /></button></div></div>
@@ -266,7 +266,7 @@ export function AddDemandDialog({
             <div className="grid grid-cols-2 gap-3"><div><label className="mb-1 block text-xs font-semibold text-gray-600">Sursă</label><select value={form.source} onChange={(event) => set('source', event.target.value)} className={inputClass}>{SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><label className="mb-1 block text-xs font-semibold text-gray-600">Agent</label><select value={form.agent_id} onChange={(event) => set('agent_id', event.target.value)} className={inputClass}><option value="">Agentul curent</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name || agent.email || agent.id}</option>)}</select></div></div>
 
             <h3 className="pt-2 font-bold text-gray-900">Localizare</h3>
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-2"><select className={inputClass} value={countyChoice} onChange={(event) => { setCountyChoice(event.target.value); setCityChoice(''); }}><option value="">Județ</option>{JUDETE.map((county) => <option key={county} value={county}>{county}</option>)}</select><select className={inputClass} value={cityChoice} disabled={!countyChoice} onChange={(event) => setCityChoice(event.target.value)}><option value="">Oraș / sat / comună</option>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select><button type="button" onClick={addLocation} disabled={!cityChoice} className="rounded-lg bg-emerald-700 px-3 text-white disabled:opacity-40"><Plus size={18} /></button></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]"><select className={inputClass} value={countyChoice} onChange={(event) => { setCountyChoice(event.target.value); setCityChoice(''); }}><option value="">Județ</option>{JUDETE.map((county) => <option key={county} value={county}>{county}</option>)}</select><select className={inputClass} value={cityChoice} disabled={!countyChoice} onChange={(event) => setCityChoice(event.target.value)}><option value="">Oraș / sat / comună</option>{cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}</select><button type="button" onClick={addLocation} disabled={!cityChoice} className="mobile-touch-target flex items-center justify-center rounded-lg bg-emerald-700 px-3 text-white disabled:opacity-40"><Plus size={18} /><span className="ml-2 sm:hidden">Adaugă localitatea</span></button></div>
             <div className="flex flex-wrap gap-2">{form.cities.map((city) => <button type="button" key={city} onClick={() => set('cities', form.cities.filter((item) => item !== city))} className="rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-800">{city} ×</button>)}{form.cities.length === 0 && <span className="text-xs text-gray-400">Nicio localitate selectată</span>}</div>
             <div className="flex gap-2"><input className={inputClass} placeholder="Zonă / cartier" value={zoneDraft} onChange={(event) => setZoneDraft(event.target.value)} /><button type="button" onClick={addZone} className="rounded-lg border border-gray-300 px-3"><Plus size={18} /></button></div>
             <div className="flex flex-wrap gap-2">{form.zones.map((zone) => <button type="button" key={zone} onClick={() => set('zones', form.zones.filter((item) => item !== zone))} className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-800">{zone} ×</button>)}</div>
@@ -276,7 +276,7 @@ export function AddDemandDialog({
           <section className="space-y-4">
             <h3 className="font-bold text-gray-900">Buget și caracteristici</h3>
             <label className="flex items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm"><input type="checkbox" checked={form.budget_unknown} onChange={(event) => set('budget_unknown', event.target.checked)} />Clientul nu știe încă bugetul</label>
-            <div className="grid grid-cols-[1fr_1fr_90px] gap-2"><input disabled={form.budget_unknown} type="number" min="0" className={inputClass} placeholder="Buget minim" value={form.budget_min} onChange={(event) => set('budget_min', event.target.value)} /><input disabled={form.budget_unknown} type="number" min="0" className={inputClass} placeholder="Buget maxim" value={form.budget_max} onChange={(event) => set('budget_max', event.target.value)} /><select className={inputClass} value={form.currency} onChange={(event) => set('currency', event.target.value)}><option>EUR</option><option>RON</option></select></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_90px]"><input disabled={form.budget_unknown} type="number" min="0" className={inputClass} placeholder="Buget minim" value={form.budget_min} onChange={(event) => set('budget_min', event.target.value)} /><input disabled={form.budget_unknown} type="number" min="0" className={inputClass} placeholder="Buget maxim" value={form.budget_max} onChange={(event) => set('budget_max', event.target.value)} /><select className={inputClass} value={form.currency} onChange={(event) => set('currency', event.target.value)}><option>EUR</option><option>RON</option></select></div>
             <Range label="Camere" min={form.rooms_min} max={form.rooms_max} onMin={(value) => set('rooms_min', value)} onMax={(value) => set('rooms_max', value)} />
             <Range label="Suprafață utilă (mp)" min={form.usable_area_min} max={form.usable_area_max} onMin={(value) => set('usable_area_min', value)} onMax={(value) => set('usable_area_max', value)} />
             <Range label="Teren (mp)" min={form.land_area_min} max={form.land_area_max} onMin={(value) => set('land_area_min', value)} onMax={(value) => set('land_area_max', value)} />
@@ -290,7 +290,7 @@ export function AddDemandDialog({
         </div>
 
         {error && <p className="mx-6 mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
-        <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4"><button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm">Anulează</button><button type="submit" disabled={loading} className="rounded-lg bg-emerald-700 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{loading ? 'Se salvează…' : demand ? 'Salvează modificările' : 'Creează cererea'}</button></div>
+        <div className="flex justify-end gap-2 border-t border-gray-200 px-4 py-4 sm:gap-3 sm:px-6"><button type="button" onClick={onClose} className="mobile-touch-target flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm sm:flex-none">Anulează</button><button type="submit" disabled={loading} className="mobile-touch-target flex-1 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 sm:flex-none sm:px-5">{loading ? 'Se salvează…' : demand ? 'Salvează modificările' : 'Creează cererea'}</button></div>
       </form>
     </div>
   );

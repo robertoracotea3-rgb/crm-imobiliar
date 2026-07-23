@@ -148,8 +148,8 @@ function TransactionDialog({ editing, props, agents, contacts, onClose, onSucces
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div className="mobile-dialog-backdrop fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="mobile-dialog-panel bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
           <h2 className="text-lg font-bold text-gray-900">{editing ? 'Editează tranzacție' : 'Adaugă tranzacție'}</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
@@ -314,7 +314,7 @@ export default function FinancePage() {
   // Blochează randarea pentru non-owner (redirect gestionat în useEffect de mai sus)
   return (
     <ProtectedLayout module="finance">
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2" style={{ color: '#0E6B54' }}>
@@ -323,7 +323,7 @@ export default function FinancePage() {
             <p className="text-sm text-gray-500 mt-1">Tranzacții și comisioane (valori în EUR)</p>
           </div>
           <button onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90"
+            className="mobile-touch-target flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white hover:opacity-90 sm:w-auto"
             style={{ backgroundColor: '#0E6B54' }}>
             <Plus size={18} />Adaugă tranzacție
           </button>

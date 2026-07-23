@@ -216,8 +216,8 @@ export function UnmatchedStoriaMessages({ onResolved }: { onResolved?: () => voi
       )}
 
       {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="flex max-h-[86vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-2xl">
+        <div className="mobile-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="mobile-dialog-panel flex max-h-[86vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <div>
                 <h3 className="font-bold text-gray-900">Leagă mesajul de proprietate</h3>

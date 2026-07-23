@@ -113,8 +113,8 @@ export function ScheduleViewingDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl">
+    <div className="mobile-dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="mobile-dialog-panel max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl">
         <header className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
           <div>
             <h3 className="font-bold text-gray-900">Programează vizionare</h3>

@@ -805,7 +805,7 @@ export default function EditPropertyPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <p className="text-gray-500">Se incarca...</p>
       </div>
     );
@@ -814,13 +814,13 @@ export default function EditPropertyPage() {
   const STEPS = ['Date Generale', 'Localizare', 'Proprietar', 'Suprafețe', 'Construcție', 'Dotări', 'Media', 'Promovare'];
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+    <div className="mobile-form-page bg-gray-50 min-h-screen">
+      <div className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 flex justify-between items-center">
         <h2 className="text-lg font-bold" style={{ color: '#0E6B54' }}>Editeaza Proprietate</h2>
         <button onClick={() => router.back()} className="p-1 hover:bg-gray-100 rounded text-xl">✕</button>
       </div>
 
-      <div className="px-6 py-3 flex gap-1 border-b border-gray-100 flex-shrink-0 overflow-x-auto bg-white">
+      <div className="px-4 sm:px-6 py-3 flex gap-1 border-b border-gray-100 flex-shrink-0 overflow-x-auto bg-white">
         {STEPS.map((label, i) => {
           const s = i + 1;
           return (
@@ -837,7 +837,7 @@ export default function EditPropertyPage() {
         })}
       </div>
 
-      <div className="flex-1 px-6 py-4 max-w-4xl mx-auto pb-20">
+      <div className="flex-1 px-4 sm:px-6 py-4 max-w-4xl mx-auto pb-24 sm:pb-20">
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-sm">{error}</div>
         )}
@@ -1755,27 +1755,27 @@ export default function EditPropertyPage() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 flex gap-3">
+      <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-30 flex gap-2 border-t border-gray-200 bg-white px-4 py-3 sm:gap-3 sm:px-6 sm:py-4 md:bottom-0 md:left-64">
         {step > 1 && (
           <button onClick={prev}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1 text-sm transition-colors">
+            className="mobile-touch-target flex flex-1 items-center justify-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors hover:bg-gray-50 sm:flex-none sm:px-4">
             <ChevronLeft size={16} /> Înapoi
           </button>
         )}
-        <div className="flex-1" />
+        <div className="hidden flex-1 sm:block" />
         <button onClick={handleSave} disabled={loading}
-          className="px-5 py-2 border border-emerald-700 text-emerald-700 rounded-lg hover:bg-emerald-50 disabled:opacity-50 text-sm font-medium transition-colors">
+          className="mobile-touch-target flex-1 rounded-lg border border-emerald-700 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-50 sm:flex-none sm:px-5">
           {loading ? (status || 'Se salvează...') : 'Salvează'}
         </button>
         {step < 8 ? (
           <button onClick={next}
-            className="px-5 py-2 text-white rounded-lg hover:opacity-90 flex items-center gap-1 text-sm font-medium transition-colors"
+            className="mobile-touch-target flex flex-1 items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 sm:flex-none sm:px-5"
             style={{ backgroundColor: '#0E6B54' }}>
             Înainte <ChevronRight size={16} />
           </button>
         ) : (
           <button onClick={handleSave} disabled={loading}
-            className="px-6 py-2 text-white rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium transition-colors"
+            className="mobile-touch-target flex-1 rounded-lg px-3 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50 sm:flex-none sm:px-6"
             style={{ backgroundColor: '#0E6B54' }}>
             {loading ? (status || 'Se salvează...') : 'Salvează Proprietatea'}
           </button>
