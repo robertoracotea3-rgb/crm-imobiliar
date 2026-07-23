@@ -1,25 +1,8 @@
 import type { Metadata } from "next";
-import { Sora, Inter, Playfair_Display } from "next/font/google";
 import { connection } from "next/server";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { AuthProvider } from "@/lib/auth-context";
-
-const sora = Sora({
-  variable: "--font-sora",
-  subsets: ["latin"],
-});
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
-  subsets: ["latin"],
-  weight: ["700"],
-});
 
 export const metadata: Metadata = {
   title: "KIRA Imobiliare — CRM",
@@ -37,10 +20,7 @@ export default async function RootLayout({
   await connection();
 
   return (
-    <html
-      lang="ro"
-      className={`${sora.variable} ${inter.variable} ${playfair.variable} h-full antialiased`}
-    >
+    <html lang="ro" className="h-full antialiased">
       <head>
         <link
           rel="stylesheet"

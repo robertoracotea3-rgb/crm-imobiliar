@@ -1,7 +1,6 @@
 import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeLeadSource } from '@/lib/crm-catalogs';
 
 import {
   STORIA_CRM_PORTAL_ID,
@@ -9,6 +8,7 @@ import {
   buildStoriaAdvertLookupPlan,
   normalizePortalAdId,
 } from '@/lib/server/storia-ad-identity.mjs';
+import { buildAssociatedStoriaLeadRecord } from '@/lib/server/storia-lead-record.mjs';
 
 export type IncomingStoriaLead = {
   ad_id?: string;
@@ -214,14 +214,7 @@ async function upsertAssociatedLead(
   context: StoriaPropertyContext,
   transactionId: string,
 ): Promise<LeadIngestResult> {
-  const source = input.from?.toLowerCase().includes('olx') ? 'olx' : 'storia';
-  const sourceNormalized = normalizeLeadSource(source) || 'storia';
   const message = input.message?.trim() || '';
-  const trace = [
-    `[${source}]`,
-    input.conversation_id ? `conv:${input.conversation_id}` : null,
-    message || null,
-  ].filter(Boolean).join(' ');
 
   const { data: byTransaction, error: transactionError } = await admin
     .from('leads')
@@ -253,31 +246,8 @@ async function upsertAssociatedLead(
     }
   }
 
-  const { data: lead, error } = await admin.from('leads').insert({
-    agency_id: context.agencyId,
-    property_id: context.propertyId,
-    property_title: context.title,
-    portal_id: STORIA_CRM_PORTAL_ID,
-    portal_listing_id: context.portalListingId,
-    portal_ad_id: context.portalAdId || normalizePortalAdId(input.ad_id),
-    portal_conversation_id: input.conversation_id || null,
-    webhook_transaction_id: transactionId,
-    contact_name: input.sender_name || input.sender_email || input.sender_phone || 'Client Storia',
-    contact_email: input.sender_email || null,
-    contact_phone: input.sender_phone || null,
-    message: trace,
-    status: 'new',
-    received_at: new Date().toISOString(),
-    agent_id: context.agentId,
-    source,
-    source_normalized: sourceNormalized,
-    next_action_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-    next_action_type: 'first_contact',
-    association_status: 'linked',
-    city: context.city,
-    county: context.county,
-    category: context.category,
-  }).select('id').single();
+  const record = buildAssociatedStoriaLeadRecord(input, context, transactionId);
+  const { data: lead, error } = await admin.from('leads').insert(record).select('id').single();
   if (error || !lead?.id) throw new Error('Storia lead insert failed');
 
   await addLeadActivity(admin, context.agencyId, lead.id as string, message);

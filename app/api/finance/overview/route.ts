@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
+import { calculatePropertyCommission } from '@/lib/commission';
 
 const SOLD_STATUSES = new Set(['tranzactionata', 'vanduta_noi', 'vanduta_altii', 'inchiriata']);
 
@@ -17,12 +18,8 @@ function monthKey(d: string) {
 }
 
 function pipelineCommissionEur(p: { price?: number; currency?: string; attributes?: Record<string, unknown> }): number {
-  const a = p.attributes || {};
-  const price = num(p.price);
-  let prop = num(a.comision_prop_val) || (num(a.comision_prop_pct) ? price * num(a.comision_prop_pct) / 100 : 0);
-  const chir = num(a.comision_chir_val) || (num(a.comision_chir_pct) ? price * num(a.comision_chir_pct) / 100 : 0);
-  if (prop === 0 && chir === 0 && num(a.comision) > 0) prop = price * num(a.comision) / 100;
-  return toEur(prop + chir, String(a.currency || p.currency || 'EUR'));
+  const commission = calculatePropertyCommission(p);
+  return toEur(commission.total, commission.currency);
 }
 
 export async function GET(request: Request) {

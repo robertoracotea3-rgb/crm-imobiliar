@@ -1,13 +1,18 @@
 export const dynamic = 'force-dynamic';
 
 import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
+import { normalizeViewingRequest } from '@/lib/viewings';
 
 const TRANSITIONS = ['confirm', 'reschedule', 'cancel', 'complete'] as const;
 type ViewingTransition = typeof TRANSITIONS[number];
 
 const friendlyError = (message: string) => {
+  if (message.includes('viewing_start_invalid')) return 'Data și ora sunt obligatorii';
   if (message.includes('viewing_must_be_future')) return 'Vizionarea trebuie programată în viitor';
   if (message.includes('invalid_duration')) return 'Durata trebuie să fie între 15 minute și 8 ore';
+  if (message.includes('reminder_invalid')) return 'Reminder invalid';
+  if (message.includes('reminder_must_precede_viewing')) return 'Reminderul trebuie să fie înaintea vizionării';
+  if (message.includes('participants_invalid')) return 'Lista participanților este invalidă';
   if (message.includes('property_not_found')) return 'Proprietatea nu aparține agenției';
   if (message.includes('lead_not_found') || message.includes('contact_not_found')) return 'Clientul nu aparține agenției';
   if (message.includes('agent_not_found')) return 'Agentul nu aparține agenției';
@@ -62,20 +67,19 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
   const { admin, serviceAdmin, agencyId, user } = auth.context;
   const body = await request.json().catch(() => ({}));
-  const startAt = body.start_at ? new Date(body.start_at) : null;
-  if (!startAt || Number.isNaN(startAt.getTime())) {
-    return Response.json({ error: 'Data și ora sunt obligatorii' }, { status: 400 });
-  }
-  const duration = Number(body.duration_minutes || 60);
-  const reminderAt = body.reminder_at ? new Date(body.reminder_at) : null;
-  if (reminderAt && Number.isNaN(reminderAt.getTime())) {
-    return Response.json({ error: 'Reminder invalid' }, { status: 400 });
+  let normalized;
+  try {
+    normalized = normalizeViewingRequest(body);
+  } catch (error) {
+    return Response.json({
+      error: friendlyError(error instanceof Error ? error.message : ''),
+    }, { status: 400 });
   }
 
   const { data: property } = await admin
     .from('properties')
     .select('id, agent_id')
-    .eq('id', body.property_id || '')
+    .eq('id', normalized.propertyId)
     .eq('agency_id', agencyId)
     .maybeSingle();
   if (!property) return Response.json({ error: 'Proprietatea nu este accesibilă' }, { status: 404 });
@@ -83,22 +87,22 @@ export async function POST(request: Request) {
   const { data: contact } = await admin
     .from('contacts')
     .select('id')
-    .eq('id', body.contact_id || '')
+    .eq('id', normalized.contactId)
     .eq('agency_id', agencyId)
     .maybeSingle();
   if (!contact) return Response.json({ error: 'Clientul nu este accesibil' }, { status: 404 });
 
-  if (body.lead_id) {
+  if (normalized.leadId) {
     const { data: lead } = await admin
       .from('leads')
       .select('id')
-      .eq('id', body.lead_id)
+      .eq('id', normalized.leadId)
       .eq('agency_id', agencyId)
       .maybeSingle();
     if (!lead) return Response.json({ error: 'Leadul nu este accesibil' }, { status: 404 });
   }
 
-  const requestedAgent = body.agent_id || property.agent_id || user.id;
+  const requestedAgent = normalized.agentId || property.agent_id || user.id;
   if (requestedAgent !== user.id && !contextHasPermission(auth.context, 'viewings', 'assign')) {
     return Response.json({ error: 'Nu poți programa vizionarea pentru alt agent' }, { status: 403 });
   }
@@ -106,16 +110,16 @@ export async function POST(request: Request) {
   const { data: viewingId, error } = await serviceAdmin.rpc('create_crm_viewing', {
     p_agency_id: agencyId,
     p_user_id: user.id,
-    p_lead_id: body.lead_id || null,
-    p_contact_id: body.contact_id || null,
-    p_property_id: body.property_id || null,
+    p_lead_id: normalized.leadId,
+    p_contact_id: normalized.contactId,
+    p_property_id: normalized.propertyId,
     p_agent_id: requestedAgent,
-    p_start_at: startAt.toISOString(),
-    p_duration_minutes: duration,
-    p_location: body.location || null,
-    p_description: body.description || null,
-    p_participants: Array.isArray(body.participants) ? body.participants : [],
-    p_reminder_at: reminderAt?.toISOString() || null,
+    p_start_at: normalized.startAt,
+    p_duration_minutes: normalized.durationMinutes,
+    p_location: normalized.location,
+    p_description: normalized.description,
+    p_participants: normalized.participants,
+    p_reminder_at: normalized.reminderAt,
   });
   if (error) return Response.json({ error: friendlyError(error.message) }, { status: 400 });
 

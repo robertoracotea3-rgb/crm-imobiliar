@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
 
 # local backups can contain personal data and must never be committed
 /backups/

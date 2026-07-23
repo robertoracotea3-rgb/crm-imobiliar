@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { usernameToEmail } from '@/lib/username';
 import { User, Lock } from 'lucide-react';
+
+const subscribeToHydration = () => () => undefined;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -14,6 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,12 +55,13 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="login-username" className="block text-sm font-medium text-gray-700 mb-1">
                 Nume utilizator
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
+                  id="login-username"
                   type="text"
                   name="username"
                   autoComplete="username"
@@ -71,12 +75,13 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-1">
                 Parola
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 text-gray-500" size={20} />
                 <input
+                  id="login-password"
                   type="password"
                   name="password"
                   autoComplete="current-password"
@@ -97,7 +102,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={!hydrated || loading}
               className="w-full py-2.5 text-white rounded-lg font-medium transition-colors hover:opacity-90 disabled:opacity-50 mt-2"
               style={{ backgroundColor: '#0E6B54' }}
             >

@@ -35,7 +35,8 @@ test('transaction lifecycle contains the full operational flow', () => {
 test('transactions API is paginated and finalizes only through the atomic RPC', async () => {
   const route = await read('app/api/transactions/route.ts');
   assert.match(route, /PAGE_SIZE_MAX = 50/);
-  assert.match(route, /\.range\(from, from \+ pageSize - 1\)/);
+  assert.match(route, /createPageWindow/);
+  assert.match(route, /\.range\(from, to\)/);
   assert.match(route, /status: 'draft'/);
   assert.match(route, /rpc\('crm_finalize_transaction'/);
   assert.match(route, /processPortalRemovalJobs/);

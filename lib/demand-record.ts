@@ -1,4 +1,4 @@
-import { normalizeMatchKey, type DemandMatchInput } from '@/lib/match-score';
+import { normalizeMatchKey, type DemandMatchInput } from './match-score.ts';
 
 export const DEMAND_INTENTS = ['cumparare', 'inchiriere', 'vanzare', 'oferire_inchiriere'] as const;
 export type DemandIntent = typeof DEMAND_INTENTS[number];

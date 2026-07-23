@@ -12,13 +12,10 @@ import {
   TRANSACTION_TYPES,
   nonNegativeMoney,
 } from '@/lib/transactions';
+import { createPageWindow, paginationMetadata } from '@/lib/pagination';
 
 const PAGE_SIZE_MAX = 50;
 const migrationError = (message: string) => /relation|does not exist|schema cache/i.test(message);
-const positiveInt = (value: string | null, fallback: number, max: number) => {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, max) : fallback;
-};
 const allowed = <T extends readonly string[]>(values: T, value: unknown): value is T[number] =>
   typeof value === 'string' && values.includes(value);
 
@@ -64,9 +61,10 @@ export async function GET(request: Request) {
   try {
     const { admin, serviceAdmin, agencyId } = auth.context;
     const params = new URL(request.url).searchParams;
-    const page = positiveInt(params.get('page'), 1, 100_000);
-    const pageSize = positiveInt(params.get('page_size'), 25, PAGE_SIZE_MAX);
-    const from = (page - 1) * pageSize;
+    const pageWindow = createPageWindow(params.get('page'), params.get('page_size'), {
+      maxPageSize: PAGE_SIZE_MAX,
+    });
+    const { pageSize, from, to } = pageWindow;
     let query = admin.from('transactions').select(
       'id,property_id,agent_id,contact_id,lead_id,type,status,status_reason,sale_price,currency,agency_commission,agent_commission,reservation_at,reservation_amount,closed_at,completed_at,notes,legacy_import,legacy_import_reason,property_code_snapshot,property_title_snapshot,contact_name_snapshot,created_at,updated_at',
       { count: 'exact' },
@@ -79,7 +77,7 @@ export async function GET(request: Request) {
     const search = params.get('search')?.trim().slice(0, 100);
     if (search) query = query.ilike('search_text', `%${search.replace(/[%_]/g, '')}%`);
     const { data, error, count } = await query.order('updated_at', { ascending: false })
-      .order('id', { ascending: true }).range(from, from + pageSize - 1);
+      .order('id', { ascending: true }).range(from, to);
     if (error) {
       if (migrationError(error.message)) {
         return Response.json({ transactions: [], needsMigration: true,
@@ -98,12 +96,11 @@ export async function GET(request: Request) {
       const current = jobsByTransaction.get(job.transaction_id) || [];
       current.push(job); jobsByTransaction.set(job.transaction_id, current);
     }
-    const total = count || 0;
     return Response.json({
       transactions: (data || []).map((item) => ({
         ...item, removal_jobs: jobsByTransaction.get(item.id) || [],
       })),
-      pagination: { page, page_size: pageSize, total, pages: Math.ceil(total / pageSize) },
+      pagination: paginationMetadata(count, pageWindow),
     });
   } catch (error) {
     return Response.json({ error: message(error) }, { status: 500 });

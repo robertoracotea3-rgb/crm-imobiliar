@@ -68,3 +68,26 @@ CRM-ul este `noindex`, folosește headere de securitate, CSP cu nonce unic pentr
 Deploy-ul trebuie făcut dintr-un commit verificat, cu variabilele de mediu configurate în platformă și cu o bază de staging separată. După deploy se verifică manual autentificarea, proprietățile, clienții, Storia, WhatsApp, vizionările, tranzacțiile, cronurile și panoul de sănătate.
 
 Producția nu se modifică din această copie locală fără aprobare explicită și plan de revenire.
+
+## Testarea fluxurilor CRM
+
+Testele folosesc numai date sintetice și nu se conectează la baza de producție.
+
+```powershell
+# Reguli de business și integrarea modulelor
+npm test
+
+# Funcții și politici PostgreSQL într-o bază Docker temporară
+npm run test:db
+
+# Autentificare și flux operațional complet într-un browser real
+npm run test:e2e
+
+# Toate verificările de mai sus
+npm run test:all
+```
+
+Testul PostgreSQL creează baza izolată `crmtest_phase22_automated`, aplică schema minimă și
+migrațiile necesare, rulează scenariile, apoi șterge baza chiar dacă o verificare eșuează.
+Scenariul din browser simulează serviciile externe și nu publică anunțuri, nu trimite mesaje
+WhatsApp și nu creează clienți reali.

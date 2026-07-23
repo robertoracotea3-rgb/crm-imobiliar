@@ -2,20 +2,19 @@ export const dynamic = 'force-dynamic';
 
 import { requireApiAuth } from '@/lib/server/api-auth';
 import { processPortalRemovalJobs } from '@/lib/server/portal-removals';
+import { createPageWindow, paginationMetadata } from '@/lib/pagination';
 
 const MAX_PAGE_SIZE = 50;
-const positiveInt = (value: string | null, fallback: number, max: number) => {
-  const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? Math.min(number, max) : fallback;
-};
 
 export async function GET(request: Request) {
   const auth = await requireApiAuth(request, { module: 'transactions', action: 'view' });
   if (!auth.ok) return auth.response;
   const { admin, agencyId } = auth.context;
   const params = new URL(request.url).searchParams;
-  const page = positiveInt(params.get('page'), 1, 100_000);
-  const pageSize = positiveInt(params.get('page_size'), 25, MAX_PAGE_SIZE);
+  const pageWindow = createPageWindow(params.get('page'), params.get('page_size'), {
+    maxPageSize: MAX_PAGE_SIZE,
+  });
+  const { from, to } = pageWindow;
   let query = admin.from('portal_removal_jobs').select(
     'id,transaction_id,property_id,portal,external_id,status,attempts,max_attempts,next_attempt_at,last_error,requested_at,confirmed_at',
     { count: 'exact' },
@@ -24,14 +23,12 @@ export async function GET(request: Request) {
   if (transactionId) query = query.eq('transaction_id', transactionId);
   const status = params.get('status');
   if (status) query = query.eq('status', status);
-  const from = (page - 1) * pageSize;
   const { data, error, count } = await query.order('requested_at', { ascending: false })
-    .range(from, from + pageSize - 1);
+    .range(from, to);
   if (error) return Response.json({ error: error.message }, { status: 500 });
-  const total = count || 0;
   return Response.json({
     jobs: data || [],
-    pagination: { page, page_size: pageSize, total, pages: Math.ceil(total / pageSize) },
+    pagination: paginationMetadata(count, pageWindow),
   });
 }
 

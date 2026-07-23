@@ -9,6 +9,7 @@ import {
   Plus, X, Loader2, Trash2, Pencil, UserCog, Calendar, RefreshCw, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { TRANSACTION_STATUSES } from '@/lib/crm-catalogs';
+import { calculatePropertyCommission } from '@/lib/commission';
 
 interface Finance {
   currency: string;
@@ -58,12 +59,7 @@ const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-non
 const num = (v: unknown) => { const n = parseFloat(String(v)); return Number.isFinite(n) ? n : 0; };
 
 function propCommission(p: PropOpt): number {
-  const a = p.attributes || {};
-  const price = num(p.price);
-  let prop = num(a.comision_prop_val) || (num(a.comision_prop_pct) ? price * num(a.comision_prop_pct) / 100 : 0);
-  const chir = num(a.comision_chir_val) || (num(a.comision_chir_pct) ? price * num(a.comision_chir_pct) / 100 : 0);
-  if (!prop && !chir && num(a.comision)) prop = price * num(a.comision) / 100;
-  return Math.round(prop + chir);
+  return Math.round(calculatePropertyCommission(p).total);
 }
 
 function Kpi({ icon, label, value, sub, color }: { icon: React.ReactNode; label: string; value: string; sub?: string; color: string }) {
