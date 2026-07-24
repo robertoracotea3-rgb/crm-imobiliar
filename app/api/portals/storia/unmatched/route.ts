@@ -55,16 +55,18 @@ export async function GET(request: Request) {
       .limit(200)
     : { data: [] as QueueRow[], error: null };
 
-  const legacyResult = await admin
-    .from('leads')
-    .select('id, contact_name, contact_email, contact_phone, message, source, portal_ad_id, received_at')
-    .eq('agency_id', agencyId)
-    .is('property_id', null)
-    .is('deleted_at', null)
-    .eq('association_status', 'pending')
-    .in('source_normalized', ['storia', 'olx', 'storia_olx'])
-    .order('received_at', { ascending: false })
-    .limit(200);
+  const legacyResult = canManageAllLeads
+    ? await admin
+      .from('leads')
+      .select('id, contact_name, contact_email, contact_phone, message, source, portal_ad_id, received_at')
+      .eq('agency_id', agencyId)
+      .is('property_id', null)
+      .is('deleted_at', null)
+      .eq('association_status', 'pending')
+      .in('source_normalized', ['storia', 'olx', 'storia_olx'])
+      .order('received_at', { ascending: false })
+      .limit(200)
+    : { data: [], error: null };
 
   if (queueResult.error) {
     return Response.json({ error: 'Nu am putut încărca mesajele neasociate' }, { status: 500 });
@@ -109,6 +111,9 @@ export async function PATCH(request: Request) {
   const auth = await requireApiAuth(request, { module: 'leads', action: 'edit' });
   if (!auth.ok) return auth.response;
   const { admin, serviceAdmin, agencyId, user } = auth.context;
+  if (!contextCanManageAll(auth.context, 'leads')) {
+    return Response.json({ error: 'Numai ownerul sau managerul poate rezolva mesajele neasociate' }, { status: 403 });
+  }
   const body = await request.json().catch(() => ({}));
   const compoundId = typeof body.id === 'string' ? body.id : '';
   const action = body.action;
@@ -198,10 +203,6 @@ export async function PATCH(request: Request) {
 
   // O intrare neasociată nu are încă proprietar/agent; numai managerii întregii
   // agenții o pot vedea și rezolva fără să expunem date între agenți.
-  if (!contextCanManageAll(auth.context, 'leads')) {
-    return Response.json({ error: 'Acces interzis' }, { status: 403 });
-  }
-
   const { data: queued, error: queueError } = await serviceAdmin
     .from('portal_unmatched_messages')
     .select('id, webhook_event_id, portal, portal_ad_id, external_id, conversation_id, sender_name, sender_email, sender_phone, message, property_title_hint, advert_url_hint, reason, created_at')

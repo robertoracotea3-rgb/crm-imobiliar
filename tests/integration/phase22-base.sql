@@ -50,6 +50,12 @@ create table public.properties (
   agent_id uuid references auth.users(id),
   internal_code text,
   title text,
+  city text,
+  county text,
+  category text,
+  price numeric,
+  currency text default 'EUR',
+  attributes jsonb not null default '{}'::jsonb,
   status text not null default 'activa',
   deleted_at timestamptz,
   updated_at timestamptz not null default now()
@@ -69,13 +75,30 @@ create table public.leads (
   agency_id uuid not null references public.agencies(id),
   contact_name text,
   contact_phone text,
+  contact_email text,
   agent_id uuid references auth.users(id),
   status text not null default 'new',
   next_action_at timestamptz,
   next_action_type text,
   property_id uuid references public.properties(id),
+  property_title text,
+  source text,
+  source_normalized text,
+  association_status text,
   received_at timestamptz not null default now(),
   deleted_at timestamptz
+);
+
+create table public.property_photos (
+  id uuid primary key default gen_random_uuid(),
+  agency_id uuid not null references public.agencies(id),
+  property_id uuid not null references public.properties(id),
+  public_url text,
+  storage_path text,
+  is_cover boolean not null default false,
+  sort_order integer not null default 0,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now()
 );
 
 create table public.calendar_events (

@@ -9,6 +9,7 @@ import {
   normalizePortalAdId,
 } from '@/lib/server/storia-ad-identity.mjs';
 import { buildAssociatedStoriaLeadRecord } from '@/lib/server/storia-lead-record.mjs';
+import { buildPublicPropertyUrl } from '@/lib/public-property-url';
 
 export type IncomingStoriaLead = {
   ad_id?: string;
@@ -30,11 +31,16 @@ export type StoriaPropertyContext = {
   portalListingId: string | null;
   portalAdId: string | null;
   externalId: string | null;
-  agentId: string | null;
+  responsibleAgentId: string | null;
   city: string | null;
   county: string | null;
   category: string | null;
   title: string | null;
+  publicCode: string | null;
+  publicUrl: string | null;
+  mainPhotoUrl: string | null;
+  price: number | null;
+  currency: string | null;
 };
 
 type ListingRow = {
@@ -59,13 +65,6 @@ const isUuid = (value?: string | null) => (
   Boolean(value) && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value!)
 );
 
-const normalizeMatch = (value?: string | null) => String(value || '')
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9]+/g, ' ')
-  .trim();
-
 async function propertyToContext(
   admin: SupabaseClient,
   propertyId: string,
@@ -74,7 +73,7 @@ async function propertyToContext(
 ): Promise<StoriaPropertyContext | null> {
   let query = admin
     .from('properties')
-    .select('id, agency_id, agent_id, city, county, category, title')
+    .select('id, agency_id, agent_id, responsible_agent_id, internal_code, city, county, category, title, price, currency, attributes')
     .eq('id', propertyId)
     .is('deleted_at', null);
   if (agencyId) query = query.eq('agency_id', agencyId);
@@ -83,17 +82,51 @@ async function propertyToContext(
   if (error) throw new Error('Property lookup failed');
   if (!data?.agency_id) return null;
 
+  const { data: coverPhoto, error: coverError } = await admin
+    .from('property_photos')
+    .select('public_url')
+    .eq('agency_id', data.agency_id)
+    .eq('property_id', data.id)
+    .is('deleted_at', null)
+    .not('public_url', 'is', null)
+    .order('is_cover', { ascending: false })
+    .order('sort_order', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (coverError) throw new Error('Property cover photo lookup failed');
+
+  const attributes = (data.attributes && typeof data.attributes === 'object')
+    ? data.attributes as Record<string, unknown>
+    : null;
+  const fallbackPhotos = Array.isArray(attributes?.photos)
+    ? attributes.photos.filter((value): value is string => typeof value === 'string')
+    : [];
+  const responsibleAgentId = (data.responsible_agent_id as string | null)
+    || (data.agent_id as string | null)
+    || null;
+
   return {
     agencyId: data.agency_id as string,
     propertyId: data.id as string,
     portalListingId: listing?.id || null,
     portalAdId: listing?.portal_ad_id || null,
     externalId: listing?.external_id || null,
-    agentId: (data.agent_id as string | null) || null,
+    responsibleAgentId,
     city: (data.city as string | null) || null,
     county: (data.county as string | null) || null,
     category: (data.category as string | null) || null,
     title: (data.title as string | null) || null,
+    publicCode: (data.internal_code as string | null) || null,
+    publicUrl: buildPublicPropertyUrl({
+      id: data.id as string,
+      internal_code: (data.internal_code as string | null) || null,
+      category: (data.category as string | null) || null,
+      city: (data.city as string | null) || null,
+      attributes,
+    }),
+    mainPhotoUrl: (coverPhoto?.public_url as string | null) || fallbackPhotos[0] || null,
+    price: data.price === null || data.price === undefined ? null : Number(data.price),
+    currency: (data.currency as string | null) || null,
   };
 }
 
@@ -129,7 +162,7 @@ async function contextFromListing(
     : { context: null, reason: 'listing_property_missing', agencyId: listing.agency_id };
 }
 
-/** Deterministic order: public advert id -> API uuid -> property id -> exact URL -> unique title. */
+/** Deterministic order only: public advert id -> API uuid -> property id -> exact URL. */
 export async function resolveStoriaProperty(
   admin: SupabaseClient,
   input: IncomingStoriaLead,
@@ -151,43 +184,11 @@ export async function resolveStoriaProperty(
     if (found.listing) return contextFromListing(admin, found.listing);
   }
 
-  const title = normalizeMatch(input.property_title);
-  if (title && agencyId) {
-    const { data: listings, error: listingError } = await admin
-      .from('portal_listings')
-      .select('id, agency_id, property_id, portal_ad_id, external_id')
-      .eq('portal', STORIA_PORTAL_KEY)
-      .eq('agency_id', agencyId)
-      .limit(500);
-    if (listingError) throw new Error('Portal title fallback lookup failed');
-
-    const propertyIds = [...new Set((listings || []).map((row) => row.property_id).filter(Boolean))] as string[];
-    if (propertyIds.length) {
-      const { data: properties, error: propertyError } = await admin
-        .from('properties')
-        .select('id, agency_id, agent_id, city, county, category, title')
-        .eq('agency_id', agencyId)
-        .is('deleted_at', null)
-        .in('id', propertyIds);
-      if (propertyError) throw new Error('Property title fallback lookup failed');
-
-      const matches = (properties || []).filter((property) => {
-        const candidate = normalizeMatch(property.title as string | null);
-        return candidate && candidate === title;
-      });
-      if (matches.length > 1) {
-        return { context: null, reason: 'ambiguous_property_title', agencyId };
-      }
-      if (matches.length === 1) {
-        const listing = (listings || []).find((row) => row.property_id === matches[0].id) as ListingRow | undefined;
-        if (listing) return contextFromListing(admin, listing);
-      }
-    }
-  }
-
   return {
     context: null,
-    reason: normalizePortalAdId(input.ad_id) ? 'portal_ad_id_not_found' : 'missing_advert_identity',
+    reason: normalizePortalAdId(input.ad_id)
+      ? 'portal_ad_id_not_found'
+      : lookupPlan.length > 0 ? 'advert_identity_not_found' : 'missing_advert_identity',
     agencyId: agencyId || null,
   };
 }

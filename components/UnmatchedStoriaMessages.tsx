@@ -40,11 +40,13 @@ type PropertyOption = {
 const REASON_LABELS: Record<string, string> = {
   historical_lead_without_advert_identity: 'Mesaj istoric fără ID-ul anunțului',
   portal_ad_id_not_found: 'ID-ul anunțului nu există în publicațiile CRM',
+  advert_identity_not_found: 'Identificatorul exact nu corespunde niciunui anunț al agenției',
   missing_advert_identity: 'Mesajul nu conține un ID de anunț utilizabil',
   listing_without_property: 'Anunțul nu are proprietate asociată',
   listing_property_missing: 'Proprietatea anunțului nu mai există',
   ambiguous_portal_ad_id: 'ID-ul anunțului apare la mai multe publicații',
   ambiguous_external_id: 'UUID-ul anunțului apare la mai multe publicații',
+  ambiguous_advert_url: 'Adresa anunțului apare la mai multe publicații',
 };
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('ro-RO', {

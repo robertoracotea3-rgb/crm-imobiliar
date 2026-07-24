@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -53,4 +54,14 @@ test('builds the deterministic association lookup order', () => {
     { kind: 'property_id', value: 'property-uuid' },
     { kind: 'advert_url', value: 'https://example.test/ad' },
   ]);
+});
+
+test('never falls back to risky Storia association by title or price', () => {
+  const source = readFileSync(
+    new URL('../lib/server/storia-leads.ts', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /property title fallback/i);
+  assert.doesNotMatch(source, /ambiguous_property_title/);
+  assert.doesNotMatch(source, /normalizeMatch\(input\.property_title\)/);
 });

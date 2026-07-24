@@ -10,6 +10,10 @@ type PropertySummary = {
   city?: string | null;
   county?: string | null;
   category?: string | null;
+  price?: number | null;
+  currency?: string | null;
+  responsible_agent_id?: string | null;
+  assigned_at?: string | null;
   attributes?: Record<string, unknown> | null;
 };
 
@@ -26,7 +30,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    const { admin, agencyId } = auth.context;
+    const { admin, serviceAdmin, agencyId } = auth.context;
 
     const { data, error } = await admin
       .from('leads')
@@ -41,16 +45,33 @@ export async function GET(request: Request) {
     const rows = data || [];
     const propIds = [...new Set(rows.map((l) => l.property_id).filter(Boolean))] as string[];
     let propById: Record<string, PropertySummary> = {};
+    const coverByPropertyId: Record<string, string> = {};
 
     if (propIds.length) {
-      const { data: props } = await admin
-        .from('properties')
-        .select('id, internal_code, title, city, county, category, attributes')
-        .eq('agency_id', agencyId)
-        .is('deleted_at', null)
-        .in('id', propIds);
+      const [{ data: props }, { data: covers }] = await Promise.all([
+        admin
+          .from('properties')
+          .select('id, internal_code, title, city, county, category, price, currency, responsible_agent_id, assigned_at, attributes')
+          .eq('agency_id', agencyId)
+          .is('deleted_at', null)
+          .in('id', propIds),
+        serviceAdmin
+          .from('property_photos')
+          .select('property_id, public_url, is_cover, sort_order')
+          .eq('agency_id', agencyId)
+          .is('deleted_at', null)
+          .not('public_url', 'is', null)
+          .in('property_id', propIds)
+          .order('is_cover', { ascending: false })
+          .order('sort_order', { ascending: true }),
+      ]);
 
       propById = Object.fromEntries((props || []).map((p) => [p.id, p]));
+      for (const cover of covers || []) {
+        if (cover.property_id && cover.public_url && !coverByPropertyId[cover.property_id]) {
+          coverByPropertyId[cover.property_id] = cover.public_url;
+        }
+      }
     }
 
     const enrichedLeads = rows.map((l) => {
@@ -58,14 +79,22 @@ export async function GET(request: Request) {
       return {
         ...l,
         property_title: l.property_title || p.title || null,
-        property_code: p.internal_code || null,
-        property_public_url: p.id ? buildPublicPropertyUrl({
+        property_public_code: l.property_public_code || p.internal_code || null,
+        property_code: l.property_public_code || p.internal_code || null,
+        property_public_url: l.property_public_url || (p.id ? buildPublicPropertyUrl({
           id: p.id,
           internal_code: p.internal_code,
           category: p.category,
           city: p.city,
           attributes: p.attributes,
-        }) : null,
+        }) : null),
+        property_main_photo_url: l.property_main_photo_url
+          || (p.id ? coverByPropertyId[p.id] : null)
+          || null,
+        property_price: l.property_price ?? p.price ?? null,
+        property_currency: l.property_currency || p.currency || null,
+        responsible_agent_id: l.responsible_agent_id || p.responsible_agent_id || l.agent_id || null,
+        assigned_at: l.assigned_at || p.assigned_at || null,
         city: l.city || p.city || null,
         county: l.county || p.county || null,
         category: l.category || p.category || null,
@@ -116,7 +145,7 @@ export async function GET(request: Request) {
         contact_name: contact?.full_name || primary.contact_name,
         contact_phone: contact?.phone || primary.contact_phone,
         contact_email: contact?.email || primary.contact_email,
-        agent_id: primary.agent_id || contact?.agent_id || null,
+        agent_id: primary.responsible_agent_id || primary.agent_id || contact?.agent_id || null,
         lead_count: group.length,
         lead_ids: group.map((lead) => lead.id),
         demand_count: primary.contact_id ? (demandCountByContact.get(primary.contact_id) || 0) : 0,

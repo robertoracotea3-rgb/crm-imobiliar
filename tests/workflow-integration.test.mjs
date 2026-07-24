@@ -66,11 +66,16 @@ test('integration: signed Storia webhook becomes a property- and agent-linked le
     propertyId,
     portalListingId: listingId,
     portalAdId: '987654321',
-    agentId,
+    responsibleAgentId: agentId,
     city: 'Făgăraș',
     county: 'Brașov',
     category: 'apartament',
     title: 'Apartament test',
+    publicCode: 'KIRA-TEST-33',
+    publicUrl: 'https://www.kiraimobiliare.ro/proprietati/apartament-fagaras-kira-test-33',
+    mainPhotoUrl: 'https://cdn.example.invalid/property-cover.webp',
+    price: 92_000,
+    currency: 'EUR',
   }, transactionId, '2026-07-23T09:00:00.000Z');
 
   assert.equal(record.agency_id, agencyId);
@@ -78,7 +83,44 @@ test('integration: signed Storia webhook becomes a property- and agent-linked le
   assert.equal(record.agent_id, agentId);
   assert.equal(record.webhook_transaction_id, transactionId);
   assert.equal(record.portal_ad_id, '987654321');
+  assert.equal(record.property_public_code, 'KIRA-TEST-33');
+  assert.equal(record.property_price, 92_000);
+  assert.equal(record.responsible_agent_id, agentId);
+  assert.equal(record.assigned_at, '2026-07-23T09:00:00.000Z');
+  assert.equal(record.first_contact_due_at, '2026-07-24T09:00:00.000Z');
+  assert.equal(record.lead_assignment_status, 'assigned');
   assert.equal(record.next_action_at, '2026-07-23T09:15:00.000Z');
+});
+
+test('integration: a Storia lead for an unassigned property stays visible for owner allocation', () => {
+  const record = buildAssociatedStoriaLeadRecord({
+    ad_id: '987654322',
+    sender_name: 'Client fără agent',
+    message: 'Doresc detalii.',
+    from: 'Storia',
+  }, {
+    agencyId,
+    propertyId,
+    portalListingId: listingId,
+    portalAdId: '987654322',
+    responsibleAgentId: null,
+    city: 'Făgăraș',
+    county: 'Brașov',
+    category: 'apartament',
+    title: 'Apartament fără agent',
+    publicCode: 'KIRA-UNASSIGNED',
+    publicUrl: 'https://www.kiraimobiliare.ro/proprietati/apartament-fagaras-kira-unassigned',
+    mainPhotoUrl: null,
+    price: 75_000,
+    currency: 'EUR',
+  }, 'storia-event-unassigned', '2026-07-23T09:00:00.000Z');
+
+  assert.equal(record.agent_id, null);
+  assert.equal(record.responsible_agent_id, null);
+  assert.equal(record.assigned_at, null);
+  assert.equal(record.first_contact_due_at, null);
+  assert.equal(record.lead_assignment_status, 'pending_owner');
+  assert.equal(record.property_public_code, 'KIRA-UNASSIGNED');
 });
 
 test('integration: linked lead identity becomes one client demand and a deterministic match', () => {

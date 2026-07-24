@@ -43,8 +43,12 @@ interface Client {
   message?: string;
   property_id?: string;
   property_title?: string;
+  property_public_code?: string;
   property_code?: string;
   property_public_url?: string;
+  property_main_photo_url?: string;
+  property_price?: number;
+  property_currency?: string;
   status: string;
   pipeline_stage?: string;
   pipeline_stage_changed_at?: string;
@@ -61,6 +65,10 @@ interface Client {
   currency?: string;
   criteria?: Record<string, unknown>;
   agent_id?: string;
+  responsible_agent_id?: string;
+  assigned_at?: string;
+  first_contact_due_at?: string;
+  lead_assignment_status?: 'assigned' | 'pending_owner';
   next_action_at?: string;
   next_action_type?: string;
   status_reason?: string;
@@ -525,7 +533,9 @@ export default function ClientsPage() {
   // agent scope + text/field filters (before tab)
   const scoped = useMemo(() => clients.filter((c) => {
     if (onlyMine && user?.id) { if (c.agent_id !== user.id) return false; }
-    else if (!onlyMine && selectedAgent) { if (c.agent_id !== selectedAgent) return false; }
+    else if (!onlyMine && selectedAgent === '__none__') {
+      if (c.responsible_agent_id || c.agent_id) return false;
+    } else if (!onlyMine && selectedAgent) { if (c.agent_id !== selectedAgent) return false; }
     if (fCity && c.city !== fCity) return false;
     if (fCategory && c.category !== fCategory) return false;
     if (fSource && (c.source_normalized || normalizeLeadSource(c.source) || '') !== fSource) return false;
@@ -678,6 +688,7 @@ export default function ClientsPage() {
               </label>
               <select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)} disabled={onlyMine} className="px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100 disabled:text-gray-400">
                 <option value="">Toți agenții</option>
+                <option value="__none__">De alocat de owner</option>
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.email}{a.id === user?.id ? ' (eu)' : ''}</option>)}
               </select>
               <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate sursele</option>{SOURCES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}</select>
@@ -719,7 +730,8 @@ export default function ClientsPage() {
             {visible.map((c) => {
               const normalizedSource = c.source_normalized || normalizeLeadSource(c.source);
               const parsed = parseLeadMessage(c.message, leadSourceLabel(normalizedSource));
-              const agentName = c.agent_id ? (agentNames[c.agent_id] || '') : '';
+              const responsibleAgentId = c.responsible_agent_id || c.agent_id;
+              const agentName = responsibleAgentId ? (agentNames[responsibleAgentId] || '') : '';
               const operationalStage = pipelineMeta(c.pipeline_stage, c.status);
               return (
                 <div key={c.id} className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 transition-colors p-4">
@@ -736,6 +748,7 @@ export default function ClientsPage() {
                             <span title="Status istoric păstrat" className={`text-[10px] font-medium px-2 py-0.5 rounded-full opacity-70 ${statusColor(c.status)}`}>{statusLabel(c.status)}</span>
                             {(c.lead_count || 0) > 1 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{c.lead_count} leaduri</span>}
                             {(c.demand_count || 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{c.demand_count} cereri</span>}
+                            {c.lead_assignment_status === 'pending_owner' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">De alocat de owner</span>}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500 mt-1 flex-wrap">
                             {c.contact_phone && <span className="flex items-center gap-1"><Phone size={12} />{c.contact_phone}</span>}
@@ -754,16 +767,33 @@ export default function ClientsPage() {
                       </div>
 
                       {c.property_id && c.property_title ? (
-                        <a
-                          href={`/properties/${c.property_id}`}
-                          title="Deschide proprietatea"
-                          className="mt-2 inline-flex max-w-full items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:border-emerald-400 hover:bg-emerald-100"
-                        >
-                          <span>🏠</span>
-                          <span className="truncate">
-                            {c.property_code ? `${c.property_code} · ` : ''}{c.property_title}
-                          </span>
-                        </a>
+                        <div className="mt-3 flex max-w-2xl overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50/70">
+                          <Link
+                            href={`/properties/${c.property_id}`}
+                            title="Deschide proprietatea în CRM"
+                            className="h-24 w-28 flex-shrink-0 bg-slate-200 bg-cover bg-center"
+                            style={c.property_main_photo_url ? { backgroundImage: `url("${c.property_main_photo_url}")` } : undefined}
+                            aria-label={`Deschide ${c.property_title}`}
+                          />
+                          <div className="min-w-0 flex-1 p-3">
+                            <Link href={`/properties/${c.property_id}`} className="block truncate text-sm font-semibold text-emerald-900 hover:underline">
+                              {c.property_title}
+                            </Link>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
+                              {(c.property_public_code || c.property_code) && <span>Cod: {c.property_public_code || c.property_code}</span>}
+                              {c.property_price != null && <span className="font-semibold text-gray-800">{Number(c.property_price).toLocaleString('ro-RO')} {c.property_currency || 'EUR'}</span>}
+                              {c.city && <span>{c.city}</span>}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold">
+                              <Link href={`/properties/${c.property_id}`} className="text-emerald-800 hover:underline">Deschide în CRM</Link>
+                              {c.property_public_url && (
+                                <a href={c.property_public_url} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+                                  Vezi pe kiraimobiliare.ro
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       ) : ['storia', 'olx', 'storia_olx'].includes(normalizedSource || '') ? (
                         <button
                           onClick={() => openLinkProperty(c)}
