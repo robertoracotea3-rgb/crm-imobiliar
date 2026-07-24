@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { Trash2, MapPin, Home, User } from 'lucide-react';
+import { Trash2, MapPin, Home, User, UserRoundCog, AlertTriangle } from 'lucide-react';
 import { ActivityStatus } from './ActivityStatus';
 
 const CAT_LABELS: Record<string, string> = {
@@ -23,6 +23,8 @@ interface Property {
   category: string;
   status?: string;
   agent_id?: string;
+  responsible_agent_id?: string | null;
+  assignment_status?: string | null;
   created_at: string;
   attributes?: {
     location_text?: string;
@@ -46,6 +48,8 @@ interface PropertiesListProps {
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   agentNames?: Record<string, string>;
+  canAssign?: boolean;
+  onAssign?: (id: string) => void;
 }
 
 export function PropertiesList({
@@ -57,6 +61,8 @@ export function PropertiesList({
   selectedIds,
   onToggleSelect,
   agentNames = {},
+  canAssign = false,
+  onAssign,
 }: PropertiesListProps) {
   const selectable = !!onToggleSelect;
   const getDaysAgo = (dateStr: string) => {
@@ -153,10 +159,16 @@ export function PropertiesList({
                         {CAT_LABELS[property.category]}
                       </span>
                     )}
-                    {property.agent_id && agentNames[property.agent_id] && (
+                    {(property.responsible_agent_id || property.agent_id) && agentNames[property.responsible_agent_id || property.agent_id || ''] && (
                       <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
                         <User size={11} />
-                        {agentNames[property.agent_id]}
+                        {agentNames[property.responsible_agent_id || property.agent_id || '']}
+                      </span>
+                    )}
+                    {!property.responsible_agent_id && !property.agent_id && (
+                      <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        <AlertTriangle size={11} />
+                        Fără agent
                       </span>
                     )}
                     {property.status && property.status !== 'activa' && statusLabelMap[property.status] && (
@@ -181,6 +193,16 @@ export function PropertiesList({
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {canAssign && (
+                      <button
+                        type="button"
+                        onClick={() => onAssign?.(property.id)}
+                        className="rounded-lg border border-indigo-200 p-1.5 text-indigo-700 hover:bg-indigo-50"
+                        title="Alocă sau realocă"
+                      >
+                        <UserRoundCog size={16} />
+                      </button>
+                    )}
                     <Link
                       href={`/properties/${property.id}`}
                       className="px-4 py-1.5 text-sm font-semibold rounded-lg text-white transition-all hover:opacity-90"

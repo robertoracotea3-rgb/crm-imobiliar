@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { logActivity, diffFields, getUserName } from '@/lib/activity-log';
 import { normalizePropertyWrite } from '@/lib/property-form';
-import { requireApiAuth } from '@/lib/server/api-auth';
+import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 
 function errMsg(e: unknown): string {
@@ -61,7 +61,6 @@ export async function POST(request: Request) {
       updateData.show_exact_location = !normalized.attributes.ascunde_adresa;
       updateData.exclusive = Boolean(normalized.attributes.exclusivitate);
     }
-    if (normalized.agentId !== undefined) updateData.agent_id = normalized.agentId;
     if (normalized.ownerContactId !== undefined) updateData.owner_contact_id = normalized.ownerContactId;
 
     // Snapshot current values for the activity log
@@ -73,6 +72,18 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (!old) return Response.json({ error: 'Proprietatea nu există' }, { status: 404 });
+    if (
+      normalized.agentId !== undefined
+      && normalized.agentId !== (old.responsible_agent_id || old.agent_id || null)
+    ) {
+      if (!contextHasPermission(auth.context, 'properties', 'assign')) {
+        return Response.json({ error: 'Realocarea proprietății necesită dreptul de alocare.' }, { status: 403 });
+      }
+      return Response.json({
+        error: 'Folosește dialogul de alocare pentru a păstra motivul, istoricul și efectele asupra activităților.',
+        code: 'USE_ASSIGNMENT_WORKFLOW',
+      }, { status: 409 });
+    }
     if (normalized.attributes !== undefined) {
       const oldAttributes = old.attributes && typeof old.attributes === 'object'
         ? old.attributes as Record<string, unknown>

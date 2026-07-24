@@ -25,35 +25,11 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Acțiuni de publicare incompatibile' }, { status: 400 });
     }
 
-    if (agent_id) {
-      const { data: assignedAgent } = await admin
-        .from('profiles')
-        .select('user_id')
-        .eq('user_id', agent_id)
-        .eq('agency_id', agencyId)
-        .maybeSingle();
-      if (!assignedAgent) {
-        return Response.json({ error: 'Agentul selectat nu aparține agenției' }, { status: 400 });
-      }
-    }
-
-    let previousAssignments: Array<{ id: string; agent_id: string | null }> = [];
     if (agent_id !== undefined) {
-      const { data: currentRows, error: currentError } = await admin
-        .from('properties')
-        .select('id,agent_id')
-        .in('id', ids)
-        .eq('agency_id', agencyId)
-        .is('deleted_at', null);
-      if (currentError) return Response.json({ error: currentError.message }, { status: 500 });
-      previousAssignments = currentRows || [];
-      const { error } = await admin
-        .from('properties')
-        .update({ agent_id: agent_id || null, updated_at: new Date().toISOString() })
-        .in('id', ids)
-        .eq('agency_id', agencyId)
-        .is('deleted_at', null);
-      if (error) return Response.json({ error: error.message }, { status: 500 });
+      return Response.json({
+        error: 'Alocarea se face numai prin fluxul cu motiv, confirmare și istoric.',
+        code: 'USE_ASSIGNMENT_WORKFLOW',
+      }, { status: 409 });
     }
 
     if (publishSite || unpublishSite) {
@@ -85,15 +61,6 @@ export async function POST(request: Request) {
       if (failed?.error) return Response.json({ error: failed.error.message }, { status: 500 });
     }
 
-    if (agent_id !== undefined) {
-      await appendAuditEvent({
-        client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
-        action: 'property.agent_reassigned', entityType: 'property_batch',
-        before: { assignments: previousAssignments },
-        after: { property_ids: ids, agent_id: agent_id || null },
-        metadata: { affected_count: previousAssignments.length },
-      });
-    }
     if (publishSite || unpublishSite) {
       await appendAuditEvent({
         client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,

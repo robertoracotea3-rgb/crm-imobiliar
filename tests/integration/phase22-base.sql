@@ -73,6 +73,8 @@ create table public.leads (
   status text not null default 'new',
   next_action_at timestamptz,
   next_action_type text,
+  property_id uuid references public.properties(id),
+  received_at timestamptz not null default now(),
   deleted_at timestamptz
 );
 
@@ -124,6 +126,26 @@ create table public.tasks (
   due_at timestamptz,
   property_id uuid references public.properties(id),
   lead_id uuid references public.leads(id),
+  created_at timestamptz not null default now()
+);
+
+create table public.demands (
+  id uuid primary key default gen_random_uuid(),
+  agency_id uuid not null references public.agencies(id),
+  contact_id uuid references public.contacts(id),
+  agent_id uuid references auth.users(id),
+  status text not null default 'activa',
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create table public.matches (
+  id uuid primary key default gen_random_uuid(),
+  agency_id uuid not null references public.agencies(id),
+  demand_id uuid not null references public.demands(id),
+  property_id uuid not null references public.properties(id),
+  score numeric not null default 0,
+  status text not null default 'noua',
   created_at timestamptz not null default now()
 );
 
@@ -192,9 +214,18 @@ create table public.activity_logs (
 );
 
 create or replace function public.current_crm_agency_id()
-returns uuid language sql stable as $$ select null::uuid $$;
+returns uuid language sql stable as $$
+  select agency_id
+  from public.profiles
+  where user_id = auth.uid()
+    and coalesce(status, 'active') = 'active'
+  limit 1
+$$;
 
 create or replace function public.crm_has_permission(text, text)
+returns boolean language sql stable as $$ select true $$;
+
+create or replace function public.crm_can_access_row(text, uuid[])
 returns boolean language sql stable as $$ select true $$;
 
 create or replace function public.crm_enqueue_notification(

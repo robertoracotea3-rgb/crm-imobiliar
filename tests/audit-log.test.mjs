@@ -68,6 +68,7 @@ test('every mandatory sensitive workflow emits the central audit event', async (
     read('app/api/team/members/[id]/route.ts'),
     read('app/api/clients/duplicates/route.ts'),
     read('app/api/contacts/route.ts'),
+    read('app/api/properties/assign/route.ts'),
     read('app/api/properties/bulk/route.ts'),
     read('app/api/properties/delete/route.ts'),
     read('app/api/feed/properties.xml/route.ts'),

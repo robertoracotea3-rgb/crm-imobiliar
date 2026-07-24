@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { logActivity, getUserName } from '@/lib/activity-log';
-import { requireApiAuth } from '@/lib/server/api-auth';
+import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 import { refreshDemandMatchesForProperty } from '@/lib/server/demand-matching';
 import { normalizePropertyWrite } from '@/lib/property-form';
 
@@ -41,6 +41,9 @@ export async function POST(request: Request) {
         : Promise.resolve({ data: null }),
     ]);
     if (!assignedAgent) return Response.json({ error: 'Agentul selectat nu este activ în agenție.' }, { status: 400 });
+    if (assignedAgentId !== user.id && !contextHasPermission(auth.context, 'properties', 'assign')) {
+      return Response.json({ error: 'Nu ai dreptul să aloci proprietatea altui agent.' }, { status: 403 });
+    }
     if (ownerContactId && !ownerContact) {
       return Response.json({ error: 'Proprietarul selectat nu este accesibil.' }, { status: 400 });
     }
@@ -49,6 +52,12 @@ export async function POST(request: Request) {
       ...normalized.columns,
       agency_id: agencyId,
       agent_id: assignedAgentId,
+      responsible_agent_id: assignedAgentId,
+      assigned_by_user_id: user.id,
+      assigned_at: new Date().toISOString(),
+      assignment_updated_at: new Date().toISOString(),
+      assignment_status: 'assigned',
+      assignment_reason: 'Alocare la crearea proprietății',
       owner_contact_id: ownerContactId,
       internal_code: typeof propertyData.internal_code === 'string' && propertyData.internal_code.trim()
         ? propertyData.internal_code.trim().slice(0, 80)

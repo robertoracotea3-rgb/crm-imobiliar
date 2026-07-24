@@ -6,10 +6,12 @@ import { supabase } from '@/lib/supabase';
 import { PropertiesList } from '@/components/PropertiesList';
 import { PropertiesMapView } from '@/components/PropertiesMapView';
 import { AddPropertyDialog } from '@/components/AddPropertyDialog';
+import { PropertyAssignmentDialog } from '@/components/PropertyAssignmentDialog';
 import { Search, Filter, Plus, Wand2, ArrowUpDown, CheckSquare, Trash2, RefreshCw, User, Globe } from 'lucide-react';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 import { PROPERTY_STATUSES, PROPERTY_STATUS_TRANSITIONS, canTransition, isPropertyStatus } from '@/lib/crm-catalogs';
+import { useAuth } from '@/lib/auth-context';
 
 const CATEGORIES = [
   'apartament', 'casa_vila', 'spatiu_comercial', 'spatiu_industrial',
@@ -38,6 +40,8 @@ interface PropertyRow {
   category: string;
   status?: string;
   agent_id?: string;
+  responsible_agent_id?: string | null;
+  assignment_status?: string | null;
   created_at: string;
   latitude?: number | string | null;
   longitude?: number | string | null;
@@ -53,6 +57,8 @@ interface PropertyRow {
 }
 
 export default function PropertiesPage() {
+  const { user, can } = useAuth();
+  const currentUserId = user?.id || '';
   const [properties, setProperties] = useState<PropertyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -102,13 +108,15 @@ export default function PropertiesPage() {
   const [selectedCity, setSelectedCity] = useState('');
   const [selectedTransaction, setSelectedTransaction] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [onlyMine, setOnlyMine] = useState(false);
+  const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const [agentsList, setAgentsList] = useState<{ id: string; name: string }[]>([]);
 
   // Bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState('');
-  const [bulkAgent, setBulkAgent] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [assignmentIds, setAssignmentIds] = useState<string[] | null>(null);
 
   const availableCities = selectedCounty ? (ORASE_BY_JUDET[selectedCounty] || []) : [];
 
@@ -210,7 +218,15 @@ export default function PropertiesPage() {
     }
 
     // Agent filter
-    if (selectedAgent) filtered = filtered.filter((p) => p.agent_id === selectedAgent);
+    if (selectedAgent) {
+      filtered = filtered.filter((p) => (p.responsible_agent_id || p.agent_id) === selectedAgent);
+    }
+    if (onlyMine && currentUserId) {
+      filtered = filtered.filter((p) => (p.responsible_agent_id || p.agent_id) === currentUserId);
+    }
+    if (onlyUnassigned) {
+      filtered = filtered.filter((p) => !p.responsible_agent_id && !p.agent_id);
+    }
 
     // Sort
     filtered.sort((a, b) => {
@@ -223,7 +239,7 @@ export default function PropertiesPage() {
 
     return filtered;
   }, [searchTerm, selectedCategory, sortBy, showActive, showReservate, showTranzactionate, showRetrase,
-      selectedCounty, selectedCity, selectedTransaction, selectedAgent, properties]);
+      selectedCounty, selectedCity, selectedTransaction, selectedAgent, onlyMine, onlyUnassigned, currentUserId, properties]);
 
   const resetFilters = () => {
     setSearchTerm('');
@@ -237,6 +253,8 @@ export default function PropertiesPage() {
     setSelectedCity('');
     setSelectedTransaction('');
     setSelectedAgent('');
+    setOnlyMine(false);
+    setOnlyUnassigned(false);
   };
 
   const toggleSelect = useCallback((id: string) => {
@@ -281,30 +299,6 @@ export default function PropertiesPage() {
     } catch (err) {
       console.error('Eroare bulk status:', err);
       alert(err instanceof Error ? err.message : 'Statusurile nu au putut fi schimbate');
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  // Mută proprietățile selectate pe alt agent
-  const applyBulkAgent = async () => {
-    if (selectedIds.size === 0 || !bulkAgent) return; // trebuie aleasă o opțiune (agent sau „neasignat")
-    setBulkLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const agentId = bulkAgent === '__none__' ? null : bulkAgent;
-      const res = await fetch('/api/properties/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ ids: Array.from(selectedIds), agent_id: agentId }),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Eroare la mutarea pe agent'); return; }
-      setSelectedIds(new Set());
-      setBulkAgent('');
-      await fetchProperties();
-    } catch (err) {
-      console.error('Eroare bulk agent:', err);
     } finally {
       setBulkLoading(false);
     }
@@ -568,6 +562,18 @@ export default function PropertiesPage() {
             <span className="text-xs font-medium text-gray-700">Retrase{retraseCount > 0 && <span className="ml-1 text-gray-500">({retraseCount})</span>}</span>
           </label>
 
+          <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" checked={onlyMine} onChange={(event) => setOnlyMine(event.target.checked)} className="w-4 h-4 rounded accent-emerald-600" />
+            <span className="text-xs font-medium text-gray-700">Proprietățile mele</span>
+          </label>
+
+          {can('properties', 'assign') && (
+            <label className="flex items-center gap-1.5 cursor-pointer select-none rounded-full bg-amber-50 px-3 py-1">
+              <input type="checkbox" checked={onlyUnassigned} onChange={(event) => setOnlyUnassigned(event.target.checked)} className="w-4 h-4 rounded accent-amber-600" />
+              <span className="text-xs font-semibold text-amber-800">Fără agent</span>
+            </label>
+          )}
+
           <button
             onClick={resetFilters}
             className="ml-auto flex items-center gap-1.5 px-3 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-600"
@@ -637,24 +643,16 @@ export default function PropertiesPage() {
                   Aplică
                 </button>
 
-                {/* Mută pe alt agent */}
-                <select
-                  value={bulkAgent}
-                  onChange={(e) => setBulkAgent(e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                >
-                  <option value="">Mută pe agent...</option>
-                  <option value="__none__">— Neasignat —</option>
-                  {agentsList.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-                <button
-                  onClick={applyBulkAgent}
-                  disabled={!bulkAgent || bulkLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg disabled:opacity-40 hover:bg-indigo-700 transition-colors"
-                >
-                  <User size={13} />
-                  Mută agent
-                </button>
+                {can('properties', 'assign') && (
+                  <button
+                    onClick={() => setAssignmentIds(Array.from(selectedIds))}
+                    disabled={bulkLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg disabled:opacity-40 hover:bg-indigo-700 transition-colors"
+                  >
+                    <User size={13} />
+                    Alocă / realocă
+                  </button>
+                )}
 
                 {/* Publicare pe site */}
                 <button
@@ -699,6 +697,8 @@ export default function PropertiesPage() {
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             agentNames={Object.fromEntries(agentsList.map((a) => [a.id, a.name]))}
+            canAssign={can('properties', 'assign')}
+            onAssign={(id) => setAssignmentIds([id])}
           />
         </div>
       )}
@@ -711,6 +711,17 @@ export default function PropertiesPage() {
           fetchProperties();
         }}
       />
+      {assignmentIds && (
+        <PropertyAssignmentDialog
+          propertyIds={assignmentIds}
+          agents={agentsList}
+          onClose={() => setAssignmentIds(null)}
+          onSaved={() => {
+            setSelectedIds(new Set());
+            void fetchProperties();
+          }}
+        />
+      )}
     </div>
     </ProtectedLayout>
   );

@@ -16,11 +16,11 @@ export async function GET(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'view' });
     if (!auth.ok) return auth.response;
-    const { admin, agencyId } = auth.context;
+    const { admin, agencyId, user } = auth.context;
 
     const { data, error } = await admin
       .from('properties')
-      .select('id, internal_code, title, city, county, zone, street, street_number, price, currency, category, created_at, updated_at, attributes, status, transaction, agent_id, owner_contact_id, latitude, longitude')
+      .select('id, internal_code, title, city, county, zone, street, street_number, price, currency, category, created_at, updated_at, attributes, status, transaction, agent_id, responsible_agent_id, assigned_by_user_id, assigned_at, assignment_reason, assignment_updated_at, assignment_status, owner_contact_id, latitude, longitude')
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
       return { ...p, publications };
     });
 
-    return Response.json({ properties });
+    return Response.json({ properties, current_user_id: user.id });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }
