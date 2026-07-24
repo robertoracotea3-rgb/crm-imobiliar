@@ -41,7 +41,13 @@ test('property writes share strict server-side validation', () => {
     category: 'apartament',
     transaction: 'vanzare',
     status: 'activa',
-    attributes: { currency: 'EUR', judet: 'Brașov', localitate: 'Făgăraș' },
+    attributes: {
+      currency: 'EUR',
+      judet: 'Brașov',
+      localitate: 'Făgăraș',
+      sup_utila: 55,
+      nr_camere: 2,
+    },
   }, { mode: 'create' });
   assert.deepEqual(valid.errors, []);
   assert.equal(valid.columns.title, 'Apartament');

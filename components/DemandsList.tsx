@@ -37,7 +37,7 @@ const INTENT_LABEL: Record<string, string> = {
   cumparare: 'Cumpărare', inchiriere: 'Închiriere', vanzare: 'Vânzare', oferire_inchiriere: 'Oferire spre închiriere',
 };
 const TYPE_LABEL: Record<string, string> = {
-  apartament: 'Apartament', casa_vila: 'Casă / Vilă', spatiu_comercial: 'Spațiu comercial',
+  apartament: 'Apartament', studio_apartment: 'Garsonieră', casa_vila: 'Casă / Vilă', spatiu_comercial: 'Spațiu comercial',
   spatiu_industrial: 'Spațiu industrial', teren: 'Teren', pensiune_hotel: 'Pensiune / Hotel', birou: 'Birou', garaj: 'Garaj',
 };
 

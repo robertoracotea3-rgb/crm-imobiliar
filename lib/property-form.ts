@@ -1,15 +1,11 @@
 import { isPropertyStatus } from './crm-catalogs.ts';
+import {
+  PROPERTY_CATEGORY_CODES,
+  isPropertyCategory,
+  validatePropertyTypeFields,
+} from './property-types.ts';
 
-export const PROPERTY_CATEGORIES = [
-  'apartament',
-  'casa_vila',
-  'spatiu_comercial',
-  'spatiu_industrial',
-  'teren',
-  'pensiune_hotel',
-  'birou',
-  'garaj',
-] as const;
+export const PROPERTY_CATEGORIES = PROPERTY_CATEGORY_CODES;
 export const PROPERTY_TRANSACTIONS = ['vanzare', 'inchiriere', 'regim_hotelier'] as const;
 export const PROPERTY_CURRENCIES = ['EUR', 'RON', 'USD'] as const;
 export const PROPERTY_PUBLICATION_CHANNELS = [
@@ -80,7 +76,7 @@ export function normalizePropertyWrite(
 
   const category = raw.category;
   if (options.mode === 'create' || category !== undefined) {
-    if (!(PROPERTY_CATEGORIES as readonly unknown[]).includes(category)) {
+    if (!isPropertyCategory(category)) {
       errors.push('Categoria proprietății este invalidă.');
     } else columns.category = category;
   }
@@ -137,6 +133,16 @@ export function normalizePropertyWrite(
     );
     const serializedSize = JSON.stringify(attributes).length;
     if (serializedSize > 250_000) errors.push('Datele extinse ale proprietății sunt prea mari.');
+  }
+
+  if (
+    isPropertyCategory(category)
+    && (options.mode === 'create' || attributes !== undefined)
+  ) {
+    errors.push(...validatePropertyTypeFields(category, {
+      ...columns,
+      attributes,
+    }));
   }
 
   return {

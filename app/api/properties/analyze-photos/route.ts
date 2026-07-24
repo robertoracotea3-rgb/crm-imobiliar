@@ -46,7 +46,7 @@ PARTEA 1 — pentru FIECARE poză identifică:
 PARTEA 2 — pe baza TUTUROR pozelor, completează câmpurile formularului. Folosește DOAR valorile permise de mai jos. Dacă un câmp nu poate fi dedus cu certitudine din poze, lasă-l "" (gol) sau false. Nu inventa.
 
 Valori permise:
-- tip_proprietate: una din [Apartament, Casă/Vilă, Teren, Spațiu comercial, Birou, Hală, Industrial, Hotel/Pensiune, Garaj, Fermă]
+- tip_proprietate: una din [Apartament, Garsonieră, Casă/Vilă, Teren, Spațiu comercial, Birou, Hală, Industrial, Hotel/Pensiune, Garaj]
 - stare: una din [Nou, Renovat, Necesită renovare]
 - mobilat: una din [Nemobilat, Parțial mobilat, Mobilat complet]
 - pereti: una sau mai multe din [Lavabil, Faianță, Gresie, Rigips, Tencuială, Vopsea, Marmură, Cărămidă aparentă, Tablă, Lambriu] (separate prin virgulă)

@@ -33,7 +33,8 @@ export interface SourceAdapter {
 
 export function guessCategory(title = ''): string {
   const t = title.toLocaleLowerCase('ro-RO');
-  if (/apartament|garsonier|gars\b|\bcamere\b/.test(t)) return 'apartament';
+  if (/garsonier|gars\b/.test(t)) return 'studio_apartment';
+  if (/apartament|\bcamere\b/.test(t)) return 'apartament';
   if (/cas[ăa]|vil[ăa]|duplex|conac/.test(t)) return 'casa';
   if (/teren|lot\b|parcel/.test(t)) return 'teren';
   if (/spa[țt]iu|comercial|hal[ăa]|birou|depozit/.test(t)) return 'comercial';

@@ -68,6 +68,7 @@ export type FeedDecision = {
 
 const CATEGORY_URNS: Record<string, Record<string, string>> = {
   apartament: { vanzare: 'urn:concept:apartments-for-sale', inchiriere: 'urn:concept:apartments-for-rent' },
+  studio_apartment: { vanzare: 'urn:concept:apartments-for-sale', inchiriere: 'urn:concept:apartments-for-rent' },
   casa_vila: { vanzare: 'urn:concept:houses-for-sale', inchiriere: 'urn:concept:houses-for-rent' },
   casa: { vanzare: 'urn:concept:houses-for-sale', inchiriere: 'urn:concept:houses-for-rent' },
   vila: { vanzare: 'urn:concept:houses-for-sale', inchiriere: 'urn:concept:houses-for-rent' },
@@ -129,7 +130,7 @@ function normalizeCurrency(value: string): string {
 }
 
 function categoryFamily(category: string): 'apartment' | 'house' | 'land' | 'other' {
-  if (category.includes('apartament') || category.includes('garson')) return 'apartment';
+  if (category === 'studio_apartment' || category.includes('apartament') || category.includes('garson')) return 'apartment';
   if (category.includes('casa') || category.includes('vila')) return 'house';
   if (category.includes('teren') || category.includes('lot')) return 'land';
   return 'other';

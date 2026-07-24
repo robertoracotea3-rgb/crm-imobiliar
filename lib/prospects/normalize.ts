@@ -63,7 +63,8 @@ export function normalizeProspectStatus(value: unknown): ProspectStatus {
 
 function normalizedCategory(raw?: string | null): string | null {
   const key = prospectMatchKey(raw);
-  if (/apart|garson/.test(key)) return 'apartament';
+  if (/garson/.test(key)) return 'studio_apartment';
+  if (/apart/.test(key)) return 'apartament';
   if (/casa|vila|duplex/.test(key)) return 'casa';
   if (/teren|lot|parcela/.test(key)) return 'teren';
   if (/comercial|birou|hala|depozit/.test(key)) return 'comercial';

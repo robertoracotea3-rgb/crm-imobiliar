@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 {
   "title": "titlu scurt si atractiv",
   "location": "locație (exemplu: Bucuresti, Sector 1)",
-  "category": "apartament|casa_vila|spatiu_comercial|spatiu_industrial|teren|pensiune_hotel|birou|garaj",
+  "category": "apartament|studio_apartment|casa_vila|spatiu_comercial|spatiu_industrial|teren|pensiune_hotel|birou|garaj",
   "price": 0,
   "bedrooms": null,
   "bathrooms": null,

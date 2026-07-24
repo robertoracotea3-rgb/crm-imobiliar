@@ -15,6 +15,11 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+
 export async function POST(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'properties', action: 'edit' });
@@ -89,7 +94,16 @@ export async function POST(request: Request) {
         ? old.attributes as Record<string, unknown>
         : {};
       updateData.attributes = {
+        ...oldAttributes,
         ...normalized.attributes,
+        teren: {
+          ...record(oldAttributes.teren),
+          ...record(normalized.attributes.teren),
+        },
+        comercial: {
+          ...record(oldAttributes.comercial),
+          ...record(normalized.attributes.comercial),
+        },
         // Galeria este sincronizată numai de fluxul media atomic. Salvarea
         // formularului nu are voie să o golească înainte de confirmarea lui.
         photos: Array.isArray(oldAttributes.photos) ? oldAttributes.photos : [],

@@ -7,6 +7,13 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { JUDETE, getCities, filterOptions } from '@/lib/romania-locations';
 import { uploadPropertyPhotos } from '@/lib/upload-photos-client';
+import {
+  PROPERTY_TYPE_DEFINITIONS,
+  isPropertyFieldRequired,
+  isPropertyFieldVisible,
+  propertyCategoryFromLabel,
+  propertyCodePrefix,
+} from '@/lib/property-types';
 import { SetupAlert } from './SetupAlert';
 import { MapPicker } from './MapPicker';
 
@@ -179,23 +186,7 @@ const OPT_TAMPL    = ['PVC termopan', 'Lemn', 'Aluminiu', 'Tâmplărie veche'];
 const OPT_USA      = ['Metalică', 'Blindată', 'Lemn', 'PVC'];
 const OPT_ACOPERI  = ['Tablă', 'Țiglă', 'Bitum', 'Terasă', 'Șindrilă', 'Eternit'];
 
-const TIP_PROPRIETATE = [
-  'Apartament', 'Casă/Vilă', 'Teren', 'Spațiu comercial',
-  'Birou', 'Hală', 'Industrial', 'Hotel/Pensiune', 'Garaj', 'Fermă',
-];
-
-const CODE_PREFIX: Record<string, string> = {
-  'Apartament': 'AP', 'Casă/Vilă': 'CV', 'Teren': 'TR',
-  'Spațiu comercial': 'SC', 'Birou': 'BR', 'Hală': 'HL',
-  'Industrial': 'IN', 'Hotel/Pensiune': 'PH', 'Garaj': 'GR', 'Fermă': 'FR',
-};
-
-const CATEGORY_MAP: Record<string, string> = {
-  'Apartament': 'apartament', 'Casă/Vilă': 'casa_vila', 'Teren': 'teren',
-  'Spațiu comercial': 'spatiu_comercial', 'Birou': 'birou', 'Hală': 'spatiu_industrial',
-  'Industrial': 'spatiu_industrial', 'Hotel/Pensiune': 'pensiune_hotel',
-  'Garaj': 'garaj', 'Fermă': 'teren',
-};
+const TIP_PROPRIETATE = PROPERTY_TYPE_DEFINITIONS.map((definition) => definition.label);
 
 const STATUS_MAP: Record<string, string> = {
   'Activă': 'activa', 'Rezervată': 'rezervata', 'Vândută': 'tranzactionata', 'Închiriată': 'inchiriata',
@@ -205,7 +196,7 @@ const TRANSACTION_MAP: Record<string, string> = {
   'Vânzare': 'vanzare', 'Închiriere': 'inchiriere',
 };
 
-const genCode = (tip: string) => `${CODE_PREFIX[tip] || 'PR'}-0001`;
+const genCode = (tip: string) => `${propertyCodePrefix(tip)}-0001`;
 
 // ─── form state ──────────────────────────────────────────────────────────────
 
@@ -342,6 +333,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
+  const [typeChangeNotice, setTypeChangeNotice] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Contacts
@@ -391,7 +383,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
   };
 
   const fetchNextCode = async (tip: string, token: string) => {
-    const prefix = CODE_PREFIX[tip] || 'PR';
+    const prefix = propertyCodePrefix(tip);
     const res = await fetch(`/api/properties/next-code?prefix=${prefix}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -506,11 +498,15 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
     setError('');
   }, []);
 
-  const isAp = fd.tip_proprietate === 'Apartament';
-  const isCasa = ['Casă/Vilă', 'Hotel/Pensiune'].includes(fd.tip_proprietate);
+  const category = propertyCategoryFromLabel(fd.tip_proprietate) || 'apartament';
+  const isAp = ['apartament', 'studio_apartment'].includes(category);
   const isTeren = ['Teren', 'Fermă'].includes(fd.tip_proprietate);
   const isComercial = ['Spațiu comercial', 'Hală', 'Industrial', 'Birou'].includes(fd.tip_proprietate);
   const hasEtaje = isAp || fd.tip_proprietate === 'Birou' || isComercial;
+  const showField = (field: Parameters<typeof isPropertyFieldVisible>[1]) =>
+    isPropertyFieldVisible(category, field);
+  const requiredField = (field: Parameters<typeof isPropertyFieldRequired>[1]) =>
+    isPropertyFieldRequired(category, field);
   const cities = getCities(fd.judet);
 
   const buildLocation = () => {
@@ -544,13 +540,9 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
       if (!hasValidCoords()) { setError('Selectează locația pe hartă — coordonatele (lat/lon) sunt obligatorii pentru publicarea pe Storia/OLX'); return false; }
     }
     if (s === 5) {
-      if ((isAp || isCasa) && (!fd.nr_camere || +fd.nr_camere < 1)) { setError('Numărul de camere este obligatoriu (cerință Storia/OLX)'); return false; }
-      if (isTeren) {
-        if (!fd.sup_teren || +fd.sup_teren <= 0) { setError('Suprafața terenului este obligatorie (cerință Storia/OLX)'); return false; }
-      } else {
-        if (!fd.sup_utila || +fd.sup_utila <= 0) { setError('Suprafața utilă este obligatorie (cerință Storia/OLX)'); return false; }
-        if (isCasa && (!fd.sup_teren || +fd.sup_teren <= 0)) { setError('Suprafața terenului este obligatorie pentru case (cerință Storia/OLX)'); return false; }
-      }
+      if (requiredField('rooms') && (!fd.nr_camere || +fd.nr_camere < 1)) { setError('Numărul de camere este obligatoriu pentru acest tip de proprietate'); return false; }
+      if (requiredField('surface_land') && (!fd.sup_teren || +fd.sup_teren <= 0)) { setError('Suprafața terenului este obligatorie pentru acest tip de proprietate'); return false; }
+      if (requiredField('surface_useful') && (!fd.sup_utila || +fd.sup_utila <= 0)) { setError('Suprafața utilă este obligatorie pentru acest tip de proprietate'); return false; }
     }
     return true;
   };
@@ -662,19 +654,19 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
           dressing: fd.dot_dressing, debara: fd.dot_debara,
           jacuzzi: fd.dot_jacuzzi, sauna: fd.dot_sauna, terasa: fd.dot_terasa,
         },
-        teren: isTeren ? {
+        teren: {
           intravilan: fd.intravilan, pot: fd.pot, cut: fd.cut,
           destinatie: fd.dest_teren, nr_fronturi: fd.nr_fronturi,
           deschidere: fd.deschidere, lungime: fd.lungime,
           latime: fd.latime, forma: fd.forma_teren,
-        } : undefined,
-        comercial: isComercial ? {
+        },
+        comercial: {
           vitrina: fd.vitrina ? +fd.vitrina : null,
           inaltime: fd.inaltime_spatiu ? +fd.inaltime_spatiu : null,
           grupuri_sanitare: fd.grupuri_sanitare,
           acces_tir: fd.acces_tir, rampa: fd.rampa,
           putere_instalata: fd.putere_instalata,
-        } : undefined,
+        },
         descriere_en: fd.descriere_en, titlu_seo: fd.titlu_seo,
         meta_desc: fd.meta_desc, tags: fd.tags,
         publicare: {
@@ -694,7 +686,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             title: fd.title,
             internal_code: fd.internal_code,
             price: parseFloat(fd.price) || 0,
-            category: CATEGORY_MAP[fd.tip_proprietate] || 'apartament',
+            category,
             transaction: TRANSACTION_MAP[fd.tip_oferta] || 'vanzare',
             description: fd.descriere,
             status: STATUS_MAP[fd.stare_oferta] || 'activa',
@@ -951,7 +943,12 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
 
               <div className="grid grid-cols-2 gap-3">
                 <F label="Tip proprietate *">
-                  <select value={fd.tip_proprietate} onChange={e => set('tip_proprietate', e.target.value)} className={sc}>
+                  <select value={fd.tip_proprietate} onChange={e => {
+                    if (e.target.value !== fd.tip_proprietate) {
+                      setTypeChangeNotice('Câmpurile vizibile au fost adaptate. Valorile deja completate în câmpurile ascunse sunt păstrate și nu se șterg automat.');
+                    }
+                    set('tip_proprietate', e.target.value);
+                  }} className={sc}>
                     {TIP_PROPRIETATE.map(t => <option key={t}>{t}</option>)}
                   </select>
                 </F>
@@ -959,6 +956,12 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                   <input value={fd.internal_code} readOnly className={ic + ' bg-gray-50 text-gray-500 font-mono'} />
                 </F>
               </div>
+              {typeChangeNotice && (
+                <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <span>{typeChangeNotice}</span>
+                  <button type="button" onClick={() => setTypeChangeNotice('')} className="font-semibold">Am înțeles</button>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <F label="Tip ofertă *">
@@ -1238,29 +1241,29 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
             <div className="space-y-3">
               <SH title="Suprafețe (m²)" />
               <div className="grid grid-cols-3 gap-3">
-                <F label={`Suprafață utilă${!isTeren ? ' *' : ''}`}><input type="number" value={fd.sup_utila} onChange={e => set('sup_utila', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
-                <F label="Suprafață construită"><input type="number" value={fd.sup_construita} onChange={e => set('sup_construita', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
-                <F label="Suprafață totală"><input type="number" value={fd.sup_totala} onChange={e => set('sup_totala', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
+                {showField('surface_useful') && <F label={`Suprafață utilă${requiredField('surface_useful') ? ' *' : ''}`}><input type="number" value={fd.sup_utila} onChange={e => set('sup_utila', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
+                {showField('surface_built') && <F label="Suprafață construită"><input type="number" value={fd.sup_construita} onChange={e => set('sup_construita', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
+                {showField('surface_total') && <F label="Suprafață totală"><input type="number" value={fd.sup_totala} onChange={e => set('sup_totala', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <F label={`Suprafață teren${isTeren || isCasa ? ' *' : ''}`}><input type="number" value={fd.sup_teren} onChange={e => set('sup_teren', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
-                <F label="Suprafață curte"><input type="number" value={fd.sup_curte} onChange={e => set('sup_curte', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
-                <F label="Suprafață balcon"><input type="number" value={fd.sup_balcon} onChange={e => set('sup_balcon', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
+                {showField('surface_land') && <F label={`Suprafață teren${requiredField('surface_land') ? ' *' : ''}`}><input type="number" value={fd.sup_teren} onChange={e => set('sup_teren', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
+                {showField('surface_yard') && <F label="Suprafață curte"><input type="number" value={fd.sup_curte} onChange={e => set('sup_curte', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
+                {showField('surface_balcony') && <F label="Suprafață balcon"><input type="number" value={fd.sup_balcon} onChange={e => set('sup_balcon', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <F label="Suprafață terasă"><input type="number" value={fd.sup_terasa} onChange={e => set('sup_terasa', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
-                <F label="Suprafață pivniță"><input type="number" value={fd.sup_pivnita} onChange={e => set('sup_pivnita', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
-                <F label="Suprafață garaj (mp)"><input type="number" value={fd.sup_garaj_mp} onChange={e => set('sup_garaj_mp', e.target.value)} placeholder="mp" min="0" className={ic} /></F>
+                {showField('surface_terrace') && <F label="Suprafață terasă"><input type="number" value={fd.sup_terasa} onChange={e => set('sup_terasa', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
+                {showField('surface_cellar') && <F label="Suprafață pivniță"><input type="number" value={fd.sup_pivnita} onChange={e => set('sup_pivnita', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
+                {showField('surface_garage') && <F label="Suprafață garaj (mp)"><input type="number" value={fd.sup_garaj_mp} onChange={e => set('sup_garaj_mp', e.target.value)} placeholder="mp" min="0" className={ic} /></F>}
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              {showField('street_frontage') && <div className="grid grid-cols-2 gap-3">
                 <F label="Front stradal (m)"><input type="number" value={fd.front_stradal} onChange={e => set('front_stradal', e.target.value)} placeholder="m" min="0" className={ic} /></F>
-              </div>
+              </div>}
 
-              {!isTeren && (
+              {showField('rooms') && (
                 <>
                   <SH title="Compartimentare" />
                   <div className="grid grid-cols-3 gap-3">
-                    <F label={`Camere${isAp || isCasa ? ' *' : ''}`}><input type="number" value={fd.nr_camere} onChange={e => set('nr_camere', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
+                    <F label={`Camere${requiredField('rooms') ? ' *' : ''}`}><input type="number" value={fd.nr_camere} onChange={e => set('nr_camere', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                     <F label="Dormitoare"><input type="number" value={fd.nr_dormitoare} onChange={e => set('nr_dormitoare', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                     <F label="Băi"><input type="number" value={fd.nr_bai} onChange={e => set('nr_bai', e.target.value)} placeholder="nr" min="0" className={ic} /></F>
                   </div>
@@ -1363,6 +1366,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
           {/* ── Step 6: Constructie & Utilitati & Incalzire ── */}
           {step === 6 && (
             <div className="space-y-3">
+              {showField('building') && <>
               <SH title="Clădire" />
               <div className="grid grid-cols-2 gap-3">
                 <F label="An construcție"><input type="number" value={fd.an_constructie} onChange={e => set('an_constructie', e.target.value)} placeholder="ex: 1998" className={ic} /></F>
@@ -1393,6 +1397,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 </F>
               </div>
               <Chk label="Certificat energetic disponibil" checked={fd.certificat_energetic} onChange={v => set('certificat_energetic', v)} />
+              </>}
 
               <SH title="Utilități" />
               <div className="grid grid-cols-4 gap-3">
@@ -1408,6 +1413,7 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <Chk label="Curent trifazic" checked={fd.util_trifazic} onChange={v => set('util_trifazic', v)} />
               </div>
 
+              {showField('heating') && <>
               <SH title="Încălzire" />
               <div className="grid grid-cols-3 gap-3">
                 <Chk label="Centrală proprie" checked={fd.inc_centrala_proprie} onChange={v => set('inc_centrala_proprie', v)} />
@@ -1422,12 +1428,14 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                   <input type="number" value={fd.nr_ac} onChange={e => set('nr_ac', e.target.value)} placeholder="ex: 3" min="0" className={ic} style={{ maxWidth: 120 }} />
                 </F>
               )}
+              </>}
             </div>
           )}
 
           {/* ── Step 7: Finisaje & Dotari ── */}
           {step === 7 && (
             <div className="space-y-3">
+              {showField('finishes') ? <>
               <SH title="Finisaje" />
               <div className="grid grid-cols-2 gap-3">
                 <F label="Stare">
@@ -1482,6 +1490,11 @@ export function AddPropertyDialog({ isOpen, onClose, onSuccess }: {
                 <Chk label="Saună" checked={fd.dot_sauna} onChange={v => set('dot_sauna', v)} />
                 <Chk label="Terasă" checked={fd.dot_terasa} onChange={v => set('dot_terasa', v)} />
               </div>
+              </> : (
+                <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                  Pentru acest tip de proprietate nu sunt necesare finisaje interioare. Datele completate anterior rămân păstrate.
+                </p>
+              )}
             </div>
           )}
 

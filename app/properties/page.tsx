@@ -12,11 +12,9 @@ import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { JUDETE, ORASE_BY_JUDET } from '@/lib/romania-locations';
 import { PROPERTY_STATUSES, PROPERTY_STATUS_TRANSITIONS, canTransition, isPropertyStatus } from '@/lib/crm-catalogs';
 import { useAuth } from '@/lib/auth-context';
+import { PROPERTY_CATEGORY_CODES, propertyCategoryLabel } from '@/lib/property-types';
 
-const CATEGORIES = [
-  'apartament', 'casa_vila', 'spatiu_comercial', 'spatiu_industrial',
-  'teren', 'pensiune_hotel', 'birou', 'garaj',
-];
+const CATEGORIES = PROPERTY_CATEGORY_CODES;
 
 const SORT_OPTIONS = [
   { value: 'newest', label: 'Cel mai nou' },
@@ -473,7 +471,7 @@ export default function PropertiesPage() {
           >
             <option value="">Toate categoriile</option>
             {CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>{cat.replace(/_/g, ' ')}</option>
+              <option key={cat} value={cat}>{propertyCategoryLabel(cat)}</option>
             ))}
           </select>
 

@@ -45,7 +45,7 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
 
 const EDITABLE_STATUSES = Object.entries(STATUS_META).filter(([status]) => status !== 'actionable');
 const CATEGORIES = [
-  ['', 'Toate tipurile'], ['apartament', 'Apartamente'], ['casa', 'Case / vile'],
+  ['', 'Toate tipurile'], ['apartament', 'Apartamente'], ['studio_apartment', 'Garsoniere'], ['casa', 'Case / vile'],
   ['teren', 'Terenuri'], ['comercial', 'Comercial'],
 ];
 const LOCALITIES = Array.from(new Set([

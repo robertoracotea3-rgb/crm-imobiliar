@@ -35,6 +35,7 @@ export const isTestMode = () => process.env.STORIA_TEST_MODE === 'true';
 // NOTE: Storia uses `lots-*`, `stores-*`, `warehouses-*` (not lands/commercial).
 const CATEGORY_URNS: Record<string, Record<string, string>> = {
   apartament:       { vanzare: 'urn:concept:apartments-for-sale',  inchiriere: 'urn:concept:apartments-for-rent' },
+  studio_apartment: { vanzare: 'urn:concept:apartments-for-sale',  inchiriere: 'urn:concept:apartments-for-rent' },
   casa_vila:        { vanzare: 'urn:concept:houses-for-sale',      inchiriere: 'urn:concept:houses-for-rent' },
   casa:             { vanzare: 'urn:concept:houses-for-sale',      inchiriere: 'urn:concept:houses-for-rent' },
   vila:             { vanzare: 'urn:concept:houses-for-sale',      inchiriere: 'urn:concept:houses-for-rent' },
@@ -58,7 +59,7 @@ export function getCategoryUrn(category: string, transaction: string): string | 
 type CatFamily = 'apartment' | 'house' | 'land' | 'store' | 'warehouse';
 function categoryFamily(category: string): CatFamily {
   const c = (category || '').toLowerCase();
-  if (c.includes('apartament') || c.includes('garson')) return 'apartment';
+  if (c === 'studio_apartment' || c.includes('apartament') || c.includes('garson')) return 'apartment';
   if (c.includes('casa') || c.includes('vila'))         return 'house';
   if (c.includes('teren') || c.includes('lot'))         return 'land';
   if (c.includes('industrial') || c.includes('hala') || c.includes('depozit')) return 'warehouse';

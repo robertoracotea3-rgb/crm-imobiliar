@@ -7,7 +7,7 @@ const GRAPH = 'https://graph.facebook.com/v21.0';
 const PUBLIC_SITE = process.env.FB_PUBLIC_SITE_URL || 'https://kiraimobiliare.ro';
 
 const CAT_LABELS: Record<string, string> = {
-  apartament: 'Apartament', casa_vila: 'Casă / Vilă', teren: 'Teren',
+  apartament: 'Apartament', studio_apartment: 'Garsonieră', casa_vila: 'Casă / Vilă', teren: 'Teren',
   spatiu_comercial: 'Spațiu Comercial', spatiu_industrial: 'Spațiu Industrial',
   birou: 'Birou', pensiune_hotel: 'Pensiune / Hotel', garaj: 'Garaj',
 };

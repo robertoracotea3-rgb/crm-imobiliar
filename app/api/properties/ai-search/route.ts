@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import Anthropic from '@anthropic-ai/sdk';
 import { requireApiAuth } from '@/lib/server/api-auth';
 
-const VALID_CATEGORY = ['apartament', 'casa_vila', 'spatiu_comercial', 'spatiu_industrial', 'teren', 'pensiune_hotel', 'birou', 'garaj'];
+const VALID_CATEGORY = ['apartament', 'studio_apartment', 'casa_vila', 'spatiu_comercial', 'spatiu_industrial', 'teren', 'pensiune_hotel', 'birou', 'garaj'];
 const VALID_TRANSACTION = ['vanzare', 'inchiriere'];
 
 interface Filters {

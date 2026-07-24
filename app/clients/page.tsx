@@ -119,7 +119,7 @@ interface PropertyMatch {
   attributes?: { photos?: string[] } | null;
 }
 
-const CATEGORIES = ['apartament', 'casa_vila', 'teren', 'spatiu_comercial', 'spatiu_industrial', 'birou', 'pensiune_hotel', 'garaj'];
+const CATEGORIES = ['apartament', 'studio_apartment', 'casa_vila', 'teren', 'spatiu_comercial', 'spatiu_industrial', 'birou', 'pensiune_hotel', 'garaj'];
 const CAT_LABEL = (c?: string) => (c ? c.replace(/_/g, ' ') : '');
 const SOURCES = LEAD_SOURCES.filter((source) => source.active);
 const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900 text-sm';

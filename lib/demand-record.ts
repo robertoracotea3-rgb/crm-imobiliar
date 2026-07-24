@@ -5,6 +5,7 @@ export type DemandIntent = typeof DEMAND_INTENTS[number];
 
 export const DEMAND_PROPERTY_TYPES = [
   'apartament',
+  'studio_apartment',
   'casa_vila',
   'spatiu_comercial',
   'spatiu_industrial',

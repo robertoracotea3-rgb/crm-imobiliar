@@ -13,7 +13,7 @@ import { ORASE_BY_JUDET } from '@/lib/romania-locations';
 import { supabase } from '@/lib/supabase';
 
 const INTENT_LABEL: Record<string, string> = { cumparare: 'Cumpărare', inchiriere: 'Închiriere', vanzare: 'Vânzare', oferire_inchiriere: 'Oferire spre închiriere' };
-const TYPE_LABEL: Record<string, string> = { apartament: 'Apartament', casa_vila: 'Casă / Vilă', spatiu_comercial: 'Spațiu comercial', spatiu_industrial: 'Spațiu industrial', teren: 'Teren', pensiune_hotel: 'Pensiune / Hotel', birou: 'Birou', garaj: 'Garaj' };
+const TYPE_LABEL: Record<string, string> = { apartament: 'Apartament', studio_apartment: 'Garsonieră', casa_vila: 'Casă / Vilă', spatiu_comercial: 'Spațiu comercial', spatiu_industrial: 'Spațiu industrial', teren: 'Teren', pensiune_hotel: 'Pensiune / Hotel', birou: 'Birou', garaj: 'Garaj' };
 const selectClass = 'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-emerald-500 focus:outline-none';
 
 interface Pagination { page: number; page_size: number; total: number; total_pages: number }

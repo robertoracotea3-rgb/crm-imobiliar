@@ -6,7 +6,7 @@ import { Trash2, MapPin, Home, User, UserRoundCog, AlertTriangle } from 'lucide-
 import { ActivityStatus } from './ActivityStatus';
 
 const CAT_LABELS: Record<string, string> = {
-  apartament: 'Apartament', casa_vila: 'Casă/Vilă', teren: 'Teren',
+  apartament: 'Apartament', studio_apartment: 'Garsonieră', casa_vila: 'Casă/Vilă', teren: 'Teren',
   spatiu_comercial: 'Spațiu comercial', spatiu_industrial: 'Industrial',
   birou: 'Birou', garaj: 'Garaj', pensiune_hotel: 'Pensiune/Hotel',
 };
