@@ -20,6 +20,7 @@ function routeName(path) {
 const externalOrDisabledRoutes = new Set([
   'app/api/cron/automations/route.ts',
   'app/api/cron/storia-sync/route.ts',
+  'app/api/cron/weekly-reports/route.ts',
   'app/api/auth/register/route.ts',
   'app/api/auth/login/route.ts',
   'app/api/feed/properties.xml/route.ts',
@@ -31,7 +32,7 @@ const externalOrDisabledRoutes = new Set([
 ]);
 
 test('external cron routes use a dedicated constant-time secret guard', () => {
-  for (const route of ['storia-sync', 'automations']) {
+  for (const route of ['storia-sync', 'automations', 'weekly-reports']) {
     const source = readFileSync(join(apiRoot, 'cron', route, 'route.ts'), 'utf8');
     assert.match(source, /verifyCronAuthorization/);
     assert.match(source, /process\.env\.CRON_SECRET/);

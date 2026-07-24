@@ -53,6 +53,7 @@ try {
   psql(database, readFileSync('migrations/20260724_270_demand_review_workflow.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_280_property_types_and_dynamic_fields.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_290_agency_email_delivery.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260724_300_weekly_agent_reports.sql', 'utf8'));
   const phase22 = psql(database, readFileSync('tests/integration/phase22-workflow.sql', 'utf8'));
   const phase23 = psql(database, readFileSync('tests/integration/phase23-audit.sql', 'utf8'));
   const phase25 = psql(database, readFileSync('tests/integration/phase25-account-security.sql', 'utf8'));
@@ -65,6 +66,7 @@ try {
   const phase32 = psql(database, readFileSync('tests/integration/phase32-demand-review.sql', 'utf8'));
   const phase33 = psql(database, readFileSync('tests/integration/phase33-property-types.sql', 'utf8'));
   const phase34 = psql(database, readFileSync('tests/integration/phase34-email-delivery.sql', 'utf8'));
+  const phase35 = psql(database, readFileSync('tests/integration/phase35-weekly-reports.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260720_190_immutable_audit_log.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260723_200_account_security.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260723_210_system_observability.sql', 'utf8'));
@@ -76,6 +78,7 @@ try {
   psql(database, readFileSync('migrations/20260724_270_demand_review_workflow.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_280_property_types_and_dynamic_fields.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_290_agency_email_delivery.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260724_300_weekly_agent_reports.sql', 'utf8'));
   const idempotency = psql(database, readFileSync('tests/integration/phase23-idempotency.sql', 'utf8'));
   const phase25Idempotency = psql(database, readFileSync('tests/integration/phase25-account-security.sql', 'utf8'));
   const phase26Idempotency = psql(database, readFileSync('tests/integration/phase26-observability.sql', 'utf8'));
@@ -86,6 +89,9 @@ try {
   const phase32Idempotency = psql(database, readFileSync('tests/integration/phase32-demand-review.sql', 'utf8'));
   const phase33Idempotency = psql(database, readFileSync('tests/integration/phase33-property-types.sql', 'utf8'));
   const phase34Idempotency = psql(database, readFileSync('tests/integration/phase34-email-delivery.sql', 'utf8'));
+  const phase35Idempotency = psql(database, readFileSync('tests/integration/phase35-weekly-reports.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260724_300_weekly_agent_reports.rollback.sql', 'utf8'));
+  const phase35Rollback = psql(database, readFileSync('tests/integration/phase35-weekly-reports-rollback.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_290_agency_email_delivery.rollback.sql', 'utf8'));
   const phase34Rollback = psql(database, readFileSync('tests/integration/phase34-email-delivery-rollback.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_280_property_types_and_dynamic_fields.rollback.sql', 'utf8'));
@@ -120,6 +126,7 @@ try {
     || !phase32.includes('phase32_demand_review_ok')
     || !phase33.includes('phase33_property_types_ok')
     || !phase34.includes('phase34_email_delivery_ok')
+    || !phase35.includes('phase35_weekly_reports_ok')
     || !idempotency.includes('phase23_audit_idempotency_ok')
     || !phase25Idempotency.includes('phase25_account_security_ok')
     || !phase26Idempotency.includes('phase26_observability_ok')
@@ -130,6 +137,8 @@ try {
     || !phase32Idempotency.includes('phase32_demand_review_ok')
     || !phase33Idempotency.includes('phase33_property_types_ok')
     || !phase34Idempotency.includes('phase34_email_delivery_ok')
+    || !phase35Idempotency.includes('phase35_weekly_reports_ok')
+    || !phase35Rollback.includes('phase35_weekly_reports_rollback_ok')
     || !phase34Rollback.includes('phase34_email_delivery_rollback_ok')
     || !phase33Rollback.includes('phase33_property_types_rollback_ok')
     || !phase32Rollback.includes('phase32_demand_review_rollback_ok')
@@ -141,9 +150,9 @@ try {
     || !phase26Rollback.includes('phase26_observability_rollback_ok')
     || !phase25Rollback.includes('phase25_account_security_rollback_ok')
     || !rollback.includes('phase23_audit_rollback_ok')) {
-    throw new Error(`Database integration marker is missing.\n${phase22}\n${phase23}\n${phase25}\n${phase26}\n${phase27}\n${phase28}\n${phase29}\n${phase30}\n${phase31}\n${phase32}\n${phase33}\n${phase34}\n${idempotency}\n${phase25Idempotency}\n${phase26Idempotency}\n${phase28Idempotency}\n${phase29Idempotency}\n${phase30Idempotency}\n${phase31Idempotency}\n${phase32Idempotency}\n${phase33Idempotency}\n${phase34Idempotency}\n${phase34Rollback}\n${phase33Rollback}\n${phase32Rollback}\n${phase31Rollback}\n${phase30Rollback}\n${phase29Rollback}\n${phase28Rollback}\n${phase27Rollback}\n${phase26Rollback}\n${phase25Rollback}\n${rollback}`);
+    throw new Error(`Database integration marker is missing.\n${phase22}\n${phase23}\n${phase25}\n${phase26}\n${phase27}\n${phase28}\n${phase29}\n${phase30}\n${phase31}\n${phase32}\n${phase33}\n${phase34}\n${phase35}\n${idempotency}\n${phase25Idempotency}\n${phase26Idempotency}\n${phase28Idempotency}\n${phase29Idempotency}\n${phase30Idempotency}\n${phase31Idempotency}\n${phase32Idempotency}\n${phase33Idempotency}\n${phase34Idempotency}\n${phase35Idempotency}\n${phase35Rollback}\n${phase34Rollback}\n${phase33Rollback}\n${phase32Rollback}\n${phase31Rollback}\n${phase30Rollback}\n${phase29Rollback}\n${phase28Rollback}\n${phase27Rollback}\n${phase26Rollback}\n${phase25Rollback}\n${rollback}`);
   }
-  console.log('Database integration passed: CRM workflow, immutable audit, account security, observability, property assignment, Storia lead assignment, contact SLA, factual contact, contact lifecycle, demand review, property types, email delivery and rollbacks.');
+  console.log('Database integration passed: CRM workflow, immutable audit, account security, observability, property assignment, Storia lead assignment, contact SLA, factual contact, contact lifecycle, demand review, property types, email delivery, weekly reports and rollbacks.');
 } finally {
   try {
     psql('postgres', `drop database if exists ${database} with (force);`);

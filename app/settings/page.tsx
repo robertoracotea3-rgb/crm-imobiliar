@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings, User, Building2, Shield, Copy, CheckCircle, AlertTriangle, Stamp, Upload, Trash2, Loader2, Bot, Mail } from 'lucide-react';
+import { Settings, User, Building2, Shield, Copy, CheckCircle, AlertTriangle, Stamp, Upload, Trash2, Loader2, Bot, Mail, FileBarChart2, ExternalLink } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { AutomationSettings } from '@/components/AutomationSettings';
@@ -34,7 +35,7 @@ export default function SettingsPage() {
 
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', job_title: '' });
   const [agencyForm, setAgencyForm] = useState({ agency_name: '' });
-  const [activeTab, setActiveTab] = useState<'profile' | 'agency' | 'automations' | 'email' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'agency' | 'automations' | 'email' | 'reports' | 'security'>('profile');
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setLoadError('');
@@ -172,6 +173,7 @@ export default function SettingsPage() {
     { id: 'agency', label: 'Agenție', icon: Building2 },
     { id: 'automations', label: 'Automatizări', icon: Bot },
     { id: 'email', label: 'E-mail', icon: Mail },
+    { id: 'reports', label: 'Rapoarte', icon: FileBarChart2 },
     { id: 'security', label: 'Securitate', icon: Shield },
   ] as const;
 
@@ -357,6 +359,24 @@ export default function SettingsPage() {
 
             {activeTab === 'email' && (
               <EmailSettingsPanel canEdit={canEditSettings} />
+            )}
+
+            {activeTab === 'reports' && (
+              <div className="rounded-xl border border-gray-200 bg-white p-5">
+                <div className="flex items-start gap-3">
+                  <FileBarChart2 className="mt-0.5 text-emerald-700" size={22} />
+                  <div>
+                    <h2 className="font-semibold text-gray-900">Raport săptămânal agenți</h2>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Configurează ziua și ora, consultă arhiva, deschide înregistrările
+                      exacte și exportă PDF sau CSV.
+                    </p>
+                    <Link href="/reports/weekly" className="mt-4 inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white">
+                      Deschide rapoartele <ExternalLink size={15} />
+                    </Link>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Security Tab */}

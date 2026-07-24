@@ -271,6 +271,17 @@ create table public.portal_listings (
   updated_at timestamptz not null default now()
 );
 
+create table public.portal_unmatched_messages (
+  id uuid primary key default gen_random_uuid(),
+  agency_id uuid references public.agencies(id),
+  portal text not null default 'storia',
+  portal_ad_id text,
+  sender_name text,
+  reason text not null,
+  status text not null default 'pending',
+  created_at timestamptz not null default now()
+);
+
 create table public.transaction_statuses (
   code text primary key,
   display_name text not null,
