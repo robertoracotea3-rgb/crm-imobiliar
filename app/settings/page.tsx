@@ -3,11 +3,12 @@
 import { useAuth } from '@/lib/auth-context';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings, User, Building2, Shield, Copy, CheckCircle, AlertTriangle, Stamp, Upload, Trash2, Loader2, Bot } from 'lucide-react';
+import { Settings, User, Building2, Shield, Copy, CheckCircle, AlertTriangle, Stamp, Upload, Trash2, Loader2, Bot, Mail } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { AutomationSettings } from '@/components/AutomationSettings';
 import { AccountSecurityPanel } from '@/components/AccountSecurityPanel';
+import { EmailSettingsPanel } from '@/components/EmailSettingsPanel';
 
 const ic = 'w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 text-gray-900';
 const ROLE_LABEL: Record<string, string> = {
@@ -33,7 +34,7 @@ export default function SettingsPage() {
 
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', job_title: '' });
   const [agencyForm, setAgencyForm] = useState({ agency_name: '' });
-  const [activeTab, setActiveTab] = useState<'profile' | 'agency' | 'automations' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'agency' | 'automations' | 'email' | 'security'>('profile');
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setLoadError('');
@@ -170,6 +171,7 @@ export default function SettingsPage() {
     { id: 'profile', label: 'Profil', icon: User },
     { id: 'agency', label: 'Agenție', icon: Building2 },
     { id: 'automations', label: 'Automatizări', icon: Bot },
+    { id: 'email', label: 'E-mail', icon: Mail },
     { id: 'security', label: 'Securitate', icon: Shield },
   ] as const;
 
@@ -351,6 +353,10 @@ export default function SettingsPage() {
 
             {activeTab === 'automations' && (
               <AutomationSettings canEdit={canEditSettings} />
+            )}
+
+            {activeTab === 'email' && (
+              <EmailSettingsPanel canEdit={canEditSettings} />
             )}
 
             {/* Security Tab */}
