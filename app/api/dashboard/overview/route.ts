@@ -23,11 +23,23 @@ export async function GET(request: Request) {
   const from = periodStart(period, now);
   const managementView = ['owner', 'admin', 'manager'].includes(role);
 
-  const [{ data: profile, error: profileError }, { data: metrics, error: metricsError }, { data: notifications }] =
+  const [
+    { data: profile, error: profileError },
+    { data: metrics, error: metricsError },
+    { data: contactSla, error: contactSlaError },
+    { data: notifications },
+  ] =
     await Promise.all([
       serviceAdmin.from('profiles').select('full_name').eq('agency_id', agencyId)
         .eq('user_id', user.id).maybeSingle(),
       serviceAdmin.rpc('crm_dashboard_kpis', {
+        p_agency_id: agencyId,
+        p_user_id: user.id,
+        p_scope_all: managementView,
+        p_from: from.toISOString(),
+        p_to: now.toISOString(),
+      }),
+      serviceAdmin.rpc('crm_contact_sla_dashboard', {
         p_agency_id: agencyId,
         p_user_id: user.id,
         p_scope_all: managementView,
@@ -47,12 +59,63 @@ export async function GET(request: Request) {
     }
     return Response.json({ error: metricsError.message }, { status: 500 });
   }
+  if (contactSlaError) {
+    if (/crm_contact_sla_dashboard|does not exist|schema cache/i.test(contactSlaError.message)) {
+      return Response.json({ error: 'Migrarea SLA de contact nu este instalată.' }, { status: 503 });
+    }
+    return Response.json({ error: contactSlaError.message }, { status: 500 });
+  }
+
+  type AgentMetric = {
+    user_id: string;
+    name?: string;
+    role?: string;
+    leads?: number;
+    viewings?: number;
+    transactions?: number;
+    average_response_minutes?: number;
+    conversion_rate?: number;
+    assigned?: number;
+    contacted_on_time?: number;
+    contacted_late?: number;
+    uncontacted?: number;
+    average_first_contact_minutes?: number;
+    sla_percent?: number;
+  };
+  const baseAgents = (metrics?.agent_performance || []) as AgentMetric[];
+  const slaAgents = (contactSla?.agents || []) as AgentMetric[];
+  const baseByAgent = new Map(baseAgents.map((agent) => [agent.user_id, agent]));
+  const slaByAgent = new Map(slaAgents.map((agent) => [agent.user_id, agent]));
+  const agentIds = [...new Set([
+    ...baseAgents.map((agent) => agent.user_id),
+    ...slaAgents.map((agent) => agent.user_id),
+  ])];
+  const agentPerformance = agentIds.map((userId) => ({
+    ...(baseByAgent.get(userId) || {
+      user_id: userId,
+      leads: 0,
+      viewings: 0,
+      transactions: 0,
+      average_response_minutes: 0,
+      conversion_rate: 0,
+    }),
+    ...(slaByAgent.get(userId) || {
+      assigned: 0,
+      contacted_on_time: 0,
+      contacted_late: 0,
+      uncontacted: 0,
+      average_first_contact_minutes: 0,
+      sla_percent: 0,
+    }),
+  }));
 
   return Response.json({
     user: { name: profile?.full_name || user.email || 'Utilizator', role },
     period,
     generated_at: now.toISOString(),
     ...metrics,
+    agent_performance: agentPerformance,
+    contact_sla: contactSla?.overall || {},
     notifications: notifications || [],
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }

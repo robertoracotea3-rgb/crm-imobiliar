@@ -39,6 +39,7 @@ create table public.profiles (
   user_id uuid not null references auth.users(id),
   agency_id uuid not null references public.agencies(id),
   role text not null default 'agent',
+  full_name text,
   permissions jsonb,
   status text not null default 'active',
   primary key (user_id, agency_id)
@@ -78,6 +79,7 @@ create table public.leads (
   contact_email text,
   agent_id uuid references auth.users(id),
   status text not null default 'new',
+  pipeline_stage text not null default 'lead_nou',
   next_action_at timestamptz,
   next_action_type text,
   property_id uuid references public.properties(id),
@@ -85,7 +87,12 @@ create table public.leads (
   source text,
   source_normalized text,
   association_status text,
+  first_response_at timestamptz,
+  last_contact_attempt_at timestamptz,
+  last_contacted_at timestamptz,
+  last_contact_channel text,
   received_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
 

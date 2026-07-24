@@ -35,6 +35,7 @@ interface ClaimedJob {
 }
 
 export interface AutomationRunSummary {
+  contactSla: Record<string, unknown> | null;
   swept: number;
   claimed: number;
   completed: number;
@@ -259,9 +260,20 @@ export async function runAutomationBatch(
   options: { agencyId?: string | null; limit?: number; sweep?: boolean } = {},
 ): Promise<AutomationRunSummary> {
   const summary: AutomationRunSummary = {
+    contactSla: null,
     swept: 0, claimed: 0, completed: 0, retrying: 0, failed: 0, cancelled: 0,
   };
   if (options.sweep !== false) {
+    const { data: contactSla, error: contactSlaError } = await serviceAdmin.rpc(
+      'crm_process_contact_sla',
+      {
+        p_now: new Date().toISOString(),
+        p_agency_id: options.agencyId || null,
+      },
+    );
+    if (contactSlaError) throw new Error(contactSlaError.message);
+    summary.contactSla = (contactSla || {}) as Record<string, unknown>;
+
     const { data, error } = await serviceAdmin.rpc('crm_sweep_due_automations', {
       p_now: new Date().toISOString(),
       p_agency_id: options.agencyId || null,

@@ -50,6 +50,7 @@ export async function GET(request: Request) {
         metadata: {
           swept: summary.swept,
           cancelled: summary.cancelled,
+          contact_sla: summary.contactSla,
         },
       }).catch(() => undefined);
     }

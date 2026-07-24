@@ -69,6 +69,11 @@ interface Client {
   assigned_at?: string;
   first_contact_due_at?: string;
   lead_assignment_status?: 'assigned' | 'pending_owner';
+  first_contact_attempt_at?: string;
+  first_successful_contact_at?: string;
+  contact_attempt_count?: number;
+  contact_outcome?: string;
+  contact_sla_status?: 'unassigned' | 'pending' | 'met' | 'late' | 'overdue';
   next_action_at?: string;
   next_action_type?: string;
   status_reason?: string;
@@ -107,6 +112,29 @@ const ic = 'w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-non
 const localDateTimeInput = (value: string | number | Date) => {
   const date = new Date(value);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+};
+
+const contactSlaMeta = (client: Client) => {
+  if (client.contact_sla_status === 'met') {
+    return { label: 'Contactat în termen', color: 'bg-emerald-100 text-emerald-800' };
+  }
+  if (client.contact_sla_status === 'late') {
+    return { label: 'Contactat cu întârziere', color: 'bg-amber-100 text-amber-800' };
+  }
+  if (client.contact_sla_status === 'overdue') {
+    return { label: 'Contact întârziat', color: 'bg-red-100 text-red-800' };
+  }
+  if (client.contact_sla_status === 'unassigned') {
+    return { label: 'Fără agent', color: 'bg-gray-100 text-gray-700' };
+  }
+  if (!client.first_contact_due_at) {
+    return { label: 'Termen necalculat', color: 'bg-gray-100 text-gray-600' };
+  }
+  const remainingMinutes = Math.ceil((new Date(client.first_contact_due_at).getTime() - Date.now()) / 60_000);
+  const label = remainingMinutes <= 60
+    ? `${Math.max(0, remainingMinutes)} min rămase`
+    : `${Math.ceil(remainingMinutes / 60)} ore rămase`;
+  return { label, color: remainingMinutes <= 4 * 60 ? 'bg-orange-100 text-orange-800' : 'bg-cyan-100 text-cyan-800' };
 };
 const futureLocalInput = (minutes: number) => localDateTimeInput(Date.now() + minutes * 60_000);
 
@@ -468,6 +496,7 @@ export default function ClientsPage() {
   const [fCategory, setFCategory] = useState('');
   const [fSource, setFSource] = useState('');
   const [fStatus, setFStatus] = useState('');
+  const [fContactSla, setFContactSla] = useState('');
   const [onlyMine, setOnlyMine] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -523,9 +552,16 @@ export default function ClientsPage() {
     });
   }, []);
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const requestedSla = new URLSearchParams(window.location.search).get('contact_sla');
+      if (requestedSla) setFContactSla(requestedSla);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
     const timer = window.setTimeout(() => setSelected(new Set()), 0);
     return () => window.clearTimeout(timer);
-  }, [tab, search, fCity, fCategory, fSource, fStatus, onlyMine, selectedAgent]);
+  }, [tab, search, fCity, fCategory, fSource, fStatus, fContactSla, onlyMine, selectedAgent]);
 
   // distinct cities for filter
   const cities = useMemo(() => [...new Set(clients.map((c) => c.city).filter(Boolean))].sort() as string[], [clients]);
@@ -539,13 +575,23 @@ export default function ClientsPage() {
     if (fCity && c.city !== fCity) return false;
     if (fCategory && c.category !== fCategory) return false;
     if (fSource && (c.source_normalized || normalizeLeadSource(c.source) || '') !== fSource) return false;
+    if (fContactSla === 'overdue' && c.contact_sla_status !== 'overdue') return false;
+    if (fContactSla === 'pending' && c.contact_sla_status !== 'pending') return false;
+    if (fContactSla === 'due_today') {
+      if (!c.first_contact_due_at || c.first_successful_contact_at) return false;
+      const dueDay = new Date(c.first_contact_due_at).toLocaleDateString('en-CA', { timeZone: 'Europe/Bucharest' });
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Bucharest' });
+      if (dueDay !== today) return false;
+    }
+    if (fContactSla === 'missing_description' && c.contact_outcome) return false;
+    if (fContactSla === 'missing_next_action' && c.next_action_at) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       const hay = `${c.contact_name || ''} ${c.contact_phone || ''} ${c.contact_email || ''} ${c.message || ''} ${c.property_code || ''} ${c.property_title || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
-  }), [clients, onlyMine, selectedAgent, user, fCity, fCategory, fSource, search]);
+  }), [clients, onlyMine, selectedAgent, user, fCity, fCategory, fSource, fContactSla, search]);
 
   const inTab = (c: Client, key: string) => {
     const stages = LEAD_PIPELINE_TAB_GROUPS[key as keyof typeof LEAD_PIPELINE_TAB_GROUPS];
@@ -679,6 +725,14 @@ export default function ClientsPage() {
             <select value={fCity} onChange={(e) => setFCity(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate orașele</option>{cities.map((c) => <option key={c} value={c}>{c}</option>)}</select>
             <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate categoriile</option>{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_LABEL(c)}</option>)}</select>
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate etapele pipeline</option>{LEAD_PIPELINE_STAGES.map((stage) => <option key={stage.code} value={stage.code}>{stage.label}</option>)}</select>
+            <select value={fContactSla} onChange={(e) => setFContactSla(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none">
+              <option value="">Toate termenele de contact</option>
+              <option value="pending">De contactat în 24h</option>
+              <option value="due_today">Expiră astăzi</option>
+              <option value="overdue">Contact întârziat</option>
+              <option value="missing_description">Fără descriere</option>
+              <option value="missing_next_action">Fără următoarea acțiune</option>
+            </select>
             <button onClick={() => setShowFilters((s) => !s)} className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50"><Filter size={14} /> Filtre <ChevronDown size={14} /></button>
           </div>
           {showFilters && (
@@ -692,8 +746,8 @@ export default function ClientsPage() {
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.email}{a.id === user?.id ? ' (eu)' : ''}</option>)}
               </select>
               <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate sursele</option>{SOURCES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}</select>
-              {(search || fCity || fCategory || fSource || fStatus || !onlyMine) && (
-                <button onClick={() => { setSearch(''); setFCity(''); setFCategory(''); setFSource(''); setFStatus(''); setOnlyMine(true); setSelectedAgent(''); }} className="text-sm text-gray-500 underline">Reset</button>
+              {(search || fCity || fCategory || fSource || fStatus || fContactSla || !onlyMine) && (
+                <button onClick={() => { setSearch(''); setFCity(''); setFCategory(''); setFSource(''); setFStatus(''); setFContactSla(''); setOnlyMine(true); setSelectedAgent(''); }} className="text-sm text-gray-500 underline">Reset</button>
               )}
             </div>
           )}
@@ -733,6 +787,7 @@ export default function ClientsPage() {
               const responsibleAgentId = c.responsible_agent_id || c.agent_id;
               const agentName = responsibleAgentId ? (agentNames[responsibleAgentId] || '') : '';
               const operationalStage = pipelineMeta(c.pipeline_stage, c.status);
+              const sla = contactSlaMeta(c);
               return (
                 <div key={c.id} className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 transition-colors p-4">
                   <div className="flex items-start gap-3">
@@ -749,6 +804,7 @@ export default function ClientsPage() {
                             {(c.lead_count || 0) > 1 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{c.lead_count} leaduri</span>}
                             {(c.demand_count || 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{c.demand_count} cereri</span>}
                             {c.lead_assignment_status === 'pending_owner' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">De alocat de owner</span>}
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sla.color}`}>{sla.label}</span>
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500 mt-1 flex-wrap">
                             {c.contact_phone && <span className="flex items-center gap-1"><Phone size={12} />{c.contact_phone}</span>}

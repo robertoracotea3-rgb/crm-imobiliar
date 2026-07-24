@@ -22,6 +22,8 @@ interface PortalValue {
 interface AgentValue {
   user_id: string; name: string; role: string; leads: number; viewings: number;
   transactions: number; average_response_minutes: number; conversion_rate: number;
+  assigned: number; contacted_on_time: number; contacted_late: number;
+  uncontacted: number; average_first_contact_minutes: number; sla_percent: number;
 }
 interface NotificationValue {
   id: string; title: string; message: string; priority: string;
@@ -54,6 +56,19 @@ interface DashboardData {
   lead_sources: SourceValue[];
   portal_performance: PortalValue[];
   agent_performance: AgentValue[];
+  contact_sla: {
+    new_requests: number;
+    assigned: number;
+    contacted_on_time: number;
+    contacted_late: number;
+    uncontacted: number;
+    average_first_contact_minutes: number;
+    due_today: number;
+    overdue: number;
+    missing_description: number;
+    missing_next_action: number;
+    sla_percent: number;
+  };
   definitions: Record<string, string>;
   notifications: NotificationValue[];
 }
@@ -205,6 +220,25 @@ export default function DashboardPage() {
         ) : data ? (
           <>
             <section>
+              <div className="mb-3">
+                <h2 className="text-lg font-bold text-gray-950">Contact în maximum 24 de ore</h2>
+                <p className="text-sm text-gray-500">Termene calendaristice calculate și afișate pentru Europe/Bucharest</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                <KpiCard label="Cereri noi" value={data.contact_sla.new_requests} icon={<Users size={20} />}
+                  definition="Leaduri primite în perioada selectată." href="/clients" />
+                <KpiCard label="Expiră astăzi" value={data.contact_sla.due_today} icon={<Clock3 size={20} />}
+                  definition="Leaduri fără contact reușit al căror termen este astăzi în Europe/Bucharest." href="/clients?contact_sla=due_today" danger={data.contact_sla.due_today > 0} />
+                <KpiCard label="Contact întârziat" value={data.contact_sla.overdue} icon={<AlertTriangle size={20} />}
+                  definition="Leaduri fără contact reușit după termenul de 24 de ore." href="/clients?contact_sla=overdue" danger={data.contact_sla.overdue > 0} />
+                <KpiCard label="Fără descriere" value={data.contact_sla.missing_description} icon={<MessageSquareText size={20} />}
+                  definition="Leaduri aflate încă în lucru fără un rezultat de contact documentat." href="/clients?contact_sla=missing_description" danger={data.contact_sla.missing_description > 0} />
+                <KpiCard label="Fără următoarea acțiune" value={data.contact_sla.missing_next_action} icon={<Target size={20} />}
+                  definition="Leaduri active pentru care următorul pas nu are dată." href="/clients?contact_sla=missing_next_action" danger={data.contact_sla.missing_next_action > 0} />
+              </div>
+            </section>
+
+            <section>
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-bold text-gray-950">Indicatori operaționali</h2>
@@ -353,11 +387,13 @@ export default function DashboardPage() {
                     <Link href="/team" className="text-sm font-semibold text-emerald-700 hover:underline">Echipă</Link>
                   </div>
                   <div className="mt-4 overflow-x-auto rounded-xl border border-gray-100">
-                    <table className="min-w-[760px] w-full text-sm">
+                    <table className="min-w-[1180px] w-full text-sm">
                       <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                         <tr>
-                          <th className="px-4 py-3">Agent</th><th className="px-4 py-3 text-right">Leaduri</th>
-                          <th className="px-4 py-3 text-right">Răspuns mediu</th><th className="px-4 py-3 text-right">Vizionări</th>
+                          <th className="px-4 py-3">Agent</th><th className="px-4 py-3 text-right">Alocate</th>
+                          <th className="px-4 py-3 text-right">În termen</th><th className="px-4 py-3 text-right">Târziu</th>
+                          <th className="px-4 py-3 text-right">Necontactate</th><th className="px-4 py-3 text-right">SLA 24h</th>
+                          <th className="px-4 py-3 text-right">Contact mediu</th><th className="px-4 py-3 text-right">Vizionări</th>
                           <th className="px-4 py-3 text-right">Tranzacții</th><th className="px-4 py-3 text-right">Conversie</th>
                         </tr>
                       </thead>
@@ -365,8 +401,12 @@ export default function DashboardPage() {
                         {data.agent_performance.map((agent) => (
                           <tr key={agent.user_id} className="border-t border-gray-100">
                             <td className="px-4 py-3"><p className="font-semibold text-gray-900">{agent.name}</p><p className="text-xs text-gray-400">{agent.role}</p></td>
-                            <td className="px-4 py-3 text-right font-semibold">{agent.leads}</td>
-                            <td className="px-4 py-3 text-right">{formatMinutes(agent.average_response_minutes)}</td>
+                            <td className="px-4 py-3 text-right font-semibold">{agent.assigned}</td>
+                            <td className="px-4 py-3 text-right text-emerald-700">{agent.contacted_on_time}</td>
+                            <td className="px-4 py-3 text-right text-amber-700">{agent.contacted_late}</td>
+                            <td className="px-4 py-3 text-right text-red-700">{agent.uncontacted}</td>
+                            <td className="px-4 py-3 text-right font-bold text-emerald-700">{formatNumber(agent.sla_percent)}%</td>
+                            <td className="px-4 py-3 text-right">{formatMinutes(agent.average_first_contact_minutes)}</td>
                             <td className="px-4 py-3 text-right">{agent.viewings}</td>
                             <td className="px-4 py-3 text-right">{agent.transactions}</td>
                             <td className="px-4 py-3 text-right font-bold text-emerald-700">{formatNumber(agent.conversion_rate)}%</td>

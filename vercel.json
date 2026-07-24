@@ -7,7 +7,7 @@
     },
     {
       "path": "/api/cron/automations",
-      "schedule": "47 2 * * *"
+      "schedule": "47 * * * *"
     }
   ]
 }
