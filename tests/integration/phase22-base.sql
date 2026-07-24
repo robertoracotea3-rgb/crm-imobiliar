@@ -71,15 +71,26 @@ create table public.contacts (
   deleted_at timestamptz
 );
 
+create table public.activity_types (
+  code text primary key,
+  display_name text not null,
+  display_order integer not null,
+  category text not null,
+  ui_color text not null,
+  is_active boolean not null default true
+);
+
 create table public.leads (
   id uuid primary key,
   agency_id uuid not null references public.agencies(id),
   contact_name text,
   contact_phone text,
   contact_email text,
+  contact_id uuid references public.contacts(id),
   agent_id uuid references auth.users(id),
   status text not null default 'new',
   pipeline_stage text not null default 'lead_nou',
+  pipeline_stage_changed_at timestamptz not null default now(),
   next_action_at timestamptz,
   next_action_type text,
   property_id uuid references public.properties(id),
@@ -142,6 +153,22 @@ create table public.activities (
   description text,
   scheduled_at timestamptz,
   created_at timestamptz not null default now()
+);
+
+create table public.lead_pipeline_events (
+  id uuid primary key default gen_random_uuid(),
+  agency_id uuid not null references public.agencies(id),
+  lead_id uuid not null references public.leads(id),
+  from_stage text,
+  to_stage text not null,
+  reason text,
+  note text,
+  source text not null,
+  actor_id uuid references auth.users(id),
+  evidence jsonb not null default '{}'::jsonb,
+  dedup_key text,
+  created_at timestamptz not null default now(),
+  unique(agency_id, lead_id, dedup_key)
 );
 
 create table public.tasks (

@@ -80,6 +80,8 @@ export const ACTIVITY_TYPES = [
   { code: 'whatsapp_confirmed_sent', label: 'WhatsApp confirmat trimis', category: 'contact' },
   { code: 'whatsapp_not_sent', label: 'WhatsApp netrimis', category: 'contact' },
   { code: 'whatsapp_unreachable', label: 'WhatsApp indisponibil', category: 'contact' },
+  { code: 'contact_attempt', label: 'Încercare de contact documentată', category: 'contact' },
+  { code: 'contact_success', label: 'Contact reușit documentat', category: 'contact' },
   { code: 'viewing_scheduled', label: 'Vizionare programată', category: 'viewing' },
   { code: 'viewing_confirm', label: 'Vizionare confirmată', category: 'viewing' },
   { code: 'viewing_reschedule', label: 'Vizionare reprogramată', category: 'viewing' },

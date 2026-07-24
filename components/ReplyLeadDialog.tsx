@@ -221,7 +221,7 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
               )}
             </div>
             <p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">
-              CRM-ul va înregistra doar că WhatsApp a fost deschis. Mesajul devine „confirmat trimis” numai după confirmarea ta.
+              CRM-ul înregistrează deschiderea și trimiterea numai ca încercări. Clientul devine „Contactat” doar după ce completezi conversația reală în formularul „Înregistrează”.
             </p>
           </div>
         ) : (
@@ -247,7 +247,7 @@ export function ReplyLeadDialog({ lead, isOpen, onClose, onSuccess }: ReplyLeadD
                 onClick={() => void confirm('confirmed_sent')}
                 className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
               >
-                <Check size={16} /> Da, mesaj trimis
+                <Check size={16} /> Da, mesaj trimis (încercare)
               </button>
               <button
                 type="button"

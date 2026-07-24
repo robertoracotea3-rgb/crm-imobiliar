@@ -27,6 +27,7 @@ export async function GET(request: Request) {
     { data: profile, error: profileError },
     { data: metrics, error: metricsError },
     { data: contactSla, error: contactSlaError },
+    { data: missingContactDescription, error: missingContactDescriptionError },
     { data: notifications },
   ] =
     await Promise.all([
@@ -46,6 +47,11 @@ export async function GET(request: Request) {
         p_from: from.toISOString(),
         p_to: now.toISOString(),
       }),
+      serviceAdmin.rpc('crm_missing_contact_description_count', {
+        p_agency_id: agencyId,
+        p_user_id: user.id,
+        p_scope_all: managementView,
+      }),
       serviceAdmin.from('notifications')
         .select('id,type,title,message,priority,action_url,read_at,created_at')
         .eq('agency_id', agencyId).eq('user_id', user.id).is('dismissed_at', null)
@@ -64,6 +70,12 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Migrarea SLA de contact nu este instalată.' }, { status: 503 });
     }
     return Response.json({ error: contactSlaError.message }, { status: 500 });
+  }
+  if (missingContactDescriptionError) {
+    if (/crm_missing_contact_description_count|does not exist|schema cache/i.test(missingContactDescriptionError.message)) {
+      return Response.json({ error: 'Migrarea interacțiunilor de contact nu este instalată.' }, { status: 503 });
+    }
+    return Response.json({ error: missingContactDescriptionError.message }, { status: 500 });
   }
 
   type AgentMetric = {
@@ -115,7 +127,10 @@ export async function GET(request: Request) {
     generated_at: now.toISOString(),
     ...metrics,
     agent_performance: agentPerformance,
-    contact_sla: contactSla?.overall || {},
+    contact_sla: {
+      ...(contactSla?.overall || {}),
+      missing_description: Number(missingContactDescription || 0),
+    },
     notifications: notifications || [],
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }

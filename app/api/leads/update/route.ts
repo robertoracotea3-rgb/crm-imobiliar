@@ -48,7 +48,7 @@ export async function PATCH(request: Request) {
 
     const { data: lead } = await admin
       .from('leads')
-      .select('id, agency_id, contact_id, status, next_action_at, next_action_type, status_reason, status_note')
+      .select('id, agency_id, contact_id, status, first_successful_contact_at, next_action_at, next_action_type, status_reason, status_note')
       .eq('id', id)
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
@@ -72,6 +72,11 @@ export async function PATCH(request: Request) {
       }
       if (status === 'lost' && (!String(status_reason || '').trim() || !String(status_note || '').trim())) {
         return Response.json({ error: 'Motivul și observația sunt obligatorii pentru un lead pierdut' }, { status: 400 });
+      }
+      if (status === 'contacted' && !lead.first_successful_contact_at) {
+        return Response.json({
+          error: 'Folosește „Înregistrează conversația”; statusul Contactat necesită o interacțiune reală.',
+        }, { status: 409 });
       }
     }
 
@@ -125,8 +130,6 @@ export async function PATCH(request: Request) {
     if (status_reason !== undefined) patch.status_reason = String(status_reason || '').trim() || null;
     if (status_note !== undefined) patch.status_note = String(status_note || '').trim() || null;
     if (lost_to_competitor !== undefined) patch.lost_to_competitor = String(lost_to_competitor || '').trim() || null;
-    if (status === 'contacted') patch.first_response_at = new Date().toISOString();
-
     const { data, error } = await admin
       .from('leads')
       .update(patch)

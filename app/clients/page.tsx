@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { ReplyLeadDialog } from '@/components/ReplyLeadDialog';
+import { RecordContactDialog } from '@/components/RecordContactDialog';
 import { UnmatchedStoriaMessages } from '@/components/UnmatchedStoriaMessages';
 import { ScheduleViewingDialog } from '@/components/ScheduleViewingDialog';
 import { PipelineStageControl } from '@/components/PipelineStageControl';
@@ -32,6 +33,7 @@ import {
   Plus, Search, Filter, Phone, Mail, MessageCircle, Pencil, Trash2,
   MoreVertical, Clock, User, MapPin, Tag, History, Target, X, Loader2,
   StickyNote, CalendarPlus, Globe, ChevronDown, Send,
+  MessageSquareText,
 } from 'lucide-react';
 
 interface Client {
@@ -73,6 +75,7 @@ interface Client {
   first_successful_contact_at?: string;
   contact_attempt_count?: number;
   contact_outcome?: string;
+  last_contact_description?: string;
   contact_sla_status?: 'unassigned' | 'pending' | 'met' | 'late' | 'overdue';
   next_action_at?: string;
   next_action_type?: string;
@@ -512,6 +515,7 @@ export default function ClientsPage() {
   const [matchClient, setMatchClient] = useState<Client | null>(null);
   const [noteClient, setNoteClient] = useState<Client | null>(null);
   const [replyClient, setReplyClient] = useState<Client | null>(null);
+  const [contactClient, setContactClient] = useState<Client | null>(null);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [linkClient, setLinkClient] = useState<Client | null>(null);
@@ -583,7 +587,7 @@ export default function ClientsPage() {
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Bucharest' });
       if (dueDay !== today) return false;
     }
-    if (fContactSla === 'missing_description' && c.contact_outcome) return false;
+    if (fContactSla === 'missing_description' && c.last_contact_description) return false;
     if (fContactSla === 'missing_next_action' && c.next_action_at) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -867,6 +871,7 @@ export default function ClientsPage() {
                         <button onClick={() => setReplyClient(c)} title="WhatsApp" className="p-1.5 rounded-lg text-gray-500 hover:bg-green-50 hover:text-green-600"><MessageCircle size={16} /></button>
                         {c.contact_email && <a href={`mailto:${c.contact_email}`} title="Email" className="p-1.5 rounded-lg text-gray-500 hover:bg-blue-50 hover:text-blue-600"><Mail size={16} /></a>}
                         <button onClick={() => setReplyClient(c)} title="Răspunde" className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"><Send size={16} /></button>
+                        <button onClick={() => setContactClient(c)} title="Înregistrează conversația" className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"><MessageSquareText size={15} />Înregistrează</button>
                         <PipelineStageControl
                           lead={c}
                           compact
@@ -964,6 +969,7 @@ export default function ClientsPage() {
       <ReplyLeadDialog
         lead={replyClient ? {
           id: replyClient.id,
+          property_id: replyClient.property_id,
           contact_name: replyClient.contact_name,
           contact_phone: replyClient.contact_phone,
           message: parseLeadMessage(replyClient.message, replyClient.source).text || replyClient.message || '',
@@ -972,6 +978,12 @@ export default function ClientsPage() {
         } : null}
         isOpen={!!replyClient}
         onClose={() => setReplyClient(null)}
+        onSuccess={fetchClients}
+      />
+      <RecordContactDialog
+        lead={contactClient}
+        isOpen={Boolean(contactClient)}
+        onClose={() => setContactClient(null)}
         onSuccess={fetchClients}
       />
       {viewingClient && (

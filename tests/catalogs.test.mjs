@@ -75,7 +75,10 @@ test('all lead statuses stay visible in exactly one client tab category', () => 
 });
 
 test('database migration seeds every code exposed by the application catalogs', () => {
-  const migration = readFileSync(new URL('../migrations/20260720_070_status_source_catalogs.sql', import.meta.url), 'utf8');
+  const migration = [
+    '../migrations/20260720_070_status_source_catalogs.sql',
+    '../migrations/20260724_250_factual_contact_interactions.sql',
+  ].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
   for (const catalog of [LEAD_STATUSES, PROPERTY_STATUSES, VIEWING_STATUSES, TRANSACTION_STATUSES, LEAD_SOURCES, ACTIVITY_TYPES]) {
     for (const entry of catalog) {
       assert.ok(migration.includes(`('${entry.code}',`), `${entry.code} is missing from the SQL catalog seed`);
