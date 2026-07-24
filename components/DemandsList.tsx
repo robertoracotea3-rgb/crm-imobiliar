@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, CheckCircle2, CircleHelp, MapPin, Pencil, Target, X, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleHelp, Clock3, MapPin, Pencil, RotateCcw, Target, X, Zap } from 'lucide-react';
 
 import { AddDemandDialog, type DemandView } from '@/components/AddDemandDialog';
+import { DemandReviewDialog } from '@/components/DemandReviewDialog';
+import { DEMAND_REVIEW_STATUS, demandStatusMeta } from '@/lib/demand-review';
 import { supabase } from '@/lib/supabase';
 
 interface ContactSummary { id: string; full_name: string; phone?: string; email?: string }
@@ -42,6 +44,7 @@ const TYPE_LABEL: Record<string, string> = {
 export function DemandsList({ demands, onChanged }: { demands: DemandListItem[]; onChanged?: () => void }) {
   const [editing, setEditing] = useState<DemandListItem | null>(null);
   const [matching, setMatching] = useState<DemandListItem | null>(null);
+  const [reviewing, setReviewing] = useState<DemandListItem | null>(null);
 
   if (demands.length === 0) {
     return <div className="rounded-2xl border border-dashed border-gray-300 bg-white py-16 text-center"><Target className="mx-auto mb-3 text-gray-300" size={38} /><p className="font-medium text-gray-600">Nu există cereri pentru filtrele alese.</p></div>;
@@ -54,13 +57,15 @@ export function DemandsList({ demands, onChanged }: { demands: DemandListItem[];
         const budget = demand.budget_unknown
           ? 'Buget necunoscut'
           : `${demand.budget_min?.toLocaleString('ro-RO') || '—'} – ${demand.budget_max?.toLocaleString('ro-RO') || '—'} ${demand.currency || 'EUR'}`;
+        const status = demandStatusMeta(demand.status);
+        const isClosed = ['inchisa', 'closed', 'indeplinita', 'anulata'].includes(demand.status || '');
         return <article key={demand.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-emerald-300">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-xs text-gray-400">{demand.internal_code || 'Cerere'}</span>
                 <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">{INTENT_LABEL[demand.intent || ''] || demand.intent || 'Solicitare'}</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs ${demand.status === 'activa' ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{demand.status || 'activa'}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status.color}`}>{status.label}</span>
               </div>
               {demand.contact ? <Link href={`/clients/${demand.contact.id}`} className="mt-1 block font-bold text-gray-900 hover:text-emerald-700">{demand.contact.full_name}</Link> : <p className="mt-1 font-bold text-amber-700">Client neasociat</p>}
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
@@ -78,10 +83,14 @@ export function DemandsList({ demands, onChanged }: { demands: DemandListItem[];
               </div>
               {demand.special_requirements && <p className="mt-2 rounded-lg bg-purple-50 px-3 py-2 text-xs text-purple-800">Cerințe speciale: {demand.special_requirements}</p>}
               {demand.notes && <p className="mt-2 text-sm text-gray-600">{demand.notes}</p>}
+              {demand.status === DEMAND_REVIEW_STATUS && <p className="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900"><Clock3 size={14} />Inactivă de minimum 20 de zile · agentul trebuie să decidă următorul pas</p>}
+              {demand.next_action_at && !isClosed && <p className="mt-2 text-xs text-blue-700">Următoarea acțiune: {demand.next_action_type || 'follow-up'} · {new Date(demand.next_action_at).toLocaleString('ro-RO')}</p>}
+              {isClosed && demand.close_reason_code && <p className="mt-2 text-xs text-gray-600">Motiv închidere: {demand.close_reason_code.replace(/_/g, ' ')}{demand.close_reason_note ? ` · ${demand.close_reason_note}` : ''}</p>}
             </div>
             <div className="flex gap-2">
               {(demand.intent === 'cumparare' || demand.intent === 'inchiriere' || !demand.intent) && <button onClick={() => setMatching(demand)} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white"><Zap size={14} />Potriviri</button>}
-              <button onClick={() => setEditing(demand)} className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700"><Pencil size={14} />Editează</button>
+              {(demand.status === DEMAND_REVIEW_STATUS || isClosed) && <button onClick={() => setReviewing(demand)} className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold ${isClosed ? 'border border-gray-300 text-gray-700' : 'bg-amber-600 text-white'}`}>{isClosed ? <RotateCcw size={14} /> : <Clock3 size={14} />}{isClosed ? 'Reactivează' : 'Revizuiește'}</button>}
+              {!isClosed && <button onClick={() => setEditing(demand)} className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700"><Pencil size={14} />Editează</button>}
             </div>
           </div>
         </article>;
@@ -89,6 +98,7 @@ export function DemandsList({ demands, onChanged }: { demands: DemandListItem[];
     </div>
     {editing && <AddDemandDialog key={editing.id} demand={editing} onClose={() => setEditing(null)} onSuccess={onChanged} />}
     {matching && <MatchDialog demand={matching} onClose={() => setMatching(null)} />}
+    {reviewing && <DemandReviewDialog demand={reviewing} onClose={() => setReviewing(null)} onSaved={() => onChanged?.()} />}
   </>;
 }
 

@@ -37,6 +37,7 @@ interface ClaimedJob {
 export interface AutomationRunSummary {
   contactSla: Record<string, unknown> | null;
   contactLifecycle: Record<string, unknown> | null;
+  demandReviews: Record<string, unknown> | null;
   swept: number;
   claimed: number;
   completed: number;
@@ -261,7 +262,7 @@ export async function runAutomationBatch(
   options: { agencyId?: string | null; limit?: number; sweep?: boolean } = {},
 ): Promise<AutomationRunSummary> {
   const summary: AutomationRunSummary = {
-    contactSla: null, contactLifecycle: null,
+    contactSla: null, contactLifecycle: null, demandReviews: null,
     swept: 0, claimed: 0, completed: 0, retrying: 0, failed: 0, cancelled: 0,
   };
   if (options.sweep !== false) {
@@ -285,6 +286,17 @@ export async function runAutomationBatch(
     );
     if (contactLifecycleError) throw new Error(contactLifecycleError.message);
     summary.contactLifecycle = (contactLifecycle || {}) as Record<string, unknown>;
+
+    const { data: demandReviews, error: demandReviewsError } = await serviceAdmin.rpc(
+      'crm_mark_demands_for_review',
+      {
+        p_now: new Date().toISOString(),
+        p_agency_id: options.agencyId || null,
+        p_min_inactive_days: 20,
+      },
+    );
+    if (demandReviewsError) throw new Error(demandReviewsError.message);
+    summary.demandReviews = (demandReviews || {}) as Record<string, unknown>;
 
     const { data, error } = await serviceAdmin.rpc('crm_sweep_due_automations', {
       p_now: new Date().toISOString(),

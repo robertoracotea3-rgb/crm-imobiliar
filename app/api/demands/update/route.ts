@@ -4,7 +4,7 @@ import { normalizeLeadSource } from '@/lib/crm-catalogs';
 import { normalizeDemandRecord, type DemandRecordInput } from '@/lib/demand-record';
 import { contextHasPermission, requireApiAuth } from '@/lib/server/api-auth';
 
-const VALID_STATUS = ['activa', 'inactiva', 'indeplinita', 'anulata'];
+const VALID_STATUS = ['activa', 'inactiva'];
 
 export async function PATCH(request: Request) {
   const auth = await requireApiAuth(request, { module: 'demands', action: 'edit' });
@@ -16,7 +16,9 @@ export async function PATCH(request: Request) {
     const id = String(body.id || '');
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
     if (body.status !== undefined && !VALID_STATUS.includes(String(body.status))) {
-      return Response.json({ error: 'Status invalid' }, { status: 400 });
+      return Response.json({
+        error: 'Închiderea și reactivarea se fac numai din fluxul de revizuire.',
+      }, { status: 400 });
     }
 
     const { data: current, error: currentError } = await admin.from('demands')

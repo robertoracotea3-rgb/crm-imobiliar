@@ -50,6 +50,7 @@ try {
   psql(database, readFileSync('migrations/20260724_240_lead_contact_sla.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_250_factual_contact_interactions.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_260_contact_lifecycle.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260724_270_demand_review_workflow.sql', 'utf8'));
   const phase22 = psql(database, readFileSync('tests/integration/phase22-workflow.sql', 'utf8'));
   const phase23 = psql(database, readFileSync('tests/integration/phase23-audit.sql', 'utf8'));
   const phase25 = psql(database, readFileSync('tests/integration/phase25-account-security.sql', 'utf8'));
@@ -59,6 +60,7 @@ try {
   const phase29 = psql(database, readFileSync('tests/integration/phase29-contact-sla.sql', 'utf8'));
   const phase30 = psql(database, readFileSync('tests/integration/phase30-factual-contact.sql', 'utf8'));
   const phase31 = psql(database, readFileSync('tests/integration/phase31-contact-lifecycle.sql', 'utf8'));
+  const phase32 = psql(database, readFileSync('tests/integration/phase32-demand-review.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260720_190_immutable_audit_log.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260723_200_account_security.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260723_210_system_observability.sql', 'utf8'));
@@ -67,6 +69,7 @@ try {
   psql(database, readFileSync('migrations/20260724_240_lead_contact_sla.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_250_factual_contact_interactions.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_260_contact_lifecycle.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260724_270_demand_review_workflow.sql', 'utf8'));
   const idempotency = psql(database, readFileSync('tests/integration/phase23-idempotency.sql', 'utf8'));
   const phase25Idempotency = psql(database, readFileSync('tests/integration/phase25-account-security.sql', 'utf8'));
   const phase26Idempotency = psql(database, readFileSync('tests/integration/phase26-observability.sql', 'utf8'));
@@ -74,6 +77,9 @@ try {
   const phase29Idempotency = psql(database, readFileSync('tests/integration/phase29-contact-sla.sql', 'utf8'));
   const phase30Idempotency = psql(database, readFileSync('tests/integration/phase30-factual-contact.sql', 'utf8'));
   const phase31Idempotency = psql(database, readFileSync('tests/integration/phase31-contact-lifecycle.sql', 'utf8'));
+  const phase32Idempotency = psql(database, readFileSync('tests/integration/phase32-demand-review.sql', 'utf8'));
+  psql(database, readFileSync('migrations/20260724_270_demand_review_workflow.rollback.sql', 'utf8'));
+  const phase32Rollback = psql(database, readFileSync('tests/integration/phase32-demand-review-rollback.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_260_contact_lifecycle.rollback.sql', 'utf8'));
   const phase31Rollback = psql(database, readFileSync('tests/integration/phase31-contact-lifecycle-rollback.sql', 'utf8'));
   psql(database, readFileSync('migrations/20260724_250_factual_contact_interactions.rollback.sql', 'utf8'));
@@ -99,6 +105,7 @@ try {
     || !phase29.includes('phase29_contact_sla_ok')
     || !phase30.includes('phase30_factual_contact_ok')
     || !phase31.includes('phase31_contact_lifecycle_ok')
+    || !phase32.includes('phase32_demand_review_ok')
     || !idempotency.includes('phase23_audit_idempotency_ok')
     || !phase25Idempotency.includes('phase25_account_security_ok')
     || !phase26Idempotency.includes('phase26_observability_ok')
@@ -106,6 +113,8 @@ try {
     || !phase29Idempotency.includes('phase29_contact_sla_ok')
     || !phase30Idempotency.includes('phase30_factual_contact_ok')
     || !phase31Idempotency.includes('phase31_contact_lifecycle_ok')
+    || !phase32Idempotency.includes('phase32_demand_review_ok')
+    || !phase32Rollback.includes('phase32_demand_review_rollback_ok')
     || !phase31Rollback.includes('phase31_contact_lifecycle_rollback_ok')
     || !phase30Rollback.includes('phase30_factual_contact_rollback_ok')
     || !phase29Rollback.includes('phase29_contact_sla_rollback_ok')
@@ -114,9 +123,9 @@ try {
     || !phase26Rollback.includes('phase26_observability_rollback_ok')
     || !phase25Rollback.includes('phase25_account_security_rollback_ok')
     || !rollback.includes('phase23_audit_rollback_ok')) {
-    throw new Error(`Database integration marker is missing.\n${phase22}\n${phase23}\n${phase25}\n${phase26}\n${phase27}\n${phase28}\n${phase29}\n${phase30}\n${phase31}\n${idempotency}\n${phase25Idempotency}\n${phase26Idempotency}\n${phase28Idempotency}\n${phase29Idempotency}\n${phase30Idempotency}\n${phase31Idempotency}\n${phase31Rollback}\n${phase30Rollback}\n${phase29Rollback}\n${phase28Rollback}\n${phase27Rollback}\n${phase26Rollback}\n${phase25Rollback}\n${rollback}`);
+    throw new Error(`Database integration marker is missing.\n${phase22}\n${phase23}\n${phase25}\n${phase26}\n${phase27}\n${phase28}\n${phase29}\n${phase30}\n${phase31}\n${phase32}\n${idempotency}\n${phase25Idempotency}\n${phase26Idempotency}\n${phase28Idempotency}\n${phase29Idempotency}\n${phase30Idempotency}\n${phase31Idempotency}\n${phase32Idempotency}\n${phase32Rollback}\n${phase31Rollback}\n${phase30Rollback}\n${phase29Rollback}\n${phase28Rollback}\n${phase27Rollback}\n${phase26Rollback}\n${phase25Rollback}\n${rollback}`);
   }
-  console.log('Database integration passed: CRM workflow, immutable audit, account security, observability, property assignment, Storia lead assignment, contact SLA, factual contact, contact lifecycle and rollbacks.');
+  console.log('Database integration passed: CRM workflow, immutable audit, account security, observability, property assignment, Storia lead assignment, contact SLA, factual contact, contact lifecycle, demand review and rollbacks.');
 } finally {
   try {
     psql('postgres', `drop database if exists ${database} with (force);`);

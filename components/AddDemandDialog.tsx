@@ -40,6 +40,18 @@ export interface DemandView {
   notes?: string | null;
   status?: string | null;
   criteria?: Record<string, unknown> | null;
+  last_relevant_activity_at?: string | null;
+  review_due_at?: string | null;
+  review_marked_at?: string | null;
+  review_count?: number | null;
+  review_blockers_snapshot?: string[] | null;
+  next_action_type?: string | null;
+  next_action_at?: string | null;
+  contact_after_at?: string | null;
+  close_reason_code?: string | null;
+  close_reason_note?: string | null;
+  closed_at?: string | null;
+  reopened_at?: string | null;
 }
 
 interface ContactOption { id: string; full_name?: string; name?: string; phone?: string; email?: string }
@@ -261,7 +273,7 @@ export function AddDemandDialog({
             <div><label className="mb-1 block text-xs font-semibold text-gray-600">Client *</label><div className="flex gap-2"><select value={form.contact_id} onChange={(event) => set('contact_id', event.target.value)} className={inputClass}><option value="">Selectează clientul</option>{contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.full_name || contact.name || 'Client'}{contact.phone ? ` · ${contact.phone}` : ''}</option>)}</select><button type="button" onClick={() => setShowNewContact((value) => !value)} className="rounded-lg border border-emerald-300 px-3 text-emerald-700" title="Client nou"><Plus size={18} /></button></div></div>
             {showNewContact && <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3"><input className={inputClass} placeholder="Nume complet *" value={newContact.full_name} onChange={(event) => setNewContact({ ...newContact, full_name: event.target.value })} /><div className="grid grid-cols-2 gap-2"><input className={inputClass} placeholder="Telefon" value={newContact.phone} onChange={(event) => setNewContact({ ...newContact, phone: event.target.value })} /><input className={inputClass} placeholder="E-mail" value={newContact.email} onChange={(event) => setNewContact({ ...newContact, email: event.target.value })} /></div><button type="button" onClick={createContact} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Creează și selectează</button></div>}
             <div><label className="mb-1 block text-xs font-semibold text-gray-600">Tipul solicitării *</label><div className="grid grid-cols-2 gap-2">{DEMAND_INTENTS.map((intent) => <button type="button" key={intent} onClick={() => set('intent', intent)} className={`rounded-lg border px-3 py-2 text-sm ${form.intent === intent ? 'border-emerald-600 bg-emerald-50 font-semibold text-emerald-800' : 'border-gray-200 text-gray-600'}`}>{INTENT_LABELS[intent]}</button>)}</div></div>
-            {demand && <div><label className="mb-1 block text-xs font-semibold text-gray-600">Status</label><select className={inputClass} value={form.status} onChange={(event) => set('status', event.target.value)}><option value="activa">Activă</option><option value="inactiva">Inactivă</option><option value="indeplinita">Îndeplinită</option><option value="anulata">Anulată</option></select></div>}
+            {demand && <div><label className="mb-1 block text-xs font-semibold text-gray-600">Status operațional</label><select className={inputClass} value={form.status} onChange={(event) => set('status', event.target.value)} disabled={['de_verificat_inchidere', 'inchisa', 'closed', 'indeplinita', 'anulata'].includes(form.status)}><option value="activa">Activă</option><option value="inactiva">Inactivă</option>{form.status === 'de_verificat_inchidere' && <option value="de_verificat_inchidere">De verificat pentru închidere</option>}{['inchisa', 'closed', 'indeplinita', 'anulata'].includes(form.status) && <option value={form.status}>Închisă</option>}</select><p className="mt-1 text-[11px] text-gray-500">Închiderea, prelungirea și reactivarea se fac din fluxul „Revizuiește”.</p></div>}
             <div><label className="mb-1 block text-xs font-semibold text-gray-600">Tipuri proprietate *</label><div className="grid grid-cols-2 gap-2">{DEMAND_PROPERTY_TYPES.map((type) => <label key={type} className="flex items-center gap-2 rounded-lg border border-gray-200 p-2 text-sm"><input type="checkbox" checked={form.property_types.includes(type)} onChange={() => toggleList('property_types', type)} />{TYPE_LABELS[type]}</label>)}</div></div>
             <div className="grid grid-cols-2 gap-3"><div><label className="mb-1 block text-xs font-semibold text-gray-600">Sursă</label><select value={form.source} onChange={(event) => set('source', event.target.value)} className={inputClass}>{SOURCE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div><div><label className="mb-1 block text-xs font-semibold text-gray-600">Agent</label><select value={form.agent_id} onChange={(event) => set('agent_id', event.target.value)} className={inputClass}><option value="">Agentul curent</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name || agent.email || agent.id}</option>)}</select></div></div>
 

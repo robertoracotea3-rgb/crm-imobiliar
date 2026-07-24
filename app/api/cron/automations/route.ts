@@ -52,6 +52,7 @@ export async function GET(request: Request) {
           cancelled: summary.cancelled,
           contact_sla: summary.contactSla,
           contact_lifecycle: summary.contactLifecycle,
+          demand_reviews: summary.demandReviews,
         },
       }).catch(() => undefined);
     }

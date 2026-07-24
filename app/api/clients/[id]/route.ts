@@ -50,17 +50,21 @@ export async function GET(
 
   const leads = leadResult.data || [];
   const leadIds = leads.map((lead) => lead.id);
+  const demandIds = (demandResult.data || []).map((demand) => demand.id);
   const relatedPropertyIds = [...new Set([
     ...leads.map((lead) => lead.property_id),
     ...(viewingResult.data || []).map((viewing) => viewing.property_id),
   ].filter(Boolean))] as string[];
 
-  const [taskResult, relatedPropertyResult] = await Promise.all([
+  const [taskResult, relatedPropertyResult, demandReviewResult] = await Promise.all([
     leadIds.length
       ? admin.from('tasks').select('*').eq('agency_id', agencyId).in('lead_id', leadIds).order('created_at', { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     relatedPropertyIds.length
       ? admin.from('properties').select('id, internal_code, title, city, category, status, attributes').eq('agency_id', agencyId).in('id', relatedPropertyIds).is('deleted_at', null)
+      : Promise.resolve({ data: [], error: null }),
+    demandIds.length
+      ? admin.from('demand_review_events').select('id,demand_id,event_type,from_status,to_status,reason_code,note,next_action_type,next_action_at,created_at').eq('agency_id', agencyId).in('demand_id', demandIds).order('created_at', { ascending: false })
       : Promise.resolve({ data: [], error: null }),
   ]);
 
@@ -125,6 +129,20 @@ export async function GET(
       occurred_at: event.created_at,
       entity_id: event.id,
     })),
+    ...(demandReviewResult.data || []).map((event) => ({
+      id: `demand-review:${event.id}`,
+      kind: 'demand_review',
+      title: `Cerere: ${event.event_type.replace(/_/g, ' ')}`,
+      description: [
+        event.reason_code ? `Motiv: ${event.reason_code.replace(/_/g, ' ')}` : null,
+        event.note || null,
+        event.next_action_at
+          ? `Următoarea acțiune: ${event.next_action_type || 'follow-up'} · ${event.next_action_at}`
+          : null,
+      ].filter(Boolean).join('\n') || null,
+      occurred_at: event.created_at,
+      entity_id: event.demand_id,
+    })),
   ].filter((item) => item.occurred_at).sort((left, right) => (
     new Date(right.occurred_at).getTime() - new Date(left.occurred_at).getTime()
   ));
@@ -149,6 +167,7 @@ export async function GET(
     sources: sourceResult.data || [],
     agents: agentResult.data || [],
     lifecycle_history: lifecycleResult.data || [],
+    demand_review_history: demandReviewResult.data || [],
     leads: enrichedLeads,
     demands: demandResult.data || [],
     activities: activityResult.data || [],
