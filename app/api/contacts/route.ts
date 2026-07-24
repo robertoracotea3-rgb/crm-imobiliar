@@ -31,6 +31,13 @@ interface DbContact {
   gdpr_consent: boolean | null;
   gdpr_consent_at: string | null;
   merge_status: string;
+  lifecycle_status: string;
+  lifecycle_changed_at: string;
+  lifecycle_reason: string | null;
+  last_relevant_activity_at: string | null;
+  archived_at: string | null;
+  archive_reason: string | null;
+  reactivated_at: string | null;
   created_at: string;
 }
 
@@ -50,6 +57,13 @@ function toUi(c: DbContact) {
     gdpr_consent: Boolean(c.gdpr_consent),
     gdpr_consent_at: c.gdpr_consent_at,
     merge_status: c.merge_status,
+    lifecycle_status: c.lifecycle_status,
+    lifecycle_changed_at: c.lifecycle_changed_at,
+    lifecycle_reason: c.lifecycle_reason,
+    last_relevant_activity_at: c.last_relevant_activity_at,
+    archived_at: c.archived_at,
+    archive_reason: c.archive_reason,
+    reactivated_at: c.reactivated_at,
     created_at: c.created_at,
   };
 }
@@ -61,7 +75,7 @@ export async function GET(request: Request) {
     const { admin, serviceAdmin, agencyId, user, role } = auth.context;
     const { data, error } = await admin
       .from('contacts')
-      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, created_at')
+      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, lifecycle_status, lifecycle_changed_at, lifecycle_reason, last_relevant_activity_at, archived_at, archive_reason, reactivated_at, created_at')
       .eq('agency_id', agencyId)
       .is('deleted_at', null)
       .eq('merge_status', 'active')
@@ -124,7 +138,7 @@ export async function POST(request: Request) {
     }
 
     const { data: contact, error } = await admin.from('contacts')
-      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, created_at')
+      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, lifecycle_status, lifecycle_changed_at, lifecycle_reason, last_relevant_activity_at, archived_at, archive_reason, reactivated_at, created_at')
       .eq('id', resolution.contact_id)
       .eq('agency_id', agencyId)
       .eq('merge_status', 'active')
@@ -174,7 +188,7 @@ export async function PATCH(request: Request) {
       .eq('agency_id', agencyId)
       .eq('merge_status', 'active')
       .is('deleted_at', null)
-      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, created_at')
+      .select('id, full_name, phone, phone_secondary, email, cnp, address, type, notes, agent_id, source, gdpr_consent, gdpr_consent_at, merge_status, lifecycle_status, lifecycle_changed_at, lifecycle_reason, last_relevant_activity_at, archived_at, archive_reason, reactivated_at, created_at')
       .single();
 
     if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
@@ -198,55 +212,44 @@ export async function DELETE(request: Request) {
   try {
     const auth = await requireApiAuth(request, { module: 'contacts', action: 'delete' });
     if (!auth.ok) return auth.response;
-    const { admin, serviceAdmin, user, agencyId } = auth.context;
+    const { serviceAdmin, user, agencyId, role } = auth.context;
     const url = new URL(request.url);
     const id = url.searchParams.get('id');
+    const reason = url.searchParams.get('reason')?.trim() || '';
     if (!id) return Response.json({ error: 'ID lipsă' }, { status: 400 });
-    const { data: existing } = await admin.from('contacts')
-      .select('id,agent_id,merge_status,deleted_at')
-      .eq('id', id)
-      .eq('agency_id', agencyId)
-      .maybeSingle();
-    if (!existing || existing.deleted_at) return Response.json({ error: 'Clientul nu există' }, { status: 404 });
-
-    const references = [
-      { table: 'leads', column: 'contact_id', softDeleted: true },
-      { table: 'demands', column: 'contact_id', softDeleted: true },
-      { table: 'calendar_events', column: 'contact_id', softDeleted: true },
-      { table: 'transactions', column: 'contact_id', softDeleted: true },
-      { table: 'activities', column: 'contact_id', softDeleted: false },
-      { table: 'properties', column: 'owner_contact_id', softDeleted: true },
-    ] as const;
-    for (const reference of references) {
-      let query = serviceAdmin.from(reference.table)
-        .select('id', { count: 'exact', head: true })
-        .eq('agency_id', agencyId)
-        .eq(reference.column, id);
-      if (reference.softDeleted) query = query.is('deleted_at', null);
-      const { count } = await query;
-      if ((count || 0) > 0) {
+    if (reason.length < 5) {
+      return Response.json({ error: 'Motivul arhivării este obligatoriu.' }, { status: 400 });
+    }
+    const { data, error } = await serviceAdmin.rpc('crm_transition_contact_lifecycle', {
+      p_agency_id: agencyId,
+      p_actor_id: user.id,
+      p_contact_id: id,
+      p_to_status: 'arhivat',
+      p_reason: reason,
+      p_idempotency_key: crypto.randomUUID(),
+    });
+    if (error) {
+      if (error.message.includes('contact_lifecycle_blocked:')) {
         return Response.json({
-          error: 'Clientul are istoric CRM. Arhivează leadurile sau unește profilul din secțiunea Duplicate.',
+          error: 'Clientul are elemente active și nu poate fi arhivat.',
         }, { status: 409 });
       }
+      if (
+        error.message.includes('contact_archive_manager_required')
+        || error.message.includes('contact_lifecycle_actor_not_allowed')
+      ) {
+        return Response.json({ error: 'Nu ai dreptul să arhivezi acest client.' }, { status: 403 });
+      }
+      return Response.json({ error: errMsg(error) }, { status: 500 });
     }
-
-    const { error } = await admin.from('contacts')
-      .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
-      .eq('id', id)
-      .eq('agency_id', agencyId)
-      .eq('merge_status', 'active')
-      .is('deleted_at', null);
-
-    if (error) return Response.json({ error: errMsg(error) }, { status: 500 });
     await appendAuditEvent({
-      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: auth.context.role,
+      client: serviceAdmin, request, agencyId, actorUserId: user.id, actorRole: role,
       action: 'contact.archived', entityType: 'contact', entityId: id,
-      before: { agent_id: existing.agent_id, merge_status: existing.merge_status, archived: false },
-      after: { agent_id: existing.agent_id, merge_status: existing.merge_status, archived: true },
-      reason: url.searchParams.get('reason'),
+      before: { lifecycle_status: data?.from_status || null },
+      after: { lifecycle_status: 'arhivat' },
+      reason,
     });
-    return Response.json({ success: true, archived: true });
+    return Response.json({ success: true, archived: true, lifecycle: data });
   } catch (err) {
     return Response.json({ error: errMsg(err) }, { status: 500 });
   }

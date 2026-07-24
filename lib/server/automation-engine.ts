@@ -36,6 +36,7 @@ interface ClaimedJob {
 
 export interface AutomationRunSummary {
   contactSla: Record<string, unknown> | null;
+  contactLifecycle: Record<string, unknown> | null;
   swept: number;
   claimed: number;
   completed: number;
@@ -260,7 +261,7 @@ export async function runAutomationBatch(
   options: { agencyId?: string | null; limit?: number; sweep?: boolean } = {},
 ): Promise<AutomationRunSummary> {
   const summary: AutomationRunSummary = {
-    contactSla: null,
+    contactSla: null, contactLifecycle: null,
     swept: 0, claimed: 0, completed: 0, retrying: 0, failed: 0, cancelled: 0,
   };
   if (options.sweep !== false) {
@@ -273,6 +274,17 @@ export async function runAutomationBatch(
     );
     if (contactSlaError) throw new Error(contactSlaError.message);
     summary.contactSla = (contactSla || {}) as Record<string, unknown>;
+
+    const { data: contactLifecycle, error: contactLifecycleError } = await serviceAdmin.rpc(
+      'crm_refresh_contact_lifecycle',
+      {
+        p_now: new Date().toISOString(),
+        p_agency_id: options.agencyId || null,
+        p_old_after_days: 60,
+      },
+    );
+    if (contactLifecycleError) throw new Error(contactLifecycleError.message);
+    summary.contactLifecycle = (contactLifecycle || {}) as Record<string, unknown>;
 
     const { data, error } = await serviceAdmin.rpc('crm_sweep_due_automations', {
       p_now: new Date().toISOString(),

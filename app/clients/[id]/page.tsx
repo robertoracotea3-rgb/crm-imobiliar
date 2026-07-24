@@ -4,11 +4,16 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ArrowLeft, Building2, CalendarDays, CheckCircle2, Clock3, FileText,
+  ArchiveRestore, ArrowLeft, Building2, CalendarDays, CheckCircle2, Clock3, FileText,
   Globe2, History, Home, Loader2, Mail, MapPin, Phone, Target, UserRound,
 } from 'lucide-react';
 
+import { ContactLifecycleDialog } from '@/components/ContactLifecycleDialog';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
+import {
+  contactLifecycleMeta,
+  type ContactLifecycleStatus,
+} from '@/lib/contact-lifecycle';
 import { statusColor, statusLabel } from '@/lib/clients';
 import { leadSourceLabel } from '@/lib/crm-catalogs';
 import { supabase } from '@/lib/supabase';
@@ -33,6 +38,14 @@ type ClientProfile = {
     type?: string[] | null;
     gdpr_consent?: boolean | null;
     gdpr_consent_at?: string | null;
+    lifecycle_status?: ContactLifecycleStatus | null;
+    lifecycle_changed_at?: string | null;
+    lifecycle_reason?: string | null;
+    last_relevant_activity_at?: string | null;
+    old_since_at?: string | null;
+    archived_at?: string | null;
+    archive_reason?: string | null;
+    reactivated_at?: string | null;
     created_at: string;
   };
   sources: { source_code: string; first_seen_at: string; last_seen_at: string }[];
@@ -62,6 +75,10 @@ type ClientProfile = {
     occurred_at: string; entity_id: string;
   }[];
   summary: Record<'leads' | 'demands' | 'viewings' | 'tasks' | 'transactions' | 'owned_properties' | 'documents', number>;
+  capabilities: {
+    can_manage_duplicates: boolean;
+    can_archive: boolean;
+  };
 };
 
 const formatDate = (value?: string | null) => value
@@ -79,6 +96,7 @@ export default function ClientProfilePage() {
   const [profile, setProfile] = useState<ClientProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lifecycleOpen, setLifecycleOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +138,9 @@ export default function ClientProfilePage() {
           </div>
         ) : (
           <>
+            {(() => {
+              const lifecycle = contactLifecycleMeta(profile.contact.lifecycle_status);
+              return (
             <header className="rounded-2xl bg-gradient-to-br from-emerald-900 to-emerald-700 p-5 text-white shadow-sm md:p-7">
               <div className="flex flex-col justify-between gap-5 md:flex-row md:items-start">
                 <div className="flex items-center gap-4">
@@ -128,15 +149,28 @@ export default function ClientProfilePage() {
                   </div>
                   <div>
                     <h1 className="text-2xl font-bold md:text-3xl">{profile.contact.full_name}</h1>
-                    <p className="mt-1 text-sm text-emerald-100">Profil unic client · din {new Date(profile.contact.created_at).toLocaleDateString('ro-RO')}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${lifecycle.color}`}>{lifecycle.label}</span>
+                      <span className="text-sm text-emerald-100">Profil unic · din {new Date(profile.contact.created_at).toLocaleDateString('ro-RO')}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
                   {profile.contact.phone && <a href={`tel:${profile.contact.phone}`} className="rounded-lg bg-white/15 px-3 py-2 hover:bg-white/25"><Phone size={15} className="mr-1 inline" />Sună</a>}
                   {profile.contact.email && <a href={`mailto:${profile.contact.email}`} className="rounded-lg bg-white/15 px-3 py-2 hover:bg-white/25"><Mail size={15} className="mr-1 inline" />Email</a>}
+                  <button onClick={() => setLifecycleOpen(true)} className="rounded-lg bg-white/15 px-3 py-2 hover:bg-white/25">
+                    <ArchiveRestore size={15} className="mr-1 inline" />Schimbă starea
+                  </button>
                 </div>
               </div>
+              {profile.contact.lifecycle_reason && (
+                <p className="mt-4 rounded-xl bg-white/10 px-3 py-2 text-sm text-emerald-50">
+                  {profile.contact.lifecycle_reason}
+                </p>
+              )}
             </header>
+              );
+            })()}
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
               {[
@@ -163,6 +197,12 @@ export default function ClientProfilePage() {
                     <p className="flex gap-2"><Globe2 size={16} className="mt-0.5 text-emerald-700" /><span>{profile.sources.length ? profile.sources.map((source) => leadSourceLabel(source.source_code)).join(', ') : leadSourceLabel(profile.contact.source)}</span></p>
                   </div>
                   {profile.contact.notes && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{profile.contact.notes}</p>}
+                  <div className="mt-4 border-t border-gray-100 pt-3 text-xs text-gray-500">
+                    <p>Stare actualizată: {formatDate(profile.contact.lifecycle_changed_at)}</p>
+                    {profile.contact.last_relevant_activity_at && <p>Ultima activitate relevantă: {formatDate(profile.contact.last_relevant_activity_at)}</p>}
+                    {profile.contact.archived_at && <p>Arhivat la: {formatDate(profile.contact.archived_at)}</p>}
+                    {profile.contact.archive_reason && <p className="mt-1 text-red-700">Motiv: {profile.contact.archive_reason}</p>}
+                  </div>
                 </section>
 
                 <section className={section}>
@@ -208,6 +248,26 @@ export default function ClientProfilePage() {
                 </section>
               </main>
             </div>
+            {lifecycleOpen && (
+              <ContactLifecycleDialog
+                contactId={profile.contact.id}
+                contactName={profile.contact.full_name}
+                currentStatus={profile.contact.lifecycle_status}
+                canArchive={profile.capabilities.can_archive}
+                onClose={() => setLifecycleOpen(false)}
+                onSaved={(status) => {
+                  setProfile((currentProfile) => currentProfile ? {
+                    ...currentProfile,
+                    contact: {
+                      ...currentProfile.contact,
+                      lifecycle_status: status,
+                      lifecycle_changed_at: new Date().toISOString(),
+                    },
+                  } : currentProfile);
+                  void load();
+                }}
+              />
+            )}
           </>
         )}
       </div>

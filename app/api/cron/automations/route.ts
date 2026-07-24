@@ -51,6 +51,7 @@ export async function GET(request: Request) {
           swept: summary.swept,
           cancelled: summary.cancelled,
           contact_sla: summary.contactSla,
+          contact_lifecycle: summary.contactLifecycle,
         },
       }).catch(() => undefined);
     }

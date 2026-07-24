@@ -23,6 +23,11 @@ type ContactSummary = {
   phone?: string | null;
   email?: string | null;
   agent_id?: string | null;
+  lifecycle_status?: string | null;
+  lifecycle_changed_at?: string | null;
+  lifecycle_reason?: string | null;
+  archived_at?: string | null;
+  archive_reason?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -107,7 +112,7 @@ export async function GET(request: Request) {
     if (contactIds.length) {
       const [{ data: contacts }, { data: demands }] = await Promise.all([
         admin.from('contacts')
-          .select('id, full_name, phone, email, agent_id')
+          .select('id, full_name, phone, email, agent_id, lifecycle_status, lifecycle_changed_at, lifecycle_reason, archived_at, archive_reason')
           .eq('agency_id', agencyId)
           .eq('merge_status', 'active')
           .is('deleted_at', null)
@@ -146,6 +151,11 @@ export async function GET(request: Request) {
         contact_phone: contact?.phone || primary.contact_phone,
         contact_email: contact?.email || primary.contact_email,
         agent_id: primary.responsible_agent_id || primary.agent_id || contact?.agent_id || null,
+        contact_lifecycle_status: contact?.lifecycle_status || 'client_nou',
+        contact_lifecycle_changed_at: contact?.lifecycle_changed_at || null,
+        contact_lifecycle_reason: contact?.lifecycle_reason || null,
+        contact_archived_at: contact?.archived_at || null,
+        contact_archive_reason: contact?.archive_reason || null,
         lead_count: group.length,
         lead_ids: group.map((lead) => lead.id),
         demand_count: primary.contact_id ? (demandCountByContact.get(primary.contact_id) || 0) : 0,

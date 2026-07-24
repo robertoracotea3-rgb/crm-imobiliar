@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ProtectedLayout } from '@/components/ProtectedLayout';
 import { ReplyLeadDialog } from '@/components/ReplyLeadDialog';
 import { RecordContactDialog } from '@/components/RecordContactDialog';
+import { ContactLifecycleDialog } from '@/components/ContactLifecycleDialog';
 import { UnmatchedStoriaMessages } from '@/components/UnmatchedStoriaMessages';
 import { ScheduleViewingDialog } from '@/components/ScheduleViewingDialog';
 import { PipelineStageControl } from '@/components/PipelineStageControl';
@@ -29,6 +30,11 @@ import {
   leadSourceLabel,
   normalizeLeadSource,
 } from '@/lib/crm-catalogs';
+import {
+  CONTACT_LIFECYCLE,
+  contactLifecycleMeta,
+  type ContactLifecycleStatus,
+} from '@/lib/contact-lifecycle';
 import {
   Plus, Search, Filter, Phone, Mail, MessageCircle, Pencil, Trash2,
   MoreVertical, Clock, User, MapPin, Tag, History, Target, X, Loader2,
@@ -85,6 +91,11 @@ interface Client {
   lead_count?: number;
   demand_count?: number;
   profile_available?: boolean;
+  contact_lifecycle_status?: ContactLifecycleStatus;
+  contact_lifecycle_changed_at?: string;
+  contact_lifecycle_reason?: string;
+  contact_archived_at?: string;
+  contact_archive_reason?: string;
 }
 
 interface PropertyOption {
@@ -500,6 +511,7 @@ export default function ClientsPage() {
   const [fSource, setFSource] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fContactSla, setFContactSla] = useState('');
+  const [fLifecycle, setFLifecycle] = useState('');
   const [onlyMine, setOnlyMine] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -516,6 +528,7 @@ export default function ClientsPage() {
   const [noteClient, setNoteClient] = useState<Client | null>(null);
   const [replyClient, setReplyClient] = useState<Client | null>(null);
   const [contactClient, setContactClient] = useState<Client | null>(null);
+  const [lifecycleClient, setLifecycleClient] = useState<Client | null>(null);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [linkClient, setLinkClient] = useState<Client | null>(null);
@@ -565,7 +578,7 @@ export default function ClientsPage() {
   useEffect(() => {
     const timer = window.setTimeout(() => setSelected(new Set()), 0);
     return () => window.clearTimeout(timer);
-  }, [tab, search, fCity, fCategory, fSource, fStatus, fContactSla, onlyMine, selectedAgent]);
+  }, [tab, search, fCity, fCategory, fSource, fStatus, fContactSla, fLifecycle, onlyMine, selectedAgent]);
 
   // distinct cities for filter
   const cities = useMemo(() => [...new Set(clients.map((c) => c.city).filter(Boolean))].sort() as string[], [clients]);
@@ -579,6 +592,7 @@ export default function ClientsPage() {
     if (fCity && c.city !== fCity) return false;
     if (fCategory && c.category !== fCategory) return false;
     if (fSource && (c.source_normalized || normalizeLeadSource(c.source) || '') !== fSource) return false;
+    if (fLifecycle && (c.contact_lifecycle_status || 'client_nou') !== fLifecycle) return false;
     if (fContactSla === 'overdue' && c.contact_sla_status !== 'overdue') return false;
     if (fContactSla === 'pending' && c.contact_sla_status !== 'pending') return false;
     if (fContactSla === 'due_today') {
@@ -595,7 +609,7 @@ export default function ClientsPage() {
       if (!hay.includes(q)) return false;
     }
     return true;
-  }), [clients, onlyMine, selectedAgent, user, fCity, fCategory, fSource, fContactSla, search]);
+  }), [clients, onlyMine, selectedAgent, user, fCity, fCategory, fSource, fContactSla, fLifecycle, search]);
 
   const inTab = (c: Client, key: string) => {
     const stages = LEAD_PIPELINE_TAB_GROUPS[key as keyof typeof LEAD_PIPELINE_TAB_GROUPS];
@@ -729,6 +743,10 @@ export default function ClientsPage() {
             <select value={fCity} onChange={(e) => setFCity(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate orașele</option>{cities.map((c) => <option key={c} value={c}>{c}</option>)}</select>
             <select value={fCategory} onChange={(e) => setFCategory(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate categoriile</option>{CATEGORIES.map((c) => <option key={c} value={c}>{CAT_LABEL(c)}</option>)}</select>
             <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none"><option value="">Toate etapele pipeline</option>{LEAD_PIPELINE_STAGES.map((stage) => <option key={stage.code} value={stage.code}>{stage.label}</option>)}</select>
+            <select value={fLifecycle} onChange={(e) => setFLifecycle(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none">
+              <option value="">Toate stările clientului</option>
+              {CONTACT_LIFECYCLE.map((status) => <option key={status.code} value={status.code}>{status.label}</option>)}
+            </select>
             <select value={fContactSla} onChange={(e) => setFContactSla(e.target.value)} className="min-w-0 flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm sm:flex-none">
               <option value="">Toate termenele de contact</option>
               <option value="pending">De contactat în 24h</option>
@@ -750,8 +768,8 @@ export default function ClientsPage() {
                 {agents.map((a) => <option key={a.id} value={a.id}>{a.email}{a.id === user?.id ? ' (eu)' : ''}</option>)}
               </select>
               <select value={fSource} onChange={(e) => setFSource(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm"><option value="">Toate sursele</option>{SOURCES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}</select>
-              {(search || fCity || fCategory || fSource || fStatus || fContactSla || !onlyMine) && (
-                <button onClick={() => { setSearch(''); setFCity(''); setFCategory(''); setFSource(''); setFStatus(''); setFContactSla(''); setOnlyMine(true); setSelectedAgent(''); }} className="text-sm text-gray-500 underline">Reset</button>
+              {(search || fCity || fCategory || fSource || fStatus || fContactSla || fLifecycle || !onlyMine) && (
+                <button onClick={() => { setSearch(''); setFCity(''); setFCategory(''); setFSource(''); setFStatus(''); setFContactSla(''); setFLifecycle(''); setOnlyMine(true); setSelectedAgent(''); }} className="text-sm text-gray-500 underline">Reset</button>
               )}
             </div>
           )}
@@ -792,6 +810,7 @@ export default function ClientsPage() {
               const agentName = responsibleAgentId ? (agentNames[responsibleAgentId] || '') : '';
               const operationalStage = pipelineMeta(c.pipeline_stage, c.status);
               const sla = contactSlaMeta(c);
+              const lifecycle = contactLifecycleMeta(c.contact_lifecycle_status);
               return (
                 <div key={c.id} className="bg-white rounded-xl border border-gray-200 hover:border-emerald-300 transition-colors p-4">
                   <div className="flex items-start gap-3">
@@ -805,6 +824,7 @@ export default function ClientsPage() {
                             {c.contact_id ? <Link href={`/clients/${c.contact_id}`} className="font-semibold text-gray-900 hover:text-emerald-700 hover:underline">{c.contact_name}</Link> : <span className="font-semibold text-gray-900">{c.contact_name}</span>}
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${operationalStage.color}`}>{operationalStage.label}</span>
                             <span title="Status istoric păstrat" className={`text-[10px] font-medium px-2 py-0.5 rounded-full opacity-70 ${statusColor(c.status)}`}>{statusLabel(c.status)}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${lifecycle.color}`}>{lifecycle.label}</span>
                             {(c.lead_count || 0) > 1 && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{c.lead_count} leaduri</span>}
                             {(c.demand_count || 0) > 0 && <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">{c.demand_count} cereri</span>}
                             {c.lead_assignment_status === 'pending_owner' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">De alocat de owner</span>}
@@ -889,6 +909,7 @@ export default function ClientsPage() {
                               <button onClick={() => { setMatchClient(c); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"><Target size={14} /> Proprietăți potrivite</button>
                               <button onClick={() => { setHistoryClient(c); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"><History size={14} /> Vezi istoric</button>
                               {c.contact_id && <Link href={`/clients/${c.contact_id}`} className="w-full px-3 py-2 hover:bg-emerald-50 text-emerald-800 flex items-center gap-2"><User size={14} /> Profil complet</Link>}
+                              {c.contact_id && <button onClick={() => { setLifecycleClient(c); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"><History size={14} /> Schimbă starea clientului</button>}
                               <button onClick={() => { remove(c.id); setMenuOpen(null); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600 flex items-center gap-2"><Trash2 size={14} /> Șterge</button>
                             </div>
                           )}
@@ -986,6 +1007,27 @@ export default function ClientsPage() {
         onClose={() => setContactClient(null)}
         onSuccess={fetchClients}
       />
+      {lifecycleClient?.contact_id && (
+        <ContactLifecycleDialog
+          contactId={lifecycleClient.contact_id}
+          contactName={lifecycleClient.contact_name}
+          currentStatus={lifecycleClient.contact_lifecycle_status}
+          canArchive={role === 'owner' || role === 'admin' || role === 'manager'}
+          onClose={() => setLifecycleClient(null)}
+          onSaved={(status) => {
+            setClients((current) => current.map((client) => (
+              client.contact_id === lifecycleClient.contact_id
+                ? {
+                    ...client,
+                    contact_lifecycle_status: status,
+                    contact_lifecycle_changed_at: new Date().toISOString(),
+                  }
+                : client
+            )));
+            void fetchClients();
+          }}
+        />
+      )}
       {viewingClient && (
         <ScheduleViewingDialog
           lead={viewingClient}
