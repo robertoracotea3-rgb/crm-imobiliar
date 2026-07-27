@@ -23,7 +23,7 @@ test('contact SLA stores factual evidence and a 24-hour deadline', async () => {
   assert.match(migration, /'lead_sla_overdue_owner'/);
 });
 
-test('contact SLA is processed hourly and exposed on both dashboards', async () => {
+test('contact SLA is processed daily on Vercel Hobby and exposed on both dashboards', async () => {
   const [engine, schedule, api, dashboard, clients] = await Promise.all([
     read('lib/server/automation-engine.ts'),
     read('vercel.json'),
@@ -32,7 +32,7 @@ test('contact SLA is processed hourly and exposed on both dashboards', async () 
     read('app/clients/page.tsx'),
   ]);
   assert.match(engine, /crm_process_contact_sla/);
-  assert.match(schedule, /"schedule": "47 \* \* \* \*"/);
+  assert.match(schedule, /"schedule": "47 3 \* \* \*"/);
   assert.match(api, /crm_contact_sla_dashboard/);
   assert.match(dashboard, /Contact în maximum 24 de ore/);
   assert.match(dashboard, /Contact întârziat/);

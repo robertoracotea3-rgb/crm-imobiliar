@@ -40,7 +40,7 @@ export async function GET(request: Request) {
         successCount: summary.generated + summary.emails.accepted,
         errorCount: summary.failed + summary.emails.failed,
         retryCount: summary.emails.retrying,
-        nextRunAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        nextRunAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
         errorCode: summary.failed > 0 ? 'weekly_report_jobs_failed' : null,
         errorMessage: summary.failed > 0
           ? `${summary.failed} rapoarte nu au putut fi generate.`
@@ -60,7 +60,7 @@ export async function GET(request: Request) {
         errorCount: 1,
         errorCode: 'weekly_report_scheduler_failed',
         errorMessage: 'Programarea rapoartelor săptămânale a eșuat.',
-        nextRunAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        nextRunAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
       }).catch(() => undefined);
     }
     return Response.json({ error: 'Rapoartele săptămânale nu au putut fi procesate.' }, {

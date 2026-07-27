@@ -2,23 +2,25 @@
 
 Data: 27 iulie 2026  
 Branch: `repair/crm-stabilizare-20260720`  
-Commit tehnic verificat: `e6957df`
 Stack: Next.js 16.2.11, React 19.2.4, Supabase JS 2.108.1,
 PostgreSQL/Supabase 17.6.1.127, Playwright 1.61.1
 
 ## Verdict
 
-Codul, backupul și lanțul de migrații sunt validate local pe o clonă reală a
-producției și într-un proiect Supabase staging separat. **Deployul în producție
-rămâne blocat intenționat** până când:
+**CRM-ul stabilizat este publicat în Production** la
+`https://crm.kiraimobiliare.ro`. Deploymentul Vercel
+`dpl_7vMKir4N4r6BLFUYx8ggrvjawPnE` a ajuns în starea `READY`, iar verificarea
+live de autentificare, context CRM, antete de securitate și izolarea
+endpointurilor cron a trecut.
 
-1. domeniul și căsuțele de e-mail sunt verificate la furnizor, iar două mesaje
-   reale sunt primite;
-2. raportul săptămânal este generat și trimis real din staging;
-3. credențialele Storia necesare testului de integrare sunt configurate.
+La cererea proprietarului, modulul **„Anunțuri particulari” a fost eliminat
+complet** din interfață, API, servicii, permisiuni și baza de date. Cele 2.642 de
+înregistrări au fost eliminate numai după crearea și verificarea criptografică
+a unui backup Production nou. Datele CRM principale au fost păstrate.
 
-Deploymentul care deservește acum `crm.kiraimobiliare.ro` este încă cel Vercel
-creat la 7 iulie 2026. Nu a fost înlocuit în cadrul acestei verificări.
+Livrarea automată prin e-mail rămâne dezactivată în siguranță până la
+configurarea furnizorului. Configurația Storia există în Production, dar un
+mesaj real semnat nu a fost încă urmărit integral de la portal până la lead.
 
 Un proiect Supabase staging separat a fost creat pe planul Free, fără cost:
 `kira-crm-staging-20260727`, ref `npvkcuehviujbdegpneq`, regiunea
@@ -38,7 +40,9 @@ La 27 iulie 2026 a fost finalizată verificarea găzduită:
   **30/30 + 30/30 reușite**;
 - cele trei corecții găsite în testul găzduit (`310`–`330`) au fost aplicate
   separat și verificate în staging;
-- schema rezultată are **97 de tabele publice, toate 97 cu RLS activ**;
+- eliminarea modulului „Anunțuri particulari” (`340`) a fost aplicată de două
+  ori și verificată ca idempotentă;
+- schema finală are **94 de tabele publice, toate 94 cu RLS activ**;
 - redirecturile Supabase Auth indică numai către URL-ul staging;
 - înscrierea publică directă prin Supabase Auth este dezactivată; utilizatorii
   pot fi creați numai prin fluxul CRM protejat sau administrativ;
@@ -51,16 +55,17 @@ La 27 iulie 2026 a fost finalizată verificarea găzduită:
 
 Deploymentul Preview verificat este:
 `https://crm-fortis-staging-20260727.vercel.app`. Deploymentul rămâne protejat
-de autentificarea Vercel și nu a fost promovat în Production.
+de autentificarea Vercel; după validarea sa a fost publicat separat deploymentul
+Production consemnat în verdict și în secțiunea finală.
 
 Aliasul indică deploymentul Preview `dpl_FC89bqy6JbacyjceEVFi88jhEKFw`,
 care a ajuns în starea `READY`.
 
-Planul Vercel Hobby nu permite cronuri orare. Preview-ul a fost publicat fără
-înregistrarea programărilor automate, iar endpointurile rămân disponibile pentru
-teste manuale autorizate cu secretul staging. Fișierul local `vercel.json` a
-fost restaurat imediat la configurația originală; Production nu a fost
-redeployat.
+Planul Vercel Hobby nu permite cronuri orare. Programările Production au fost
+adaptate la frecvență zilnică: sincronizarea Storia, automatizările și
+rapoartele sunt declanșate o dată pe zi, iar logica internă decide dacă există
+lucrări scadente. Această variantă nu are cost suplimentar, dar poate întârzia
+o automatizare cu până la aproximativ 24 de ore.
 
 Testul găzduit a găsit o incompatibilitate reală: pe proiectele Supabase noi,
 `pgcrypto` este instalat în schema `extensions`, în timp ce funcția de audit
@@ -197,27 +202,33 @@ Commituri dedicate:
 20260727_310_demand_match_queue_trigger_security.sql
 20260727_320_lead_insert_trigger_compatibility.sql
 20260727_330_direct_viewing_lead_transitions.sql
+20260727_340_remove_prospects_module.sql
 ```
 
-Fiecare fază are rollback nedistructiv în fișierul asociat sau în directorul
-`migrations/rollback`. Jurnalele și dovezile istorice sunt păstrate.
+Fazele funcționale au rollback în fișierul asociat sau în directorul
+`migrations/rollback`. Eliminarea permanentă `340` se poate restaura numai
+dintr-un backup verificat; rollbackul ei refuză intenționat recrearea unor
+tabele goale care ar da impresia falsă că datele istorice au fost recuperate.
+Jurnalele și dovezile istorice de audit sunt păstrate.
 
 ## Rezultatele testelor
 
 | Verificare | Rezultat |
 |---|---|
-| Teste unitare și contracte | 179/179 trecute |
+| Teste unitare și contracte | 176/176 trecute |
 | Integrare PostgreSQL + rollbackuri | trecut |
 | Backup sintetic + arhivă coruptă | trecut |
 | Restaurare backup real | trecut |
-| Migrații pe clonă reală | 30/30, de două ori |
+| Migrații pe clonă reală | lanțul complet, de două ori |
 | Build Next.js de producție | trecut |
 | TypeScript din build | trecut |
 | ESLint | trecut |
 | Playwright E2E | 7/7 trecute |
-| Supabase staging găzduit | 30/30 migrări inițiale, de două ori; corecțiile 310–330 aplicate; 97/97 tabele cu RLS |
+| Supabase staging găzduit | corecțiile 310–340 aplicate; eliminarea 340 repetată; 94/94 tabele cu RLS |
 | Login și context CRM în Preview | trecut |
 | API-uri principale în Preview | dashboard, cataloage și fluxul proprietate–lead Storia–contact–vizionare–KPI trecute |
+| Supabase Production | 34 migrări aplicate; 94/94 tabele cu RLS |
+| Smoke test Production | login, context CRM, securitate, cron 401 și `/api/prospects` 404 — trecute |
 
 Scenariile E2E includ login invalid, login valid, dashboard și KPI exacți,
 MFA, schimbarea parolei temporare, jurnalul de audit, sănătatea sistemului și
@@ -238,14 +249,13 @@ conținutului:
 - `AUDIT_IP_HASH_SALT`;
 - `PORTAL_TOKEN_ENCRYPTION_KEY`.
 
-Nu au fost configurate deoarece valorile nu există încă:
+Sunt prezente și numele de configurare pentru Anthropic și integrarea Storia.
+Valorile nu au fost afișate sau copiate în raport. Validitatea Storia trebuie
+confirmată printr-un mesaj real semnat.
+
+Nu este configurată deoarece valoarea nu există încă:
 
 - `EMAIL_PROVIDER_API_KEY`;
-- `ANTHROPIC_API_KEY`;
-- `STORIA_CLIENT_ID`;
-- `STORIA_CLIENT_SECRET`;
-- `STORIA_API_KEY`;
-- `STORIA_WEBHOOK_SECRET`.
 
 Secretele de backup și conexiunea PostgreSQL rămân local, nu în frontend.
 
@@ -279,7 +289,7 @@ confirmarea furnizorului și a inboxului.
 2. se verifică hashul și se păstrează copia în afara calculatorului curent;
 3. se aplică migrațiile în staging și se rulează testele funcționale reale;
 4. se opresc temporar scrierile în producție;
-5. se aplică migrațiile 010–330 în aceeași ordine;
+5. se aplică migrațiile 010–340 în aceeași ordine;
 6. se verifică totalurile, RLS, loginul, leadurile Storia, proprietățile,
    vizionările, raportul și e-mailul;
 7. se publică deploymentul Vercel salvat și verificat;
@@ -292,13 +302,32 @@ confirmarea furnizorului și a inboxului.
 1. Trebuie creat și verificat contul Resend sau adaptat furnizorul de livrare
    la Zoho, apoi publicate înregistrările DNS exacte date de furnizor.
 2. Trebuie confirmate manual cele două căsuțe și primirea mesajelor de test.
-3. Trebuie configurate credențialele oficiale Storia/OLX și validat un webhook
-   real semnat.
+3. Trebuie validat integral un webhook Storia real semnat și asocierea sa la
+   proprietatea și agentul corect.
 4. Tokenul personal Supabase introdus anterior în conversație trebuie revocat
    și înlocuit după încheierea configurării.
 5. Fișierele locale deja modificate de proprietar (logo, pagini de autentificare,
    pagina proprietății și Sidebar) au fost păstrate și nu au fost incluse în
    commiturile tehnice de mai sus.
-6. Planul Vercel Hobby nu poate înregistra cronurile orare pentru automatizări
-   și rapoarte. Înainte de Production trebuie ales fie Vercel Pro, fie un
-   scheduler extern securizat; Preview-ul actual nu înregistrează cronuri.
+6. Contul Auth `TEST` din Production nu are profil CRM și este refuzat corect
+   ca inactiv. Poate fi recreat controlat numai dacă proprietarul dorește un
+   cont de test permanent.
+
+## Lansare Production — 27 iulie 2026
+
+- backup imediat anterior migrării:
+  `kira-backup-2026-07-27T14-35-55-868Z.kira`;
+- dimensiune: 66.024.239 bytes;
+- SHA-256:
+  `71eda84e51f269f3bd6b2a4f48306ad4763756327b0e0614e38523456fefd633`;
+- migrații Production aplicate: **34/34**;
+- tabele publice finale: **94/94 cu RLS activ**;
+- proprietăți păstrate: **42**;
+- contacte canonice după reconciliere: **292**;
+- leaduri păstrate: **241**;
+- cereri păstrate: **222**;
+- tranzacții păstrate: **6**;
+- înregistrări „Anunțuri particulari” eliminate: **2.642**;
+- endpointurile eliminate răspund cu `404`;
+- contul activ `roberto` a trecut autentificarea și contextul CRM live, iar
+  sesiunea temporară de verificare a fost revocată la final.

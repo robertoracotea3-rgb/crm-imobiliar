@@ -8,7 +8,7 @@ test('mobile navigation keeps core actions one-handed and exposes every required
   const sidebar = await read('components/Sidebar.tsx');
   assert.match(sidebar, /const mobilePrimaryItems = \['\/dashboard', '\/properties', '\/clients', '\/viewings'\]/);
   assert.match(sidebar, />Mai mult</);
-  for (const route of ['/prospects', '/portals', '/team', '/notifications', '/settings', '/finance']) {
+  for (const route of ['/portals', '/team', '/notifications', '/settings', '/finance']) {
     assert.match(sidebar, new RegExp(`href: '${route.replace('/', '\\/')}'`));
   }
   assert.match(sidebar, /mobileMoreItems = visibleItems\.filter/);

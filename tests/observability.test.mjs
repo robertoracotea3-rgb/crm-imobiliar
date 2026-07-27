@@ -89,7 +89,6 @@ test('administrative health endpoint aggregates every required durable signal', 
   for (const source of [
     'webhook_events',
     'portal_sync_health',
-    'prospect_source_health',
     'feed_export_logs',
     'automation_jobs',
     'portal_removal_jobs',

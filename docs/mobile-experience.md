@@ -8,7 +8,7 @@ CRM-ul folosește patru acțiuni principale în bara de jos:
 - Vizionări.
 
 Butonul **Mai mult** deschide toate celelalte module permise rolului curent,
-inclusiv Particulari, Portaluri, Echipă, Notificări, Setări și Finanțe. Logoutul
+inclusiv Portaluri, Echipă, Notificări, Setări și Finanțe. Logoutul
 este în același panou. Niciun modul nu este eliminat doar din cauza lățimii
 ecranului.
 

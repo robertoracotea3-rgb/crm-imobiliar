@@ -81,7 +81,6 @@ export async function GET(request: Request) {
     sharedRunsResult,
     webhookResult,
     portalHealthResult,
-    prospectHealthResult,
     feedResult,
     automationJobsResult,
     automationLogsResult,
@@ -105,9 +104,6 @@ export async function GET(request: Request) {
     ).eq('agency_id', agencyId).gte('received_at', since).order('received_at', { ascending: false }).limit(500),
     serviceAdmin.from('portal_sync_health').select(
       'portal,status,last_started_at,last_success_at,last_error_at,last_error_code,last_duration_ms,last_checked_count,consecutive_failures,stale_listing_count,next_run_at',
-    ).eq('agency_id', agencyId),
-    serviceAdmin.from('prospect_source_health').select(
-      'source,label,active,compliance_status,last_run_at,last_success_at,last_error_at,last_duration_ms,last_processed_count,consecutive_failures',
     ).eq('agency_id', agencyId),
     serviceAdmin.from('feed_export_logs').select(
       'portal,status,error_code,duration_ms,generated_at,completed_at,included_count,excluded_count,error_count',
@@ -146,7 +142,6 @@ export async function GET(request: Request) {
     sharedRunsResult.error,
     webhookResult.error,
     portalHealthResult.error,
-    prospectHealthResult.error,
     feedResult.error,
     automationJobsResult.error,
     automationLogsResult.error,
@@ -228,32 +223,6 @@ export async function GET(request: Request) {
       metrics: {
         checked: number(item.last_checked_count),
         stale: number(item.stale_listing_count),
-      },
-    });
-  }
-
-  for (const item of rows(prospectHealthResult.data)) {
-    const failures = number(item.consecutive_failures);
-    const active = item.active === true;
-    const approved = item.compliance_status === 'approved';
-    services.push({
-      code: `imports.${String(item.source)}`,
-      label: `Import particulari · ${String(item.label || item.source)}`,
-      status: !active || !approved ? 'never'
-        : failures > 0 ? 'degraded'
-          : item.last_success_at ? 'healthy' : 'never',
-      last_started_at: date(item.last_run_at),
-      last_success_at: date(item.last_success_at),
-      last_error_at: date(item.last_error_at),
-      last_error_code: failures > 0 ? 'prospect_import_failed' : null,
-      last_error: failures > 0 ? `Sursa are ${failures} execuții eșuate consecutiv.` : null,
-      duration_ms: item.last_duration_ms == null ? null : number(item.last_duration_ms),
-      next_run_at: null,
-      retry_count: failures,
-      metrics: {
-        active,
-        compliance_approved: approved,
-        processed: number(item.last_processed_count),
       },
     });
   }

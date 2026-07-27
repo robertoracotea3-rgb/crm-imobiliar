@@ -11,7 +11,6 @@ Panoul unește fără să dubleze istoricul existent:
 - erori API auditate și erori necontrolate capturate de Next.js;
 - webhookuri Storia procesate, respinse, eșuate sau blocate;
 - cronul și sincronizarea listărilor Storia;
-- importurile aprobate din modulul Particulari;
 - automatizările și reîncercările lor;
 - feedurile XML și validarea lor;
 - retragerile proprietăților de pe portaluri;
