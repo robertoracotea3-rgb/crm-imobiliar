@@ -635,8 +635,14 @@ set search_path = public, pg_temp
 as $function$
 declare
   contact_row public.contacts%rowtype;
+  lead_occurred_at timestamptz;
 begin
   if new.contact_id is null then return new; end if;
+  lead_occurred_at := coalesce(
+    new.received_at,
+    nullif(to_jsonb(new) ->> 'created_at', '')::timestamptz,
+    now()
+  );
   select * into contact_row
   from public.contacts contact
   where contact.id = new.contact_id
@@ -655,13 +661,13 @@ begin
       'new_lead',
       'new-lead-reactivation:' || new.id::text,
       jsonb_build_object('lead_id', new.id, 'source', coalesce(new.source_normalized, new.source)),
-      coalesce(new.received_at, new.created_at, now())
+      lead_occurred_at
     );
   else
     update public.contacts
     set last_relevant_activity_at = greatest(
           coalesce(last_relevant_activity_at, '-infinity'::timestamptz),
-          coalesce(new.received_at, new.created_at, now())
+          lead_occurred_at
         ),
         agent_id = coalesce(
           agent_id,

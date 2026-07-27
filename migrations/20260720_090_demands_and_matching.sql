@@ -303,6 +303,7 @@ create index if not exists demand_match_refresh_status_idx
 create or replace function public.crm_queue_property_matching()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
 begin
@@ -326,6 +327,11 @@ begin
   return new;
 end;
 $$;
+
+revoke all on function public.crm_queue_property_matching()
+  from public, anon, authenticated;
+grant execute on function public.crm_queue_property_matching()
+  to service_role;
 
 drop trigger if exists crm_queue_property_matching_trigger on public.properties;
 create trigger crm_queue_property_matching_trigger

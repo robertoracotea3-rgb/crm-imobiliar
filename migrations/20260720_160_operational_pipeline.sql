@@ -225,6 +225,7 @@ on conflict(agency_id,lead_id,dedup_key) do nothing;
 create or replace function public.crm_record_initial_pipeline_stage()
 returns trigger
 language plpgsql
+security definer
 set search_path=public,pg_temp
 as $$
 begin
@@ -240,6 +241,11 @@ begin
   return new;
 end
 $$;
+
+revoke all on function public.crm_record_initial_pipeline_stage()
+  from public, anon, authenticated;
+grant execute on function public.crm_record_initial_pipeline_stage()
+  to service_role;
 
 drop trigger if exists crm_record_initial_pipeline_stage_trigger on public.leads;
 create trigger crm_record_initial_pipeline_stage_trigger

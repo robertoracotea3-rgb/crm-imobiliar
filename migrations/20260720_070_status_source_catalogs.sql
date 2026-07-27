@@ -396,9 +396,9 @@ where exists (select 1 from public.lead_statuses s where s.code=l.status and s.r
   and (l.next_action_at is null or l.next_action_type is null);
 
 insert into public.crm_status_transitions(entity_type, from_code, to_code) values
-  ('lead','new','contacted'), ('lead','new','no_answer'), ('lead','new','in_progress'), ('lead','new','lost'), ('lead','new','withdrawn'),
+  ('lead','new','contacted'), ('lead','new','no_answer'), ('lead','new','in_progress'), ('lead','new','upcoming_viewing'), ('lead','new','lost'), ('lead','new','withdrawn'),
   ('lead','contacted','no_answer'), ('lead','contacted','to_send_offers'), ('lead','contacted','in_progress'), ('lead','contacted','upcoming_viewing'), ('lead','contacted','negotiation'), ('lead','contacted','lost'), ('lead','contacted','withdrawn'),
-  ('lead','no_answer','contacted'), ('lead','no_answer','in_progress'), ('lead','no_answer','lost'), ('lead','no_answer','withdrawn'),
+  ('lead','no_answer','contacted'), ('lead','no_answer','in_progress'), ('lead','no_answer','upcoming_viewing'), ('lead','no_answer','lost'), ('lead','no_answer','withdrawn'),
   ('lead','to_send_offers','contacted'), ('lead','to_send_offers','in_progress'), ('lead','to_send_offers','upcoming_viewing'), ('lead','to_send_offers','lost'), ('lead','to_send_offers','withdrawn'),
   ('lead','in_progress','contacted'), ('lead','in_progress','no_answer'), ('lead','in_progress','to_send_offers'), ('lead','in_progress','upcoming_viewing'), ('lead','in_progress','viewing'), ('lead','in_progress','negotiation'), ('lead','in_progress','precontract'), ('lead','in_progress','won'), ('lead','in_progress','lost'), ('lead','in_progress','withdrawn'),
   ('lead','upcoming_viewing','viewing'), ('lead','upcoming_viewing','in_progress'), ('lead','upcoming_viewing','contacted'), ('lead','upcoming_viewing','lost'), ('lead','upcoming_viewing','withdrawn'),

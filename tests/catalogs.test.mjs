@@ -59,6 +59,8 @@ test('catalogs contain unique stable codes and required presentation metadata', 
 
 test('invalid lead and property transitions are rejected by the shared policy', () => {
   assert.equal(canTransition(LEAD_STATUS_TRANSITIONS, 'new', 'contacted'), true);
+  assert.equal(canTransition(LEAD_STATUS_TRANSITIONS, 'new', 'upcoming_viewing'), true);
+  assert.equal(canTransition(LEAD_STATUS_TRANSITIONS, 'no_answer', 'upcoming_viewing'), true);
   assert.equal(canTransition(LEAD_STATUS_TRANSITIONS, 'new', 'won'), false);
   assert.equal(canTransition(LEAD_STATUS_TRANSITIONS, 'lost', 'in_progress'), true);
   assert.equal(canTransition(PROPERTY_STATUS_TRANSITIONS, 'draft', 'activa'), true);

@@ -22,6 +22,9 @@ const friendlyError = (message: string) => {
   if (message.includes('outcome_required')) return 'Rezultatul vizionării este obligatoriu';
   if (message.includes('viewing_not_found')) return 'Vizionarea nu a fost găsită';
   if (message.includes('invalid_viewing_transition')) return 'Tranziția nu este permisă din starea curentă';
+  if (message.includes('crm_status_transition_invalid:lead')) {
+    return 'Statusul actual al clientului nu permite programarea vizionării';
+  }
   return 'Vizionarea nu a putut fi salvată';
 };
 

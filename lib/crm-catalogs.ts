@@ -98,9 +98,9 @@ export type LeadSource = typeof LEAD_SOURCES[number]['code'];
 const transitionMap = <T extends string>(entries: Readonly<Record<T, readonly T[]>>) => entries;
 
 export const LEAD_STATUS_TRANSITIONS = transitionMap<LeadStatus>({
-  new: ['contacted', 'no_answer', 'in_progress', 'lost', 'withdrawn'],
+  new: ['contacted', 'no_answer', 'in_progress', 'upcoming_viewing', 'lost', 'withdrawn'],
   contacted: ['no_answer', 'to_send_offers', 'in_progress', 'upcoming_viewing', 'negotiation', 'lost', 'withdrawn'],
-  no_answer: ['contacted', 'in_progress', 'lost', 'withdrawn'],
+  no_answer: ['contacted', 'in_progress', 'upcoming_viewing', 'lost', 'withdrawn'],
   to_send_offers: ['contacted', 'in_progress', 'upcoming_viewing', 'lost', 'withdrawn'],
   in_progress: ['contacted', 'no_answer', 'to_send_offers', 'upcoming_viewing', 'viewing', 'negotiation', 'precontract', 'won', 'lost', 'withdrawn'],
   upcoming_viewing: ['viewing', 'in_progress', 'contacted', 'lost', 'withdrawn'],
