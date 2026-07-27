@@ -13,6 +13,17 @@ insert into public.profiles(user_id,agency_id,role,full_name,status) values
   ('35000000-0000-4000-8000-000000000001','35000000-0000-4000-8000-000000000010','owner','Owner 35','active'),
   ('35000000-0000-4000-8000-000000000002','35000000-0000-4000-8000-000000000010','agent','Agent 35','active'),
   ('35000000-0000-4000-8000-000000000003','35000000-0000-4000-8000-000000000011','owner','Other 35','active');
+insert into public.crm_user_sessions(
+  session_id,user_id,agency_id,aal,created_at,last_seen_at,token_expires_at
+) values (
+  '35000000-0000-4000-8000-000000000090',
+  '35000000-0000-4000-8000-000000000001',
+  '35000000-0000-4000-8000-000000000010',
+  'aal2',
+  now(),
+  now(),
+  now() + interval '1 hour'
+);
 
 insert into public.leads(
   id,agency_id,contact_name,agent_id,responsible_agent_id,status,
@@ -31,6 +42,23 @@ select
   'pending'
 from generate_series(1, 230) series;
 
+with ordered_leads as (
+  select
+    id,
+    row_number() over (order by contact_name, id) as sequence
+  from public.leads
+  where agency_id = '35000000-0000-4000-8000-000000000010'
+)
+update public.leads lead
+set
+  assigned_at = '2026-07-21 09:00:00+00'::timestamptz
+    + ordered_leads.sequence * interval '1 minute',
+  first_contact_due_at = '2026-07-22 09:00:00+00'::timestamptz
+    + ordered_leads.sequence * interval '1 minute',
+  contact_sla_status = 'pending'
+from ordered_leads
+where lead.id = ordered_leads.id;
+
 do $$
 declare
   v_report_id uuid;
@@ -38,6 +66,9 @@ declare
   metrics jsonb;
   record_count integer;
   claim_count integer;
+  uncontacted_record_count integer;
+  assigned_in_period_count integer;
+  null_success_count integer;
 begin
   v_report_id := public.crm_generate_weekly_report(
     '35000000-0000-4000-8000-000000000010',
@@ -47,9 +78,23 @@ begin
   );
   select general_metrics into metrics
   from public.weekly_reports where id = v_report_id;
+  select count(*) into uncontacted_record_count
+  from public.weekly_report_records
+  where report_id = v_report_id and metric_code = 'uncontacted';
+  select count(*) into assigned_in_period_count
+  from public.leads
+  where agency_id = '35000000-0000-4000-8000-000000000010'
+    and assigned_at >= '2026-07-20 00:00:00+00'
+    and assigned_at < '2026-07-27 00:00:00+00';
+  select count(*) into null_success_count
+  from public.leads
+  where agency_id = '35000000-0000-4000-8000-000000000010'
+    and first_successful_contact_at is null;
   if (metrics->>'new_leads')::integer <> 230
      or (metrics->>'uncontacted')::integer <> 230 then
-    raise exception 'weekly_report_was_capped_or_inexact: %', metrics;
+    raise exception
+      'weekly_report_was_capped_or_inexact: metrics=%, uncontacted_records=%, assigned_in_period=%, null_success=%',
+      metrics, uncontacted_record_count, assigned_in_period_count, null_success_count;
   end if;
   select count(*) into record_count
   from public.weekly_report_records
@@ -118,7 +163,7 @@ where report.agency_id = '35000000-0000-4000-8000-000000000011';
 
 select set_config(
   'request.jwt.claims',
-  '{"sub":"35000000-0000-4000-8000-000000000001"}',
+  '{"sub":"35000000-0000-4000-8000-000000000001","session_id":"35000000-0000-4000-8000-000000000090","aal":"aal2"}',
   true
 );
 set local role authenticated;

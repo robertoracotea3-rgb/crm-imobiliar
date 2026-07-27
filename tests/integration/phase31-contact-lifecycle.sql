@@ -23,14 +23,15 @@ insert into public.contacts(
   ('31000000-0000-4000-8000-000000000023','31000000-0000-4000-8000-000000000011','Client altă agenție','0700003123','31000000-0000-4000-8000-000000000003',now()-interval '10 days','client_nou');
 
 insert into public.demands(
-  id,agency_id,contact_id,agent_id,status,updated_at
+  id,agency_id,contact_id,agent_id,status,updated_at,property_types
 ) values (
   '31000000-0000-4000-8000-000000000030',
   '31000000-0000-4000-8000-000000000010',
   '31000000-0000-4000-8000-000000000020',
   '31000000-0000-4000-8000-000000000002',
   'activa',
-  now()
+  now(),
+  array['apartament']::text[]
 );
 
 do $test$

@@ -21,7 +21,7 @@ insert into public.contacts(id,agency_id,full_name,phone,agent_id) values
 
 insert into public.demands(
   id,agency_id,contact_id,agent_id,status,created_at,updated_at,
-  last_relevant_activity_at,review_due_at
+  last_relevant_activity_at,review_due_at,property_types
 ) values
   (
     '32000000-0000-4000-8000-000000000030',
@@ -32,7 +32,8 @@ insert into public.demands(
     now()-interval '30 days',
     now()-interval '30 days',
     now()-interval '30 days',
-    now()-interval '10 days'
+    now()-interval '10 days',
+    array['apartament']::text[]
   ),
   (
     '32000000-0000-4000-8000-000000000031',
@@ -43,7 +44,8 @@ insert into public.demands(
     now()-interval '30 days',
     now()-interval '30 days',
     now()-interval '30 days',
-    now()-interval '10 days'
+    now()-interval '10 days',
+    array['apartament']::text[]
   ),
   (
     '32000000-0000-4000-8000-000000000032',
@@ -54,7 +56,8 @@ insert into public.demands(
     now()-interval '30 days',
     now()-interval '30 days',
     now()-interval '30 days',
-    now()-interval '10 days'
+    now()-interval '10 days',
+    array['apartament']::text[]
   );
 
 insert into public.calendar_events(

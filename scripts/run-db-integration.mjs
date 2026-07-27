@@ -154,9 +154,11 @@ try {
   }
   console.log('Database integration passed: CRM workflow, immutable audit, account security, observability, property assignment, Storia lead assignment, contact SLA, factual contact, contact lifecycle, demand review, property types, email delivery, weekly reports and rollbacks.');
 } finally {
-  try {
-    psql('postgres', `drop database if exists ${database} with (force);`);
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : error);
+  if (process.env.KIRA_KEEP_TEST_DB !== '1') {
+    try {
+      psql('postgres', `drop database if exists ${database} with (force);`);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+    }
   }
 }

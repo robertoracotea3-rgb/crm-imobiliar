@@ -676,6 +676,29 @@ alter table public.agency_weekly_report_settings enable row level security;
 alter table public.weekly_reports enable row level security;
 alter table public.weekly_report_records enable row level security;
 
+do $security_gate$
+declare
+  table_name text;
+begin
+  if to_regprocedure('public.crm_session_authorized()') is not null then
+    foreach table_name in array array[
+      'agency_weekly_report_settings',
+      'weekly_reports',
+      'weekly_report_records'
+    ] loop
+      execute format(
+        'drop policy if exists crm_account_security_gate on public.%I',
+        table_name
+      );
+      execute format(
+        'create policy crm_account_security_gate on public.%I as restrictive for all to authenticated using (public.crm_session_authorized()) with check (public.crm_session_authorized())',
+        table_name
+      );
+    end loop;
+  end if;
+end
+$security_gate$;
+
 drop policy if exists agency_weekly_report_settings_read
   on public.agency_weekly_report_settings;
 create policy agency_weekly_report_settings_read

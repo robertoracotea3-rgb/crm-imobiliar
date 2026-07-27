@@ -314,7 +314,12 @@ create table public.activity_logs (
 );
 
 create or replace function public.current_crm_agency_id()
-returns uuid language sql stable as $$
+returns uuid
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
   select agency_id
   from public.profiles
   where user_id = auth.uid()

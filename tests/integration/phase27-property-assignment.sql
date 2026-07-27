@@ -64,12 +64,13 @@ insert into public.calendar_events(
   'programata'
 );
 insert into public.demands(
-  id,agency_id,agent_id,status
+  id,agency_id,agent_id,status,property_types
 ) values (
   '27000000-0000-4000-8000-000000000060',
   '27000000-0000-4000-8000-000000000010',
   '27000000-0000-4000-8000-000000000002',
-  'activa'
+  'activa',
+  array['apartament']::text[]
 );
 insert into public.matches(
   id,agency_id,demand_id,property_id,score
