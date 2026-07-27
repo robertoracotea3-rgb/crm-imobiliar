@@ -13,7 +13,9 @@ async function accessibleMessage(
 ) {
   const { data: message, error } = await context.serviceAdmin
     .from('crm_mail_messages')
-    .select('*,crm_mailboxes!inner(user_id,address,display_name)')
+    .select(
+      '*,crm_mailboxes!crm_mail_messages_mailbox_agency_fk!inner(user_id,address,display_name)',
+    )
     .eq('id', id)
     .eq('agency_id', context.agencyId)
     .maybeSingle();

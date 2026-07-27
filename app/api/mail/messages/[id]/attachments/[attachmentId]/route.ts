@@ -12,7 +12,9 @@ export async function GET(
     const { id, attachmentId } = await params;
     const { data: attachment, error } = await auth.context.serviceAdmin
       .from('crm_mail_attachments')
-      .select('id,message_id,storage_path,status,crm_mailboxes!inner(user_id)')
+      .select(
+        'id,message_id,storage_path,status,crm_mailboxes!crm_mail_attachments_mailbox_agency_fk!inner(user_id)',
+      )
       .eq('id', attachmentId)
       .eq('message_id', id)
       .eq('agency_id', auth.context.agencyId)

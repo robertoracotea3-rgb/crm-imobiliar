@@ -32,12 +32,13 @@ test('mailbox selection is permanent, validated server-side and part of first lo
 });
 
 test('personal inbox is authorized, auditable and provider acceptance is explicit', async () => {
-  const [send, provider, deliveryEvents, inbox, message, sidebar] = await Promise.all([
+  const [send, provider, deliveryEvents, inbox, message, attachment, sidebar] = await Promise.all([
     read('app/api/mail/send/route.ts'),
     read('lib/server/agent-mail-provider.ts'),
     read('app/api/mail/provider-events/route.ts'),
     read('app/api/mail/route.ts'),
     read('app/api/mail/messages/[id]/route.ts'),
+    read('app/api/mail/messages/[id]/attachments/[attachmentId]/route.ts'),
     read('components/Sidebar.tsx'),
   ]);
   assert.match(send, /requireApiAuth\(request, \{ module: 'mail', action: 'create' \}\)/);
@@ -51,6 +52,8 @@ test('personal inbox is authorized, auditable and provider acceptance is explici
   assert.match(deliveryEvents, /'email\.bounced'/);
   assert.match(inbox, /module: 'mail', action: 'view'/);
   assert.match(message, /contextCanManageAll/);
+  assert.match(message, /crm_mailboxes!crm_mail_messages_mailbox_agency_fk!inner/);
+  assert.match(attachment, /crm_mailboxes!crm_mail_attachments_mailbox_agency_fk!inner/);
   assert.match(sidebar, /href: '\/mail', label: 'E-mail'/);
 });
 
