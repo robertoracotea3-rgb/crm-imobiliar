@@ -11,7 +11,8 @@ PostgreSQL/Supabase 17.6.1.127, Playwright 1.61.1
 Codul, backupul și lanțul de migrații sunt validate local pe o clonă reală a
 producției. **Deployul în producție rămâne blocat intenționat** până când:
 
-1. există un proiect Supabase de staging separat;
+1. cheile noului proiect Supabase de staging sunt transferate securizat în
+   mediul Preview;
 2. cele 30 de migrații sunt aplicate și verificate și în acel staging;
 3. domeniul și căsuțele de e-mail sunt verificate la furnizor, iar două mesaje
    reale sunt primite;
@@ -20,6 +21,10 @@ producției. **Deployul în producție rămâne blocat intenționat** până câ
 
 Deploymentul care deservește acum `crm.kiraimobiliare.ro` este încă cel Vercel
 creat la 7 iulie 2026. Nu a fost înlocuit în cadrul acestei verificări.
+
+Un proiect Supabase staging separat a fost creat pe planul Free, fără cost:
+`kira-crm-staging-20260727`, ref `npvkcuehviujbdegpneq`, regiunea
+`eu-central-1`. Proiectul vechi inactiv nu a fost repornit sau modificat.
 
 ## Backup de producție și restaurare
 
@@ -206,8 +211,9 @@ confirmarea furnizorului și a inboxului.
 
 ## Probleme și acțiuni rămase
 
-1. Alegerea sau crearea proiectului Supabase de staging necesită aprobarea
-   proprietarului; proiectul inactiv existent nu a fost repornit sau suprascris.
+1. Proiectul Supabase de staging este creat, dar citirea cheilor sale reale
+   `anon`/`service_role` și transferul lor în Vercel Preview necesită aprobarea
+   explicită de securitate a proprietarului.
 2. Trebuie creat și verificat contul Resend sau adaptat furnizorul de livrare
    la Zoho, apoi publicate înregistrările DNS exacte date de furnizor.
 3. Trebuie confirmate manual cele două căsuțe și primirea mesajelor de test.
