@@ -119,6 +119,9 @@ select json_build_object(
   'leads', pg_temp.crm_table_count('leads'),
   'demands', pg_temp.crm_table_count('demands'),
   'transactions', pg_temp.crm_table_count('transactions'),
+  'crm_mailboxes', pg_temp.crm_table_count('crm_mailboxes'),
+  'crm_mail_messages', pg_temp.crm_table_count('crm_mail_messages'),
+  'crm_mail_attachments', pg_temp.crm_table_count('crm_mail_attachments'),
   'prospects', pg_temp.crm_table_count('prospects'),
   'prospect_source_health', pg_temp.crm_table_count('prospect_source_health'),
   'prospect_sync_runs', pg_temp.crm_table_count('prospect_sync_runs'),
@@ -183,13 +186,14 @@ async function migrationSql() {
   if (names.length !== 35 || names.at(-1) !== '20260727_350_agent_webmail.sql') {
     throw new Error(`Lanțul Production nu este cel verificat (găsite ${names.length} migrări).`);
   }
+  const selectedNames = flag('latest-only') ? [names.at(-1)] : names;
   const chunks = [
     '\\set ON_ERROR_STOP on',
     "set lock_timeout='15s';",
     "set statement_timeout='5min';",
     "select pg_advisory_lock(hashtext('kira-crm-production-migration-20260727'));",
   ];
-  for (const name of names) {
+  for (const name of selectedNames) {
     chunks.push(`\\echo APPLY ${name}`);
     chunks.push(await readFile(resolve('migrations', name), 'utf8'));
   }
@@ -223,6 +227,11 @@ for (const table of ['properties', 'contacts', 'leads', 'demands', 'transactions
 }
 if (after.prospects != null || after.prospect_source_health != null || after.prospect_sync_runs != null) {
   throw new Error('Obiectele modulului Particulari nu au fost eliminate complet.');
+}
+for (const table of ['crm_mailboxes', 'crm_mail_messages', 'crm_mail_attachments']) {
+  if (after[table] == null) {
+    throw new Error(`Migrarea de e-mail nu a creat tabelul ${table}.`);
+  }
 }
 if (after.tables < 90 || after.tables !== after.rls_tables) {
   throw new Error(`Schema Production nu are protecție RLS completă (${after.tables}/${after.rls_tables}).`);
