@@ -27,6 +27,7 @@ test('synthetic user signs in and receives exact dashboard KPIs', async ({ page 
 
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByText('Bun venit, Agent E2E')).toBeVisible();
+  await expect(page.getByText('Contact în maximum 24 de ore')).toBeVisible();
   await expect(page.getByText('Leaduri noi')).toBeVisible();
   await expect(page.getByText('4', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('3.000 EUR')).toBeVisible();

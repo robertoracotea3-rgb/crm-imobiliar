@@ -66,6 +66,19 @@ export const dashboardFixture = {
   lead_sources: [{ source: 'storia', count: 3 }, { source: 'site', count: 1 }],
   portal_performance: [],
   agent_performance: [],
+  contact_sla: {
+    new_requests: 4,
+    assigned: 4,
+    contacted_on_time: 3,
+    contacted_late: 0,
+    uncontacted: 1,
+    average_first_contact_minutes: 12,
+    due_today: 1,
+    overdue: 0,
+    missing_description: 0,
+    missing_next_action: 0,
+    sla_percent: 75,
+  },
   definitions: new Proxy({}, { get: () => 'Definiție verificabilă pentru test.' }),
   notifications: [],
 };
@@ -231,6 +244,12 @@ export async function mockCrmBackend(page: Page) {
     };
     return json(route, plainFixture);
   });
+  await page.route('**/api/notifications**', route => json(route, {
+    notifications: [],
+    unread_count: 0,
+    pagination: { page: 1, page_size: 30, total: 0, pages: 1 },
+    sync_warnings: [],
+  }));
   await page.route('**/api/system/health**', route => json(route, systemHealthFixture));
 }
 
