@@ -118,7 +118,7 @@ create or replace function public.crm_append_audit_event(
 returns uuid
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 set timezone = 'UTC'
 as $$
 declare
@@ -197,7 +197,7 @@ create or replace function public.crm_verify_audit_chain(p_agency_id uuid)
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 set timezone = 'UTC'
 as $$
 declare

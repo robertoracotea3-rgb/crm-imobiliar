@@ -87,4 +87,9 @@ test('backup scripts fail closed around plaintext, source restore and storage om
   assert.match(restore, /upsert: false/);
   assert.match(restore, /single-transaction/);
   assert.match(restore, /DATABASE_URL_REDACTED/);
+  assert.match(restore, /--expected-project-ref este obligatoriu/);
+  assert.match(restore, /parsedTarget\.hostname.*parsedTarget\.username/s);
+  assert.match(restore, /\['--schema=public', '--schema-only'\]/);
+  assert.match(restore, /migrationNames\.length !== 30/);
+  assert.match(restore, /tables !== rlsTables/);
 });

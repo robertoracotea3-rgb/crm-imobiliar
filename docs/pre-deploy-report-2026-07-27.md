@@ -9,15 +9,13 @@ PostgreSQL/Supabase 17.6.1.127, Playwright 1.61.1
 ## Verdict
 
 Codul, backupul și lanțul de migrații sunt validate local pe o clonă reală a
-producției. **Deployul în producție rămâne blocat intenționat** până când:
+producției și într-un proiect Supabase staging separat. **Deployul în producție
+rămâne blocat intenționat** până când:
 
-1. cheile noului proiect Supabase de staging sunt transferate securizat în
-   mediul Preview;
-2. cele 30 de migrații sunt aplicate și verificate și în acel staging;
-3. domeniul și căsuțele de e-mail sunt verificate la furnizor, iar două mesaje
+1. domeniul și căsuțele de e-mail sunt verificate la furnizor, iar două mesaje
    reale sunt primite;
-4. raportul săptămânal este generat și trimis real din staging;
-5. credențialele Storia necesare testului de integrare sunt configurate.
+2. raportul săptămânal este generat și trimis real din staging;
+3. credențialele Storia necesare testului de integrare sunt configurate.
 
 Deploymentul care deservește acum `crm.kiraimobiliare.ro` este încă cel Vercel
 creat la 7 iulie 2026. Nu a fost înlocuit în cadrul acestei verificări.
@@ -25,6 +23,42 @@ creat la 7 iulie 2026. Nu a fost înlocuit în cadrul acestei verificări.
 Un proiect Supabase staging separat a fost creat pe planul Free, fără cost:
 `kira-crm-staging-20260727`, ref `npvkcuehviujbdegpneq`, regiunea
 `eu-central-1`. Proiectul vechi inactiv nu a fost repornit sau modificat.
+
+## Staging găzduit și Preview Vercel
+
+La 27 iulie 2026 a fost finalizată verificarea găzduită:
+
+- cheile reale `anon` și `service_role` ale stagingului au fost transferate
+  numai în mediul Vercel Preview, ca valori sensibile;
+- parola PostgreSQL staging a fost resetată automat și nu a fost afișată sau
+  persistată;
+- din backup a fost restaurată numai structura schemei `public`; utilizatorii,
+  datele clienților și fișierele Storage din producție nu au fost copiate;
+- cele 30 de migrări au fost aplicate de două ori: **30/30 + 30/30 reușite**;
+- schema rezultată are **97 de tabele publice, toate 97 cu RLS activ**;
+- redirecturile Supabase Auth indică numai către URL-ul staging;
+- a fost creată o agenție sintetică și un cont `TEST` exclusiv pentru staging;
+- loginul real trece, creează sesiunea CRM și redirecționează la `/dashboard`;
+- contextul autentificat confirmă utilizatorul, agenția și rolul `agent`;
+- API-urile găzduite pentru dashboard, proprietăți, contacte, leaduri și
+  cataloage au răspuns corect;
+- buildul local și buildul Vercel au trecut.
+
+Deploymentul Preview verificat este:
+`https://crm-fortis-staging-20260727.vercel.app`. Deploymentul rămâne protejat
+de autentificarea Vercel și nu a fost promovat în Production.
+
+Planul Vercel Hobby nu permite cronuri orare. Preview-ul a fost publicat fără
+înregistrarea programărilor automate, iar endpointurile rămân disponibile pentru
+teste manuale autorizate cu secretul staging. Fișierul local `vercel.json` a
+fost restaurat imediat la configurația originală; Production nu a fost
+redeployat.
+
+Testul găzduit a găsit o incompatibilitate reală: pe proiectele Supabase noi,
+`pgcrypto` este instalat în schema `extensions`, în timp ce funcția de audit
+căuta `digest()` numai în `public`. Migrarea auditului folosește acum explicit
+și schema `extensions`, a fost reaplicată în staging, iar loginul și scrierea
+jurnalului au trecut după corecție.
 
 ## Backup de producție și restaurare
 
@@ -149,6 +183,9 @@ Fiecare fază are rollback nedistructiv în fișierul asociat sau în directorul
 | TypeScript din build | trecut |
 | ESLint | trecut |
 | Playwright E2E | 7/7 trecute |
+| Supabase staging găzduit | 30/30 migrări, de două ori; 97/97 tabele cu RLS |
+| Login și context CRM în Preview | trecut |
+| API-uri principale în Preview | dashboard, proprietăți, contacte, leaduri și cataloage trecute |
 
 Scenariile E2E includ login invalid, login valid, dashboard și KPI exacți,
 MFA, schimbarea parolei temporare, jurnalul de audit, sănătatea sistemului și
@@ -179,6 +216,15 @@ Nu au fost configurate deoarece valorile nu există încă:
 - `STORIA_WEBHOOK_SECRET`.
 
 Secretele de backup și conexiunea PostgreSQL rămân local, nu în frontend.
+
+În mediul Preview au fost configurate separat:
+
+- URL-ul, cheia `anon` și cheia `service_role` ale proiectului staging;
+- `NEXT_PUBLIC_APP_URL` pentru aliasul stabil de staging;
+- secrete staging noi și independente pentru cron, audit, autentificare,
+  înregistrare și criptarea tokenurilor portalurilor.
+
+Nicio valoare Preview generată pentru staging nu a fost copiată în Production.
 
 ## E-mail
 
@@ -211,16 +257,13 @@ confirmarea furnizorului și a inboxului.
 
 ## Probleme și acțiuni rămase
 
-1. Proiectul Supabase de staging este creat, dar citirea cheilor sale reale
-   `anon`/`service_role` și transferul lor în Vercel Preview necesită aprobarea
-   explicită de securitate a proprietarului.
-2. Trebuie creat și verificat contul Resend sau adaptat furnizorul de livrare
+1. Trebuie creat și verificat contul Resend sau adaptat furnizorul de livrare
    la Zoho, apoi publicate înregistrările DNS exacte date de furnizor.
-3. Trebuie confirmate manual cele două căsuțe și primirea mesajelor de test.
-4. Trebuie configurate credențialele oficiale Storia/OLX și validat un webhook
+2. Trebuie confirmate manual cele două căsuțe și primirea mesajelor de test.
+3. Trebuie configurate credențialele oficiale Storia/OLX și validat un webhook
    real semnat.
-5. Tokenul personal Supabase introdus anterior în conversație trebuie revocat
+4. Tokenul personal Supabase introdus anterior în conversație trebuie revocat
    și înlocuit după încheierea configurării.
-6. Fișierele locale deja modificate de proprietar (logo, pagini de autentificare,
+5. Fișierele locale deja modificate de proprietar (logo, pagini de autentificare,
    pagina proprietății și Sidebar) au fost păstrate și nu au fost incluse în
    commiturile tehnice de mai sus.

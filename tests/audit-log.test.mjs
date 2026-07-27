@@ -57,6 +57,7 @@ test('database audit is append-only, redacted, tenant scoped and hash chained', 
   assert.match(migration, /before update or delete/);
   assert.match(migration, /crm_audit_log_is_immutable/);
   assert.match(migration, /agency_id = public\.current_crm_agency_id\(\)/);
+  assert.match(migration, /set search_path = public, extensions, pg_temp/);
   assert.doesNotMatch(migration, /grant (insert|update|delete).*authenticated/i);
 });
 

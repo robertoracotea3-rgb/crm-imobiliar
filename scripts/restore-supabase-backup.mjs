@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
 import {
-  access, mkdir, readFile, rm, stat, unlink,
+  access, mkdir, readFile, readdir, rm, stat, unlink,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
@@ -52,6 +52,10 @@ const targetDatabase = option('target-db') || process.env.KIRA_RESTORE_DB_NAME |
 const targetUser = option('target-user') || process.env.KIRA_RESTORE_DB_USER || 'postgres';
 const targetUrl = process.env.RESTORE_TARGET_DATABASE_URL || '';
 const emptyTarget = flag('empty-target');
+const publicSchemaOnly = flag('public-schema-only');
+const applyMigrations = flag('apply-migrations');
+const verifyMigrationIdempotency = flag('verify-migration-idempotency');
+const expectedProjectRef = option('expected-project-ref') || '';
 if ((!targetContainer || !targetDatabase) && !targetUrl) {
   throw new Error('Configurează destinația izolată prin container+bază sau RESTORE_TARGET_DATABASE_URL.');
 }
@@ -62,8 +66,27 @@ if (targetContainer && !/^crm_restore_test_[a-z0-9_]+$/.test(targetDatabase)) {
 if (targetContainer && !['postgres', 'supabase_admin'].includes(targetUser)) {
   throw new Error('Utilizatorul Docker de restaurare nu este permis.');
 }
+if (applyMigrations && !publicSchemaOnly) {
+  throw new Error('--apply-migrations este permis numai împreună cu --public-schema-only.');
+}
+if (verifyMigrationIdempotency && !applyMigrations) {
+  throw new Error('--verify-migration-idempotency necesită --apply-migrations.');
+}
+if (publicSchemaOnly && targetUrl) {
+  if (!/^[a-z0-9]{20}$/.test(expectedProjectRef)) {
+    throw new Error('--expected-project-ref este obligatoriu pentru restaurarea schemei într-un proiect Supabase găzduit.');
+  }
+  const parsedTarget = new URL(targetUrl);
+  const targetIdentity = `${parsedTarget.hostname}:${decodeURIComponent(parsedTarget.username)}`;
+  if (!targetIdentity.includes(expectedProjectRef)) {
+    throw new Error('Destinația nu corespunde proiectului Supabase staging confirmat.');
+  }
+}
 
 const restoreStorage = flag('restore-storage');
+if (restoreStorage && publicSchemaOnly) {
+  throw new Error('--restore-storage nu poate fi folosit cu --public-schema-only.');
+}
 if (restoreStorage && (!process.env.RESTORE_TARGET_SUPABASE_URL || !process.env.RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY)) {
   throw new Error('Destinația Supabase izolată pentru fișiere nu este configurată.');
 }
@@ -145,11 +168,12 @@ async function restoreDumpWithCommand(command, args, dumpPath, environment = pro
 
 async function restoreDatabase(dumpPath) {
   const cleanupArguments = emptyTarget ? [] : ['--clean', '--if-exists'];
+  const scopeArguments = publicSchemaOnly ? ['--schema=public', '--schema-only'] : [];
   if (targetContainer && targetDatabase) {
     await restoreDumpWithCommand('docker', [
       'exec', '-i', targetContainer,
       'pg_restore', '-U', targetUser, '-d', targetDatabase,
-      ...cleanupArguments, '--no-owner', '--no-privileges',
+      ...cleanupArguments, ...scopeArguments, '--no-owner', '--no-privileges',
       '--single-transaction', '--exit-on-error',
     ], dumpPath);
     return createHash('sha256').update(`container:${targetContainer}/${targetDatabase}`).digest('hex');
@@ -158,7 +182,7 @@ async function restoreDatabase(dumpPath) {
   const target = targetDatabaseEnvironment(targetUrl);
   const restoreArguments = [
     '--dbname', target.environment.PGDATABASE,
-    ...cleanupArguments, '--no-owner', '--no-privileges',
+    ...cleanupArguments, ...scopeArguments, '--no-owner', '--no-privileges',
     '--single-transaction', '--exit-on-error',
   ];
   if (await commandAvailable('pg_restore')) {
@@ -179,6 +203,117 @@ async function restoreDatabase(dumpPath) {
     ], dumpPath, target.environment);
   }
   return target.fingerprint;
+}
+
+async function runSqlAgainstTarget(sql) {
+  if (targetContainer && targetDatabase) {
+    const child = spawn('docker', [
+      'exec', '-i', targetContainer,
+      'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', targetUser, '-d', targetDatabase,
+    ], {
+      cwd: process.cwd(),
+      env: process.env,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout = `${stdout}${chunk}`.slice(-20_000); });
+    child.stderr.on('data', chunk => { stderr = `${stderr}${chunk}`.slice(-20_000); });
+    child.stdin.end(sql);
+    const [code] = await once(child, 'close');
+    if (code !== 0) throw new Error(`psql a eșuat: ${stderr.trim() || `cod ${code}`}`);
+    return stdout;
+  }
+
+  const target = targetDatabaseEnvironment(targetUrl);
+  const image = process.env.KIRA_PG_TOOLS_IMAGE || 'postgres:17-alpine';
+  const child = spawn('docker', [
+    'run', '--rm', '-i',
+    '-e', 'PGHOST',
+    '-e', 'PGPORT',
+    '-e', 'PGUSER',
+    '-e', 'PGPASSWORD',
+    '-e', 'PGDATABASE',
+    '-e', 'PGSSLMODE',
+    image,
+    'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+  ], {
+    cwd: process.cwd(),
+    env: target.environment,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', chunk => { stdout = `${stdout}${chunk}`.slice(-20_000); });
+  child.stderr.on('data', chunk => { stderr = `${stderr}${chunk}`.slice(-20_000); });
+  child.stdin.end(sql);
+  const [code] = await once(child, 'close');
+  if (code !== 0) throw new Error(`psql a eșuat: ${stderr.trim() || `cod ${code}`}`);
+  return stdout;
+}
+
+async function applyNumberedMigrations() {
+  const migrationNames = (await readdir(resolve('migrations')))
+    .filter(name => /^\d{8}_\d{3}_[^.]+\.sql$/.test(name))
+    .sort();
+  if (migrationNames.length !== 30) {
+    throw new Error(`Lanțul de staging trebuie să conțină exact 30 de migrări; au fost găsite ${migrationNames.length}.`);
+  }
+  const passes = verifyMigrationIdempotency ? 2 : 1;
+  for (let pass = 1; pass <= passes; pass += 1) {
+    for (const name of migrationNames) {
+      await runSqlAgainstTarget(await readFile(resolve('migrations', name), 'utf8'));
+    }
+    console.log(`Migrări staging aplicate: ${migrationNames.length}/30 (pas ${pass}/${passes}).`);
+  }
+}
+
+async function verifyPublicSchema() {
+  const output = await runSqlAgainstTarget(`
+select json_build_object(
+  'tables', count(*)::integer,
+  'rls_tables', count(*) filter (where c.relrowsecurity)::integer
+)
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relkind = 'r';
+`);
+  const result = output.match(/\{"tables"\s*:\s*(\d+),\s*"rls_tables"\s*:\s*(\d+)\}/);
+  if (!result) throw new Error('Verificarea agregată a schemei publice nu a returnat rezultatul așteptat.');
+  const tables = Number(result[1]);
+  const rlsTables = Number(result[2]);
+  if (tables < 90 || tables !== rlsTables) {
+    throw new Error(`Schema staging este incompletă sau are RLS incomplet (${tables} tabele, ${rlsTables} cu RLS).`);
+  }
+  console.log(`Schema staging verificată: ${tables} tabele publice, toate cu RLS.`);
+}
+
+async function prepareHostedPublicSchema() {
+  if (!publicSchemaOnly || !targetUrl) return;
+  // The historical production schema installed pg_trgm in public, while new
+  // Supabase projects install it in extensions. Preserve the dump's qualified
+  // operator-class references without copying any extension-owned data.
+  await runSqlAgainstTarget(`
+do $staging$
+declare
+  extension_schema text;
+begin
+  select namespace.nspname
+  into extension_schema
+  from pg_extension extension
+  join pg_namespace namespace on namespace.oid = extension.extnamespace
+  where extension.extname = 'pg_trgm';
+
+  if extension_schema is null then
+    create extension pg_trgm with schema public;
+  elsif extension_schema <> 'public' then
+    execute 'alter extension pg_trgm set schema public';
+  end if;
+end
+$staging$;
+`);
 }
 
 function safeArchiveEntry(entry) {
@@ -268,16 +403,26 @@ try {
   const calculatedTargetFingerprint = targetContainer
     ? createHash('sha256').update(`container:${targetContainer}/${targetDatabase}`).digest('hex')
     : targetDatabaseEnvironment(targetUrl).fingerprint;
-  if (calculatedTargetFingerprint === manifest.source?.database_fingerprint) {
+  // Older archives fingerprinted only host/port/database. Supabase session
+  // poolers reuse those values across projects, so a separately validated
+  // project ref is the stronger isolation proof for this schema-only path.
+  if (calculatedTargetFingerprint === manifest.source?.database_fingerprint
+    && !(publicSchemaOnly && expectedProjectRef)) {
     throw new Error('Restaurarea peste baza sursă este interzisă.');
   }
 
+  await prepareHostedPublicSchema();
   const restoredTargetFingerprint = await restoreDatabase(resolveStageFile(manifest.database.file));
   if (restoredTargetFingerprint !== calculatedTargetFingerprint) {
     throw new Error('Destinația restaurată nu corespunde destinației verificate.');
   }
+  if (applyMigrations) await applyNumberedMigrations();
+  if (publicSchemaOnly) await verifyPublicSchema();
   const storage = await restoreStorageFiles(manifest);
   console.log(`Restaurare izolată reușită: ${manifest.files.length} fișiere verificate.`);
+  if (publicSchemaOnly) {
+    console.log('Au fost restaurate numai structura publică și migrările; datele clienților nu au fost copiate.');
+  }
   if (storage.skipped) {
     console.log('Restaurarea fișierelor Storage a fost omisă; conținutul arhivei a fost verificat.');
   } else {
