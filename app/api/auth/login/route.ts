@@ -12,6 +12,8 @@ import {
   verifiedAccessTokenClaims,
 } from '@/lib/server/account-security';
 import { getAdminClient } from '@/lib/server/api-auth';
+import { mailOnboardingEnabled, mailboxAddressForUser } from '@/lib/server/mail-feature';
+import { hasPermission } from '@/lib/team-roles';
 import { usernameToEmail } from '@/lib/username';
 
 const USERNAME_RE = /^[a-zA-Z0-9._]{3,30}$/;
@@ -118,7 +120,7 @@ export async function POST(request: Request) {
 
   const { data: profile } = await serviceAdmin
     .from('profiles')
-    .select('agency_id, role, status, force_password_change')
+    .select('agency_id, role, permissions, status, force_password_change')
     .eq('user_id', data.user.id)
     .single();
   if (!profile?.agency_id || (profile.status && profile.status !== 'active')) {
@@ -158,11 +160,21 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Jurnalul de securitate nu este disponibil.' }, { status: 503 });
   }
 
+  const mailboxAddress = await mailboxAddressForUser(
+    serviceAdmin,
+    profile.agency_id,
+    data.user.id,
+  ).catch(() => undefined);
+  const mailboxRequired = mailOnboardingEnabled()
+    && hasPermission(profile.role, 'mail', 'create', profile.permissions)
+    && mailboxAddress === null;
   const nextPath = security.passwordChangeRequired
     ? '/auth/schimba-parola'
     : security.mfaRequired && claims.aal !== 'aal2'
       ? '/auth/mfa'
-      : '/dashboard';
+      : mailboxRequired
+        ? '/auth/email-setup'
+        : '/dashboard';
 
   return Response.json({
     access_token: data.session.access_token,
@@ -173,6 +185,8 @@ export async function POST(request: Request) {
       aal: claims.aal,
       mfa_required: security.mfaRequired,
       password_change_required: security.passwordChangeRequired,
+      mailbox_required: mailboxRequired,
+      mailbox_address: mailboxAddress || null,
     },
     next_path: nextPath,
   }, {

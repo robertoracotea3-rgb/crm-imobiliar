@@ -23,6 +23,7 @@ import {
   Ellipsis,
   ShieldCheck,
   Activity,
+  Mail,
   X,
 } from 'lucide-react';
 
@@ -41,6 +42,7 @@ const menuItems: {
   { href: '/pipeline', label: 'Pipeline', icon: Target, module: 'leads' },
   { href: '/viewings', label: 'Vizionări', icon: Eye, module: 'viewings' },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays, module: 'calendar' },
+  { href: '/mail', label: 'E-mail', icon: Mail, module: 'mail' },
   { href: '/finance', label: 'Finanțe', icon: Wallet, module: 'finance' },
   { href: '/portals', label: 'Portaluri', icon: Globe, module: 'portals' },
   { href: '/team', label: 'Echipă', icon: Users, module: 'team' },
@@ -61,6 +63,7 @@ export function Sidebar() {
   const router = useRouter();
   const { user, role, loading, signOut, can } = useAuth();
   const [notifCount, setNotifCount] = useState(0);
+  const [mailUnreadCount, setMailUnreadCount] = useState(0);
   const [moreOpenForPath, setMoreOpenForPath] = useState<string | null>(null);
   const moreOpen = moreOpenForPath === pathname;
 
@@ -79,23 +82,31 @@ export function Sidebar() {
     const fetchCount = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch('/api/notifications?summary=1', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        cache: 'no-store',
-      });
-      if (!res.ok) return;
-      const d = await res.json();
-      setNotifCount(Number(d.unread_count || 0));
+      const headers = { Authorization: `Bearer ${session.access_token}` };
+      const [notificationsResponse, mailResponse] = await Promise.all([
+        fetch('/api/notifications?summary=1', { headers, cache: 'no-store' }),
+        fetch('/api/mail?summary=1', { headers, cache: 'no-store' }),
+      ]);
+      if (notificationsResponse.ok) {
+        const data = await notificationsResponse.json();
+        setNotifCount(Number(data.unread_count || 0));
+      }
+      if (mailResponse.ok) {
+        const data = await mailResponse.json();
+        setMailUnreadCount(Number(data.unread_count || 0));
+      }
     };
     void fetchCount();
     const iv = setInterval(fetchCount, 60000);
     const refresh = () => void fetchCount();
     const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('crm:notifications-changed', refresh);
+    window.addEventListener('crm:mail-changed', refresh);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       clearInterval(iv);
       window.removeEventListener('crm:notifications-changed', refresh);
+      window.removeEventListener('crm:mail-changed', refresh);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [user]);
@@ -145,6 +156,8 @@ export function Sidebar() {
             const Icon = item.icon;
             const isActive = pathname.startsWith(item.href);
             const isNotif = item.href === '/notifications';
+            const isMail = item.href === '/mail';
+            const badgeCount = isNotif ? notifCount : isMail ? mailUnreadCount : 0;
             return (
               <Link
                 key={item.href}
@@ -156,16 +169,16 @@ export function Sidebar() {
               >
                 <span className="relative">
                   <Icon size={20} />
-                  {isNotif && notifCount > 0 && (
+                  {(isNotif || isMail) && badgeCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5">
-                      {notifCount > 99 ? '99+' : notifCount}
+                      {badgeCount > 99 ? '99+' : badgeCount}
                     </span>
                   )}
                 </span>
                 <span className="font-medium">{item.label}</span>
-                {isNotif && notifCount > 0 && (
+                {(isNotif || isMail) && badgeCount > 0 && (
                   <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
-                    {notifCount > 99 ? '99+' : notifCount}
+                    {badgeCount > 99 ? '99+' : badgeCount}
                   </span>
                 )}
               </Link>
@@ -216,6 +229,8 @@ export function Sidebar() {
                 const Icon = item.icon;
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const isNotif = item.href === '/notifications';
+                const isMail = item.href === '/mail';
+                const badgeCount = isNotif ? notifCount : isMail ? mailUnreadCount : 0;
                 return (
                   <Link
                     key={item.href}
@@ -228,9 +243,9 @@ export function Sidebar() {
                   >
                     <span className="relative">
                       <Icon size={20} />
-                      {isNotif && notifCount > 0 && (
+                      {(isNotif || isMail) && badgeCount > 0 && (
                         <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                          {notifCount > 99 ? '99+' : notifCount}
+                          {badgeCount > 99 ? '99+' : badgeCount}
                         </span>
                       )}
                     </span>

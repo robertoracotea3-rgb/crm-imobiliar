@@ -202,6 +202,10 @@ export async function mockCrmBackend(page: Page) {
   });
 
   await page.route('**/auth/v1/user**', (route) => json(route, authUser));
+  await page.route('**/auth/v1/logout**', route => route.fulfill({
+    status: 204,
+    body: '',
+  }));
   await page.route('**/rest/v1/profiles**', (route) => json(route, {
     agency_id: '00000000-0000-4000-8000-000000000011',
     role: 'owner',

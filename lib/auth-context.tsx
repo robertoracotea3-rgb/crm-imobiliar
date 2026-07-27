@@ -25,6 +25,8 @@ interface AuthSecurity {
   aal: 'aal1' | 'aal2';
   mfaRequired: boolean;
   passwordChangeRequired: boolean;
+  mailboxRequired: boolean;
+  mailboxAddress: string | null;
   sessionId: string | null;
   nextPath: string | null;
 }
@@ -80,6 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       aal: data.security?.aal === 'aal2' ? 'aal2' : 'aal1',
       mfaRequired: data.security?.mfa_required === true,
       passwordChangeRequired: data.security?.password_change_required === true,
+      mailboxRequired: data.security?.mailbox_required === true,
+      mailboxAddress: typeof data.security?.mailbox_address === 'string'
+        ? data.security.mailbox_address
+        : null,
       sessionId: data.security?.session_id || null,
       nextPath: data.security?.next_path || null,
     });

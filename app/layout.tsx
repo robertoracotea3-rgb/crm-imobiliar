@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 import { Sidebar } from "@/components/Sidebar";
 import { AuthProvider } from "@/lib/auth-context";
 
@@ -21,13 +22,6 @@ export default async function RootLayout({
 
   return (
     <html lang="ro" className="h-full antialiased">
-      <head>
-        <link
-          rel="stylesheet"
-          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          crossOrigin="anonymous"
-        />
-      </head>
       <body
         className="min-h-full"
         style={{ backgroundColor: '#F6F5F1', fontFamily: 'var(--font-inter)' }}

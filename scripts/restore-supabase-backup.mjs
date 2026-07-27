@@ -258,15 +258,15 @@ async function applyNumberedMigrations() {
   const migrationNames = (await readdir(resolve('migrations')))
     .filter(name => /^\d{8}_\d{3}_[^.]+\.sql$/.test(name))
     .sort();
-  if (migrationNames.length !== 34) {
-    throw new Error(`Lanțul de staging trebuie să conțină exact 34 de migrări; au fost găsite ${migrationNames.length}.`);
+  if (migrationNames.length !== 35) {
+    throw new Error(`Lanțul de staging trebuie să conțină exact 35 de migrări; au fost găsite ${migrationNames.length}.`);
   }
   const passes = verifyMigrationIdempotency ? 2 : 1;
   for (let pass = 1; pass <= passes; pass += 1) {
     for (const name of migrationNames) {
       await runSqlAgainstTarget(await readFile(resolve('migrations', name), 'utf8'));
     }
-    console.log(`Migrări staging aplicate: ${migrationNames.length}/34 (pas ${pass}/${passes}).`);
+    console.log(`Migrări staging aplicate: ${migrationNames.length}/35 (pas ${pass}/${passes}).`);
   }
 }
 
