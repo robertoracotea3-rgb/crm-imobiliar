@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -44,4 +45,15 @@ test('names are never identity keys and portal matching requires both official p
     'portal:storia:abc-1',
   ]);
   assert.equal(compareClientIdentities({ portal: 'storia' }, { portal: 'storia' }).safe, false);
+});
+
+test('historical client-agent backfills deduplicate repeated relationships', () => {
+  const migration = readFileSync(
+    new URL('../migrations/20260720_080_client_unification.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /select distinct agency_id, contact_id, agent_id, 'demand', contact_id/);
+  assert.match(migration, /select distinct agency_id, contact_id, agent_id, 'viewing', contact_id/);
+  assert.match(migration, /select distinct agency_id, contact_id, agent_id, 'transaction', contact_id/);
+  assert.match(migration, /select distinct agency_id, owner_contact_id, agent_id, 'owned_property', owner_contact_id/);
 });

@@ -684,7 +684,7 @@ begin
   insert into public.client_contact_agents(
     agency_id, contact_id, agent_id, relationship_reason, origin_contact_id
   )
-  select agency_id, id, coalesce(agent_id, created_by), 'contact_owner', id
+  select distinct agency_id, id, coalesce(agent_id, created_by), 'contact_owner', id
   from public.contacts
   where coalesce(agent_id, created_by) is not null and deleted_at is null
   on conflict(contact_id, agent_id) do update set active = true, last_seen_at = now();
@@ -692,7 +692,7 @@ begin
   insert into public.client_contact_agents(
     agency_id, contact_id, agent_id, relationship_reason, origin_contact_id
   )
-  select agency_id, contact_id, agent_id, 'demand', contact_id
+  select distinct agency_id, contact_id, agent_id, 'demand', contact_id
   from public.demands
   where contact_id is not null and agent_id is not null and deleted_at is null
   on conflict(contact_id, agent_id) do update set active = true, last_seen_at = now();
@@ -700,7 +700,7 @@ begin
   insert into public.client_contact_agents(
     agency_id, contact_id, agent_id, relationship_reason, origin_contact_id
   )
-  select agency_id, contact_id, agent_id, 'viewing', contact_id
+  select distinct agency_id, contact_id, agent_id, 'viewing', contact_id
   from public.calendar_events
   where contact_id is not null and agent_id is not null and deleted_at is null
   on conflict(contact_id, agent_id) do update set active = true, last_seen_at = now();
@@ -708,7 +708,7 @@ begin
   insert into public.client_contact_agents(
     agency_id, contact_id, agent_id, relationship_reason, origin_contact_id
   )
-  select agency_id, contact_id, agent_id, 'transaction', contact_id
+  select distinct agency_id, contact_id, agent_id, 'transaction', contact_id
   from public.transactions
   where contact_id is not null and agent_id is not null and deleted_at is null
   on conflict(contact_id, agent_id) do update set active = true, last_seen_at = now();
@@ -716,7 +716,7 @@ begin
   insert into public.client_contact_agents(
     agency_id, contact_id, agent_id, relationship_reason, origin_contact_id
   )
-  select agency_id, owner_contact_id, agent_id, 'owned_property', owner_contact_id
+  select distinct agency_id, owner_contact_id, agent_id, 'owned_property', owner_contact_id
   from public.properties
   where owner_contact_id is not null and agent_id is not null and deleted_at is null
   on conflict(contact_id, agent_id) do update set active = true, last_seen_at = now();

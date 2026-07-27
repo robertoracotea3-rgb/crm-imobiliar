@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { buildPublicPropertyUrl } from '../lib/public-property-url.ts';
@@ -19,4 +20,13 @@ test('uses a stable non-empty fallback when optional public fields are absent', 
     buildPublicPropertyUrl({ id: 'abcdef12-0000-4000-8000-000000000001' }),
     'https://www.kiraimobiliare.ro/proprietati/proprietate-fagaras-abcdef12',
   );
+});
+
+test('database URL snapshots accept the legacy property category enum', () => {
+  const migration = readFileSync(
+    new URL('../migrations/20260724_230_storia_lead_property_assignment.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /property\.category::text/);
+  assert.match(migration, /property_row\.category::text/);
 });

@@ -276,6 +276,54 @@ alter table public.properties add column if not exists status text default 'draf
 alter table public.properties add column if not exists legacy_status text;
 alter table public.properties add column if not exists status_reason text;
 
+-- The legacy production schema uses the public.property_status enum. Convert it
+-- before normalization because the controlled catalog also introduces statuses
+-- that are not members of that historical enum.
+do $$
+declare
+  trigger_record record;
+  trigger_definitions text[] := array[]::text[];
+  trigger_definition text;
+begin
+  if exists (
+    select 1
+    from pg_attribute a
+    join pg_class c on c.oid = a.attrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_type t on t.oid = a.atttypid
+    where n.nspname = 'public'
+      and c.relname = 'properties'
+      and a.attname = 'status'
+      and not a.attisdropped
+      and t.typtype = 'e'
+  ) then
+    for trigger_record in
+      select t.tgname, pg_get_triggerdef(t.oid) as definition
+      from pg_trigger t
+      join pg_class c on c.oid = t.tgrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid and a.attname = 'status'
+      where n.nspname = 'public'
+        and c.relname = 'properties'
+        and not t.tgisinternal
+        and a.attnum = any(t.tgattr)
+      order by t.tgname
+    loop
+      trigger_definitions := array_append(trigger_definitions, trigger_record.definition);
+      execute format('drop trigger %I on public.properties', trigger_record.tgname);
+    end loop;
+
+    alter table public.properties alter column status drop default;
+    alter table public.properties alter column status type text using status::text;
+    alter table public.properties alter column status set default 'draft';
+
+    foreach trigger_definition in array trigger_definitions
+    loop
+      execute trigger_definition;
+    end loop;
+  end if;
+end $$;
+
 alter table public.calendar_events add column if not exists type text;
 alter table public.calendar_events add column if not exists status text;
 alter table public.calendar_events add column if not exists legacy_status text;
@@ -476,6 +524,9 @@ alter table public.viewing_statuses enable row level security;
 alter table public.transaction_statuses enable row level security;
 alter table public.activity_types enable row level security;
 alter table public.crm_status_transitions enable row level security;
+alter table public.lead_source_aliases enable row level security;
+alter table public.crm_status_aliases enable row level security;
+alter table public.crm_normalization_runs enable row level security;
 
 do $$
 declare table_name text;

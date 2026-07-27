@@ -91,3 +91,22 @@ test('database migration seeds every code exposed by the application catalogs', 
     for (const to of targets) assert.ok(migration.includes(`('property','${from}','${to}')`));
   }
 });
+
+test('status migration converts the legacy property enum before normalization', () => {
+  const migration = readFileSync(
+    new URL('../migrations/20260720_070_status_source_catalogs.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(migration, /t\.typtype = 'e'/);
+  assert.match(migration, /alter column status drop default/);
+  assert.match(migration, /alter column status type text using status::text/);
+  assert.match(migration, /alter column status set default 'draft'/);
+  assert.match(migration, /pg_get_triggerdef/);
+  assert.match(migration, /a\.attnum = any\(t\.tgattr\)/);
+  for (const table of ['lead_source_aliases', 'crm_status_aliases', 'crm_normalization_runs']) {
+    assert.ok(
+      migration.includes(`alter table public.${table} enable row level security`),
+      `${table} must fail closed behind RLS`,
+    );
+  }
+});

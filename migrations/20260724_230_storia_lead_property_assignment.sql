@@ -80,7 +80,7 @@ set property_title = coalesce(lead.property_title, property.title),
       public.crm_public_property_url(
         property.id,
         property.internal_code,
-        property.category,
+        property.category::text,
         property.city
       )
     ),
@@ -251,7 +251,7 @@ begin
     new.property_public_url := public.crm_public_property_url(
       property_row.id,
       property_row.internal_code,
-      property_row.category,
+      property_row.category::text,
       property_row.city
     );
     new.property_price := property_row.price;
