@@ -31,8 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": [
-    "node_modules",
-    "ops/cloudflare-email-worker"
-  ]
+  "exclude": ["node_modules"]
 }

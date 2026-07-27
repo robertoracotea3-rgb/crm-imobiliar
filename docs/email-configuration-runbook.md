@@ -34,7 +34,7 @@
 
 ## Pași în mediul CRM
 
-1. Adaugă secretul `EMAIL_PROVIDER_API_KEY` în mediul serverului. Nu îl adăuga
+1. Adaugă secretul `RESEND_API_KEY` în mediul serverului. Nu îl adăuga
    cu prefixul `NEXT_PUBLIC_`.
 2. Rulează migrarea `20260724_290_agency_email_delivery.sql`.
 3. Deschide **Setări → E-mail**.

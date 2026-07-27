@@ -44,9 +44,9 @@ test('email secrets remain server-side and configuration has an explicit manual 
     read('.env.example'),
     read('docs/email-configuration-runbook.md'),
   ]);
-  assert.match(provider, /process\.env\.EMAIL_PROVIDER_API_KEY/);
+  assert.match(provider, /process\.env\.RESEND_API_KEY/);
   assert.doesNotMatch(provider, /NEXT_PUBLIC_EMAIL/);
-  assert.match(example, /EMAIL_PROVIDER_API_KEY=/);
+  assert.match(example, /RESEND_API_KEY=/);
   assert.match(runbook, /nu este confirmată/i);
   assert.match(runbook, /SPF și DKIM/);
   assert.match(runbook, /autentificarea în doi pași/);

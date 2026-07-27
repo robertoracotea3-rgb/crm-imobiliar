@@ -2,7 +2,7 @@ import 'server-only';
 
 import { MAIL_ADDRESS_PATTERN } from '@/lib/mail';
 
-const SMTP2GO_SEND_API = 'https://api.smtp2go.com/v3/email/send';
+const RESEND_SEND_API = 'https://api.resend.com/emails';
 
 export type AgentMailSendInput = {
   fromEmail: string;
@@ -20,11 +20,15 @@ export type AgentMailSendInput = {
 
 export type AgentMailSendResult = {
   accepted: boolean;
-  provider: 'smtp2go';
+  provider: 'resend';
   messageId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
 };
+
+function providerKey(): string {
+  return String(process.env.RESEND_API_KEY || '').trim();
+}
 
 function safeError(value: unknown): string {
   const text = value && typeof value === 'object' && 'message' in value
@@ -56,73 +60,76 @@ export async function sendAgentMail(
   if (invalid) {
     return {
       accepted: false,
-      provider: 'smtp2go',
+      provider: 'resend',
       messageId: null,
       errorCode: 'invalid_input',
       errorMessage: invalid,
     };
   }
 
-  const apiKey = String(process.env.SMTP2GO_API_KEY || '').trim();
+  const apiKey = providerKey();
   if (!apiKey) {
     return {
       accepted: false,
-      provider: 'smtp2go',
+      provider: 'resend',
       messageId: null,
       errorCode: 'provider_not_configured',
-      errorMessage: 'Trimiterea va deveni activă după configurarea cheii SMTP2GO.',
+      errorMessage: 'Trimiterea va deveni activă după configurarea cheii Resend.',
     };
   }
 
-  const customHeaders = [
-    ...(input.replyTo ? [{ header: 'Reply-To', value: input.replyTo }] : []),
-    ...(input.inReplyTo ? [
-      { header: 'In-Reply-To', value: input.inReplyTo },
-      { header: 'References', value: input.inReplyTo },
-    ] : []),
-    { header: 'X-Kira-Idempotency-Key', value: input.idempotencyKey },
-  ];
+  const customHeaders: Record<string, string> = {
+    'X-Kira-Idempotency-Key': input.idempotencyKey,
+  };
+  if (input.inReplyTo) {
+    customHeaders['In-Reply-To'] = input.inReplyTo;
+    customHeaders.References = input.inReplyTo;
+  }
 
   try {
-    const response = await fetchImpl(SMTP2GO_SEND_API, {
+    const response = await fetchImpl(RESEND_SEND_API, {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'X-Smtp2go-Api-Key': apiKey,
+        'Idempotency-Key': input.idempotencyKey,
+        'User-Agent': 'Kira-CRM/1.0',
       },
       body: JSON.stringify({
-        sender: `${input.senderName.trim().slice(0, 120)} <${input.fromEmail}>`,
+        from: `${input.senderName.trim().slice(0, 120)} <${input.fromEmail}>`,
         to: input.to,
         cc: input.cc || [],
         bcc: input.bcc || [],
+        reply_to: input.replyTo || undefined,
         subject: input.subject.trim(),
-        text_body: input.text,
-        html_body: input.html,
-        custom_headers: customHeaders,
+        text: input.text,
+        html: input.html,
+        headers: customHeaders,
+        tags: [{ name: 'source', value: 'kira_crm' }],
       }),
       signal: AbortSignal.timeout(15_000),
     });
     const payload = await response.json().catch(() => ({})) as {
-      data?: { succeeded?: number; failed?: number; email_id?: string };
-      error?: string;
-      error_code?: string;
+      id?: string;
+      name?: string;
+      message?: string;
     };
-    const accepted = response.ok && Number(payload.data?.succeeded || 0) > 0;
+    const accepted = response.ok && typeof payload.id === 'string';
     return {
       accepted,
-      provider: 'smtp2go',
-      messageId: typeof payload.data?.email_id === 'string' ? payload.data.email_id : null,
+      provider: 'resend',
+      messageId: accepted ? payload.id || null : null,
       errorCode: accepted
         ? null
-        : typeof payload.error_code === 'string'
-          ? payload.error_code.slice(0, 120)
+        : typeof payload.name === 'string'
+          ? payload.name.slice(0, 120)
           : `http_${response.status}`,
-      errorMessage: accepted ? null : safeError(payload.error || 'Trimiterea nu a fost acceptată.'),
+      errorMessage: accepted ? null : safeError(payload.message || 'Trimiterea nu a fost acceptată.'),
     };
   } catch (error) {
     return {
       accepted: false,
-      provider: 'smtp2go',
+      provider: 'resend',
       messageId: null,
       errorCode: 'provider_unreachable',
       errorMessage: safeError(error),

@@ -24,7 +24,6 @@ const externalOrDisabledRoutes = new Set([
   'app/api/auth/register/route.ts',
   'app/api/auth/login/route.ts',
   'app/api/feed/properties.xml/route.ts',
-  'app/api/mail/inbound/route.ts',
   'app/api/mail/provider-events/route.ts',
   'app/api/portals/storia/callback/route.ts',
   'app/api/portals/storia/webhook/route.ts',
@@ -42,21 +41,13 @@ test('external cron routes use a dedicated constant-time secret guard', () => {
   }
 });
 
-test('external inbound mail uses its own constant-time secret guard', () => {
-  const route = readFileSync(join(apiRoot, 'mail', 'inbound', 'route.ts'), 'utf8');
-  const guard = readFileSync(join(process.cwd(), 'lib', 'server', 'mail-inbound-auth.ts'), 'utf8');
-  assert.match(route, /verifyMailInboundAuthorization/);
-  assert.match(guard, /process\.env\.MAIL_INBOUND_SECRET/);
-  assert.match(guard, /timingSafeEqual/);
-  assert.doesNotMatch(route, /request\.headers\.get\('authorization'\)\s*===/);
-});
-
-test('external delivery events use a separate constant-time secret guard', () => {
+test('Resend inbound and delivery events require a signed raw webhook', () => {
   const route = readFileSync(join(apiRoot, 'mail', 'provider-events', 'route.ts'), 'utf8');
-  const guard = readFileSync(join(process.cwd(), 'lib', 'server', 'mail-delivery-webhook-auth.ts'), 'utf8');
-  assert.match(route, /verifyMailDeliveryWebhookAuthorization/);
-  assert.match(guard, /process\.env\.MAIL_DELIVERY_WEBHOOK_SECRET/);
-  assert.match(guard, /timingSafeEqual/);
+  const guard = readFileSync(join(process.cwd(), 'lib', 'server', 'resend-mail.ts'), 'utf8');
+  assert.match(route, /verifyResendWebhook\(await request\.text\(\), request\.headers\)/);
+  assert.match(guard, /process\.env\.RESEND_WEBHOOK_SECRET/);
+  assert.match(guard, /new Webhook\(secret\)\.verify/);
+  assert.match(guard, /svix-signature/);
 });
 
 test('every private API route uses the central authorization guard', () => {

@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       external_key: idempotencyKey,
       direction: 'outbound',
       folder: 'sent',
-      provider: 'smtp2go',
+      provider: 'resend',
       thread_key: calculatedThread,
       in_reply_to: reply?.internet_message_id || null,
       from_email: mailbox.address,

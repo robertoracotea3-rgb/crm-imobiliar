@@ -65,7 +65,7 @@ const result = {
   storia_configuration_names_present: integrationNames.every(name => productionNames.has(name)),
   storia_test_mode_configured: productionNames.has('STORIA_TEST_MODE'),
   anthropic_key_configured: productionNames.has('ANTHROPIC_API_KEY'),
-  email_provider_key_configured: productionNames.has('EMAIL_PROVIDER_API_KEY'),
+  email_provider_key_configured: productionNames.has('RESEND_API_KEY'),
   values_intentionally_not_materialized: true,
 };
 console.log(JSON.stringify(result, null, 2));

@@ -60,7 +60,7 @@ După verificarea completă în staging:
 
 1. confirmă backupul de producție;
 2. aplică migrarea;
-3. setează `EMAIL_PROVIDER_API_KEY` și `CRON_SECRET` numai pe server;
+3. setează `RESEND_API_KEY` și `CRON_SECRET` numai pe server;
 4. rulează o generare manuală fără trimitere;
 5. verifică rezultatele;
 6. activează trimiterea programată.

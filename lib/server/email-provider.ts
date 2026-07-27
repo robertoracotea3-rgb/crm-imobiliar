@@ -30,7 +30,7 @@ export type EmailProviderResult = {
 };
 
 function providerKey(): string {
-  return String(process.env.EMAIL_PROVIDER_API_KEY || process.env.RESEND_API_KEY || '').trim();
+  return String(process.env.RESEND_API_KEY || '').trim();
 }
 
 function safeProviderError(value: unknown): string {
@@ -79,7 +79,7 @@ export async function sendOperationalEmail(
       provider: 'resend',
       messageId: null,
       errorCode: 'provider_not_configured',
-      errorMessage: 'Lipsește EMAIL_PROVIDER_API_KEY sau RESEND_API_KEY.',
+      errorMessage: 'Lipsește RESEND_API_KEY.',
     };
   }
 
@@ -90,6 +90,7 @@ export async function sendOperationalEmail(
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'Idempotency-Key': input.idempotencyKey || crypto.randomUUID(),
+        'User-Agent': 'Kira-CRM/1.0',
       },
       body: JSON.stringify({
         from: `${input.senderName.trim().slice(0, 120)} <${input.fromEmail}>`,
@@ -147,7 +148,10 @@ export async function verifyEmailProviderDomain(
   }
   try {
     const response = await fetchImpl(`${RESEND_API}/domains`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'User-Agent': 'Kira-CRM/1.0',
+      },
       signal: AbortSignal.timeout(15_000),
     });
     const payload = await response.json().catch(() => ({})) as {

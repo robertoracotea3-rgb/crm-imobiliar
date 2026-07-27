@@ -255,7 +255,7 @@ confirmată printr-un mesaj real semnat.
 
 Nu este configurată deoarece valoarea nu există încă:
 
-- `EMAIL_PROVIDER_API_KEY`;
+- `RESEND_API_KEY`;
 
 Secretele de backup și conexiunea PostgreSQL rămân local, nu în frontend.
 
