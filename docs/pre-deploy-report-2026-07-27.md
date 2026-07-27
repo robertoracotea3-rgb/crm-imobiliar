@@ -2,7 +2,7 @@
 
 Data: 27 iulie 2026  
 Branch: `repair/crm-stabilizare-20260720`  
-Commit verificat: `6082105`
+Commit tehnic verificat: `e6957df`
 Stack: Next.js 16.2.11, React 19.2.4, Supabase JS 2.108.1,
 PostgreSQL/Supabase 17.6.1.127, Playwright 1.61.1
 
@@ -34,7 +34,10 @@ La 27 iulie 2026 a fost finalizată verificarea găzduită:
   persistată;
 - din backup a fost restaurată numai structura schemei `public`; utilizatorii,
   datele clienților și fișierele Storage din producție nu au fost copiate;
-- cele 30 de migrări au fost aplicate de două ori: **30/30 + 30/30 reușite**;
+- cele 30 de migrări inițiale au fost aplicate de două ori:
+  **30/30 + 30/30 reușite**;
+- cele trei corecții găsite în testul găzduit (`310`–`330`) au fost aplicate
+  separat și verificate în staging;
 - schema rezultată are **97 de tabele publice, toate 97 cu RLS activ**;
 - redirecturile Supabase Auth indică numai către URL-ul staging;
 - înscrierea publică directă prin Supabase Auth este dezactivată; utilizatorii
@@ -50,6 +53,9 @@ Deploymentul Preview verificat este:
 `https://crm-fortis-staging-20260727.vercel.app`. Deploymentul rămâne protejat
 de autentificarea Vercel și nu a fost promovat în Production.
 
+Aliasul indică deploymentul Preview `dpl_FC89bqy6JbacyjceEVFi88jhEKFw`,
+care a ajuns în starea `READY`.
+
 Planul Vercel Hobby nu permite cronuri orare. Preview-ul a fost publicat fără
 înregistrarea programărilor automate, iar endpointurile rămân disponibile pentru
 teste manuale autorizate cu secretul staging. Fișierul local `vercel.json` a
@@ -61,6 +67,23 @@ Testul găzduit a găsit o incompatibilitate reală: pe proiectele Supabase noi,
 căuta `digest()` numai în `public`. Migrarea auditului folosește acum explicit
 și schema `extensions`, a fost reaplicată în staging, iar loginul și scrierea
 jurnalului au trecut după corecție.
+
+Testul funcțional proprietate–lead–client–vizionare a găsit și a corectat trei
+defecte suplimentare:
+
+1. triggerul care introduce proprietățile active în coada internă de matching
+   rula cu privilegiile agentului și bloca salvarea proprietății;
+2. triggerul ciclului de viață al clientului presupunea că orice schemă legacy
+   are `leads.created_at`, deși schema găzduită folosește `received_at`;
+3. programarea imediată a unei vizionări pentru un lead nou nu era permisă de
+   matricea de tranziții, deși fluxul de vizionare o execută intenționat.
+
+După corecții au fost verificate prin API-urile Preview: proprietatea activă,
+contactul canonic, leadul cu sursa `storia`, asocierea la proprietate, moștenirea
+agentului responsabil, linkul public `kiraimobiliare.ro`, vizionarea, eticheta
+proprietății în lista de vizionări și KPI-urile agentului. Datele sintetice au
+fost apoi arhivate/ascunse; în liste au rămas **0 proprietăți, 0 leaduri,
+0 contacte și 0 vizionări sintetice active**.
 
 ## Backup de producție și restaurare
 
@@ -127,6 +150,10 @@ istorice fără profil canonic. Leadurile sursă nu au fost șterse.
    Acum toate cele 97 de tabele publice au RLS.
 5. Fixture-ul E2E al dashboardului nu conținea noul bloc `contact_sla`.
    Contractul simulat și testul de browser au fost actualizate.
+6. Triggerul server-only al cozii de matching nu avea `SECURITY DEFINER`.
+7. Triggerul de reactivare a clientului accesa direct o coloană legacy absentă.
+8. Tranzițiile leadului nu acopereau o vizionare convenită direct pentru un
+   lead nou sau fără răspuns.
 
 Commituri dedicate:
 
@@ -167,6 +194,9 @@ Commituri dedicate:
 20260724_280_property_types_and_dynamic_fields.sql
 20260724_290_agency_email_delivery.sql
 20260724_300_weekly_agent_reports.sql
+20260727_310_demand_match_queue_trigger_security.sql
+20260727_320_lead_insert_trigger_compatibility.sql
+20260727_330_direct_viewing_lead_transitions.sql
 ```
 
 Fiecare fază are rollback nedistructiv în fișierul asociat sau în directorul
@@ -176,7 +206,7 @@ Fiecare fază are rollback nedistructiv în fișierul asociat sau în directorul
 
 | Verificare | Rezultat |
 |---|---|
-| Teste unitare și contracte | 177/177 trecute |
+| Teste unitare și contracte | 179/179 trecute |
 | Integrare PostgreSQL + rollbackuri | trecut |
 | Backup sintetic + arhivă coruptă | trecut |
 | Restaurare backup real | trecut |
@@ -185,9 +215,9 @@ Fiecare fază are rollback nedistructiv în fișierul asociat sau în directorul
 | TypeScript din build | trecut |
 | ESLint | trecut |
 | Playwright E2E | 7/7 trecute |
-| Supabase staging găzduit | 30/30 migrări, de două ori; 97/97 tabele cu RLS |
+| Supabase staging găzduit | 30/30 migrări inițiale, de două ori; corecțiile 310–330 aplicate; 97/97 tabele cu RLS |
 | Login și context CRM în Preview | trecut |
-| API-uri principale în Preview | dashboard, proprietăți, contacte, leaduri și cataloage trecute |
+| API-uri principale în Preview | dashboard, cataloage și fluxul proprietate–lead Storia–contact–vizionare–KPI trecute |
 
 Scenariile E2E includ login invalid, login valid, dashboard și KPI exacți,
 MFA, schimbarea parolei temporare, jurnalul de audit, sănătatea sistemului și
@@ -249,7 +279,7 @@ confirmarea furnizorului și a inboxului.
 2. se verifică hashul și se păstrează copia în afara calculatorului curent;
 3. se aplică migrațiile în staging și se rulează testele funcționale reale;
 4. se opresc temporar scrierile în producție;
-5. se aplică migrațiile 010–300 în aceeași ordine;
+5. se aplică migrațiile 010–330 în aceeași ordine;
 6. se verifică totalurile, RLS, loginul, leadurile Storia, proprietățile,
    vizionările, raportul și e-mailul;
 7. se publică deploymentul Vercel salvat și verificat;
@@ -269,3 +299,6 @@ confirmarea furnizorului și a inboxului.
 5. Fișierele locale deja modificate de proprietar (logo, pagini de autentificare,
    pagina proprietății și Sidebar) au fost păstrate și nu au fost incluse în
    commiturile tehnice de mai sus.
+6. Planul Vercel Hobby nu poate înregistra cronurile orare pentru automatizări
+   și rapoarte. Înainte de Production trebuie ales fie Vercel Pro, fie un
+   scheduler extern securizat; Preview-ul actual nu înregistrează cronuri.
