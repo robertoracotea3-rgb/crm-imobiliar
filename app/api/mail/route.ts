@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     let query = auth.context.serviceAdmin
       .from('crm_mail_messages')
       .select(
-        'id,direction,folder,from_email,from_name,to_emails,subject,snippet,status,read_at,archived_at,sent_at,received_at,contact_id,lead_id,property_id,created_at',
+        'id,direction,folder,from_email,from_name,to_emails,reply_to_email,subject,snippet,status,read_at,archived_at,sent_at,received_at,contact_id,lead_id,property_id,created_at',
         { count: 'exact' },
       )
       .eq('agency_id', auth.context.agencyId)

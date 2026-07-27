@@ -41,6 +41,7 @@ type MessageSummary = {
   from_email: string;
   from_name?: string | null;
   to_emails: string[];
+  reply_to_email?: string | null;
   subject: string;
   snippet: string;
   status: string;
@@ -198,6 +199,18 @@ export default function MailPage() {
     }
   };
 
+  const runMessageAction = async (id: string, action: string, reload = true) => {
+    setError('');
+    setNotice('');
+    try {
+      await mutateMessage(id, action, reload);
+      if (action === 'trash') setNotice('Mesajul a fost mutat în Coș.');
+      if (action === 'restore') setNotice('Mesajul a fost restaurat.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Mesajul nu a putut fi actualizat.');
+    }
+  };
+
   const openMessage = async (id: string) => {
     setDetailLoading(true);
     setError('');
@@ -234,7 +247,7 @@ export default function MailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const startCompose = (message?: MessageDetail) => {
+  const startCompose = (message?: MessageSummary | MessageDetail) => {
     if (message) {
       const recipient = message.direction === 'inbound'
         ? message.reply_to_email || message.from_email
@@ -433,41 +446,67 @@ export default function MailPage() {
             ) : (
               <div className="divide-y divide-gray-100">
                 {messages.map(message => (
-                  <button
+                  <div
                     key={message.id}
-                    type="button"
-                    onClick={() => void openMessage(message.id)}
-                    className={`w-full p-4 text-left transition hover:bg-gray-50 ${
+                    className={`transition hover:bg-gray-50 ${
                       selected?.id === message.id ? 'bg-emerald-50' : ''
                     } ${!message.read_at && message.direction === 'inbound' ? 'bg-blue-50/40' : ''}`}
                   >
-                    <div className="flex items-start gap-3">
-                      <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${
-                        !message.read_at && message.direction === 'inbound' ? 'bg-emerald-500' : 'bg-transparent'
-                      }`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <strong className={`truncate text-sm ${!message.read_at ? 'text-gray-950' : 'text-gray-700'}`}>
-                            {message.direction === 'outbound'
-                              ? `Către: ${message.to_emails?.join(', ')}`
-                              : message.from_name || message.from_email}
-                          </strong>
-                          <span className="shrink-0 text-xs text-gray-400">
-                            {relativeDate(message.received_at || message.sent_at || message.created_at)}
-                          </span>
+                    <a
+                      href={`/mail?message=${encodeURIComponent(message.id)}`}
+                      className="block w-full p-4 pb-2 text-left"
+                      aria-label={`Deschide mesajul ${message.subject}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className={`mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${
+                          !message.read_at && message.direction === 'inbound' ? 'bg-emerald-500' : 'bg-transparent'
+                        }`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <strong className={`truncate text-sm ${!message.read_at ? 'text-gray-950' : 'text-gray-700'}`}>
+                              {message.direction === 'outbound'
+                                ? `Către: ${message.to_emails?.join(', ')}`
+                                : message.from_name || message.from_email}
+                            </strong>
+                            <span className="shrink-0 text-xs text-gray-400">
+                              {relativeDate(message.received_at || message.sent_at || message.created_at)}
+                            </span>
+                          </div>
+                          <p className={`mt-1 truncate text-sm ${!message.read_at ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
+                            {message.subject}
+                          </p>
+                          {message.direction === 'outbound' && deliveryStatus(message.status) && (
+                            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${deliveryStatus(message.status)?.className}`}>
+                              {deliveryStatus(message.status)?.label}
+                            </span>
+                          )}
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{message.snippet}</p>
                         </div>
-                        <p className={`mt-1 truncate text-sm ${!message.read_at ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
-                          {message.subject}
-                        </p>
-                        {message.direction === 'outbound' && deliveryStatus(message.status) && (
-                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${deliveryStatus(message.status)?.className}`}>
-                            {deliveryStatus(message.status)?.label}
-                          </span>
-                        )}
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-500">{message.snippet}</p>
                       </div>
+                    </a>
+                    <div className="flex items-center justify-end gap-1 px-4 pb-3">
+                      <button
+                        type="button"
+                        onClick={() => startCompose(message)}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                        aria-label={`Răspunde la mesajul ${message.subject}`}
+                      >
+                        <Reply size={15} /> Răspunde
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void runMessageAction(
+                          message.id,
+                          message.folder === 'trash' ? 'restore' : 'trash',
+                        )}
+                        className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-gray-600 hover:bg-red-50 hover:text-red-700"
+                        aria-label={message.folder === 'trash' ? 'Restaurează mesajul' : 'Mută mesajul în Coș'}
+                      >
+                        <Trash2 size={15} />
+                        {message.folder === 'trash' ? 'Restaurează' : 'Coș'}
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -504,24 +543,32 @@ export default function MailPage() {
                   <div className="ml-auto flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => void mutateMessage(selected.id, selected.read_at ? 'unread' : 'read')}
+                      onClick={() => void runMessageAction(selected.id, selected.read_at ? 'unread' : 'read')}
                       className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
                       title={selected.read_at ? 'Marchează necitit' : 'Marchează citit'}
                     >{selected.read_at ? <Mail size={18} /> : <MailOpen size={18} />}</button>
                     <button
                       type="button"
-                      onClick={() => void mutateMessage(selected.id, selected.folder === 'archive' ? 'restore' : 'archive')}
+                      onClick={() => void runMessageAction(selected.id, selected.folder === 'archive' ? 'restore' : 'archive')}
                       className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
                       title={selected.folder === 'archive' ? 'Restaurează' : 'Arhivează'}
                     ><Archive size={18} /></button>
                     <button
                       type="button"
-                      onClick={() => void mutateMessage(selected.id, 'trash')}
+                      onClick={() => void runMessageAction(
+                        selected.id,
+                        selected.folder === 'trash' ? 'restore' : 'trash',
+                      )}
                       className="rounded-lg p-2 text-gray-600 hover:bg-red-50 hover:text-red-600"
-                      title="Mută în coș"
+                      title={selected.folder === 'trash' ? 'Restaurează' : 'Mută în coș'}
                     ><Trash2 size={18} /></button>
                   </div>
                 </div>
+                {error && (
+                  <div className="mx-4 mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+                    {error}
+                  </div>
+                )}
 
                 <div className="p-5 sm:p-7">
                   <h2 className="text-xl font-bold text-gray-950">{selected.subject}</h2>
@@ -626,6 +673,11 @@ export default function MailPage() {
                 </button>
               </div>
               <form onSubmit={sendMessage} className="space-y-4 p-5">
+                {error && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
+                    {error}
+                  </div>
+                )}
                 <label className="block">
                   <span className="mb-1 block text-sm font-medium text-gray-700">Către</span>
                   <input

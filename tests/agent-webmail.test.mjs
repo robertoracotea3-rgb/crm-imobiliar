@@ -54,6 +54,8 @@ test('personal inbox is authorized, auditable and provider acceptance is explici
   assert.match(message, /contextCanManageAll/);
   assert.match(message, /crm_mailboxes!crm_mail_messages_mailbox_agency_fk!inner/);
   assert.match(attachment, /crm_mailboxes!crm_mail_attachments_mailbox_agency_fk!inner/);
+  assert.match(await read('app/mail/page.tsx'), /href=\{`\/mail\?message=\$\{encodeURIComponent\(message\.id\)\}`\}/);
+  assert.match(await read('app/mail/page.tsx'), /runMessageAction/);
   assert.match(sidebar, /href: '\/mail', label: 'E-mail'/);
 });
 
