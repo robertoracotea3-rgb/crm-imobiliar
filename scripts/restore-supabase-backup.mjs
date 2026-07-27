@@ -49,12 +49,18 @@ await access(archivePath);
 
 const targetContainer = option('target-container') || process.env.KIRA_RESTORE_DB_CONTAINER || '';
 const targetDatabase = option('target-db') || process.env.KIRA_RESTORE_DB_NAME || '';
+const targetUser = option('target-user') || process.env.KIRA_RESTORE_DB_USER || 'postgres';
 const targetUrl = process.env.RESTORE_TARGET_DATABASE_URL || '';
+const emptyTarget = flag('empty-target');
 if ((!targetContainer || !targetDatabase) && !targetUrl) {
   throw new Error('Configurează destinația izolată prin container+bază sau RESTORE_TARGET_DATABASE_URL.');
 }
 if (targetContainer && !/^crm_restore_test_[a-z0-9_]+$/.test(targetDatabase)) {
   throw new Error('Baza Docker de restaurare trebuie să înceapă cu crm_restore_test_.');
+}
+
+if (targetContainer && !['postgres', 'supabase_admin'].includes(targetUser)) {
+  throw new Error('Utilizatorul Docker de restaurare nu este permis.');
 }
 
 const restoreStorage = flag('restore-storage');
@@ -138,11 +144,12 @@ async function restoreDumpWithCommand(command, args, dumpPath, environment = pro
 }
 
 async function restoreDatabase(dumpPath) {
+  const cleanupArguments = emptyTarget ? [] : ['--clean', '--if-exists'];
   if (targetContainer && targetDatabase) {
     await restoreDumpWithCommand('docker', [
       'exec', '-i', targetContainer,
-      'pg_restore', '-U', 'postgres', '-d', targetDatabase,
-      '--clean', '--if-exists', '--no-owner', '--no-privileges',
+      'pg_restore', '-U', targetUser, '-d', targetDatabase,
+      ...cleanupArguments, '--no-owner', '--no-privileges',
       '--single-transaction', '--exit-on-error',
     ], dumpPath);
     return createHash('sha256').update(`container:${targetContainer}/${targetDatabase}`).digest('hex');
@@ -151,7 +158,7 @@ async function restoreDatabase(dumpPath) {
   const target = targetDatabaseEnvironment(targetUrl);
   const restoreArguments = [
     '--dbname', target.environment.PGDATABASE,
-    '--clean', '--if-exists', '--no-owner', '--no-privileges',
+    ...cleanupArguments, '--no-owner', '--no-privileges',
     '--single-transaction', '--exit-on-error',
   ];
   if (await commandAvailable('pg_restore')) {
@@ -214,7 +221,7 @@ async function verifyManifest(manifest) {
 }
 
 async function restoreStorageFiles(manifest) {
-  if (!restoreStorage) return { buckets: 0, objects: 0 };
+  if (!restoreStorage) return { skipped: true, buckets: 0, objects: 0 };
   const client = createClient(
     process.env.RESTORE_TARGET_SUPABASE_URL,
     process.env.RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY,
@@ -243,7 +250,7 @@ async function restoreStorageFiles(manifest) {
       objectCount += 1;
     }
   }
-  return { buckets: Object.keys(manifest.storage || {}).length, objects: objectCount };
+  return { skipped: false, buckets: Object.keys(manifest.storage || {}).length, objects: objectCount };
 }
 
 try {
@@ -271,7 +278,11 @@ try {
   }
   const storage = await restoreStorageFiles(manifest);
   console.log(`Restaurare izolată reușită: ${manifest.files.length} fișiere verificate.`);
-  console.log(`Storage restaurat: ${storage.buckets} bucketuri, ${storage.objects} obiecte.`);
+  if (storage.skipped) {
+    console.log('Restaurarea fișierelor Storage a fost omisă; conținutul arhivei a fost verificat.');
+  } else {
+    console.log(`Storage restaurat: ${storage.buckets} bucketuri, ${storage.objects} obiecte.`);
+  }
   console.log('RESTORE_OK=1');
 } catch (error) {
   console.error(redactedError(error));

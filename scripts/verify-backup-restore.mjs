@@ -80,6 +80,7 @@ try {
     'scripts/restore-supabase-backup.mjs',
     `--archive=${archive}`,
     '--confirm-isolated',
+    '--empty-target',
     `--target-container=${container}`,
     `--target-db=${targetDatabase}`,
   ], { env: environment });

@@ -136,6 +136,11 @@ npm run test:backup
 Testul creează două baze Docker temporare, face backup, restaurează în a doua bază,
 verifică tabelul și view-ul, respinge o arhivă coruptă și șterge bazele temporare.
 
+Pentru verificarea locală a unui dump provenit din Supabase folosește imaginea PostgreSQL
+Supabase cu aceeași versiune ca proiectul sursă. La restaurarea într-o bază nouă din
+acel container adaugă `--empty-target --target-user=supabase_admin`; rolul este necesar
+pentru obiectele administrate de Supabase care setează parametri privilegiați.
+
 Pentru un proiect Supabase izolat, setează variabilele numai în sesiunea curentă:
 
 ```powershell
@@ -147,6 +152,7 @@ $env:RESTORE_TARGET_SUPABASE_SERVICE_ROLE_KEY = '<service-role-proiect-nou>'
 npm run backup:restore -- `
   --archive="D:\Kira-Backups\kira-backup-AAAA-LL-ZZThh-mm-ss-sssZ.kira" `
   --confirm-isolated `
+  --empty-target `
   --restore-storage
 ```
 

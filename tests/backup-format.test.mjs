@@ -77,6 +77,11 @@ test('backup scripts fail closed around plaintext, source restore and storage om
   assert.match(backup, /rename\(partialArchivePath, archivePath\)/);
   assert.match(backup, /join\(tmpdir\(\), `\.kira-stage/);
   assert.match(restore, /confirm-isolated/);
+  assert.match(restore, /empty-target/);
+  assert.match(restore, /emptyTarget \? \[\] : \['--clean', '--if-exists'\]/);
+  assert.match(restore, /\['postgres', 'supabase_admin'\]\.includes\(targetUser\)/);
+  assert.match(restore, /'pg_restore', '-U', targetUser/);
+  assert.match(restore, /storage\.skipped/);
   assert.match(restore, /Restaurarea peste baza sursă este interzisă/);
   assert.match(restore, /verifyManifest/);
   assert.match(restore, /upsert: false/);
