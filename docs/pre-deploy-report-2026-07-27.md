@@ -37,6 +37,8 @@ La 27 iulie 2026 a fost finalizată verificarea găzduită:
 - cele 30 de migrări au fost aplicate de două ori: **30/30 + 30/30 reușite**;
 - schema rezultată are **97 de tabele publice, toate 97 cu RLS activ**;
 - redirecturile Supabase Auth indică numai către URL-ul staging;
+- înscrierea publică directă prin Supabase Auth este dezactivată; utilizatorii
+  pot fi creați numai prin fluxul CRM protejat sau administrativ;
 - a fost creată o agenție sintetică și un cont `TEST` exclusiv pentru staging;
 - loginul real trece, creează sesiunea CRM și redirecționează la `/dashboard`;
 - contextul autentificat confirmă utilizatorul, agenția și rolul `agent`;
