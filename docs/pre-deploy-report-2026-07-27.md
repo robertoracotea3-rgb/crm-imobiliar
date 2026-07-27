@@ -2,7 +2,7 @@
 
 Data: 27 iulie 2026  
 Branch: `repair/crm-stabilizare-20260720`  
-Commit verificat: `d48251eda20b0b0b107ff70a1b0cc71d737ed5cc`  
+Commit verificat: `6082105`
 Stack: Next.js 16.2.11, React 19.2.4, Supabase JS 2.108.1,
 PostgreSQL/Supabase 17.6.1.127, Playwright 1.61.1
 
