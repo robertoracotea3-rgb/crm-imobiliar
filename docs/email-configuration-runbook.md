@@ -1,12 +1,15 @@
 # Configurarea e-mailului Kira Imobiliare
 
-## Stare cunoscută
+## Stare cunoscută — verificată la 27 iulie 2026
 
 - Site-ul public afișează `contact@kiraimobiliare.ro`.
+- Domeniul folosește în prezent serverele MX Zoho EU.
+- SPF-ul public este `v=spf1 include:zoho.eu ~all`.
+- DMARC există în mod de monitorizare, cu politica `p=none`.
 - Existența căsuțelor `documente@kiraimobiliare.ro` și
   `rapoarte@kiraimobiliare.ro` nu este confirmată.
-- Furnizorul actual al domeniului și al e-mailului nu a putut fi identificat
-  cu certitudine din informațiile publice disponibile.
+- CRM-ul trimite prin Resend, separat de găzduirea căsuțelor Zoho. Domeniul
+  Resend, cheia API și înregistrările DKIM cerute de Resend nu sunt confirmate.
 - CRM-ul nu consideră o adresă funcțională numai pentru că un furnizor a
   acceptat trimiterea. Este necesară confirmarea manuală a mesajului în inbox.
 
