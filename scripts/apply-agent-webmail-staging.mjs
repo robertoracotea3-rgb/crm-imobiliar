@@ -44,8 +44,14 @@ async function query(sql) {
 }
 
 const migration = await readFile('migrations/20260727_350_agent_webmail.sql', 'utf8');
+const officeAliasMigration = await readFile(
+  'migrations/20260728_360_owner_office_mailbox.sql',
+  'utf8',
+);
 await query(migration);
 await query(migration);
+await query(officeAliasMigration);
+await query(officeAliasMigration);
 
 const result = await query(`
 select
@@ -53,6 +59,12 @@ select
   to_regclass('public.crm_mail_messages') is not null as messages_exists,
   to_regclass('public.crm_mail_attachments') is not null as attachments_exists,
   to_regprocedure('public.crm_claim_personal_mailbox(text)') is not null as claim_exists,
+  (
+    select pg_get_constraintdef(oid) not ilike '%office%'
+    from pg_constraint
+    where conrelid = 'public.crm_mailboxes'::regclass
+      and conname = 'crm_mailboxes_reserved_check'
+  ) as office_constraint_allows_claim,
   (
     select count(*) = 3
     from pg_class relation

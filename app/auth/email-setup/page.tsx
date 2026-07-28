@@ -19,6 +19,7 @@ type SetupResponse = {
   mailbox?: { id: string; address: string } | null;
   can_claim?: boolean;
   suggestions?: string[];
+  allowed_aliases?: string[];
   error?: string;
 };
 
@@ -27,11 +28,15 @@ export default function EmailSetupPage() {
   const { user, loading: authLoading, refreshSecurity, signOut } = useAuth();
   const [localPart, setLocalPart] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [allowedAliases, setAllowedAliases] = useState<string[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const validationError = useMemo(() => validateMailLocalPart(localPart), [localPart]);
+  const validationError = useMemo(
+    () => validateMailLocalPart(localPart, allowedAliases),
+    [allowedAliases, localPart],
+  );
   const preview = `${normalizeMailLocalPart(localPart) || 'nume.prenume'}@${MAIL_DOMAIN}`;
 
   useEffect(() => {
@@ -57,6 +62,7 @@ export default function EmailSetupPage() {
       }
       if (payload.can_claim === false) throw new Error('Rolul tău nu permite crearea unei adrese personale.');
       const nextSuggestions = payload.suggestions || [];
+      setAllowedAliases(payload.allowed_aliases || []);
       setSuggestions(nextSuggestions);
       setLocalPart(nextSuggestions[0] || '');
     }).catch(caught => {
@@ -185,7 +191,7 @@ export default function EmailSetupPage() {
                 spellCheck={false}
                 maxLength={30}
                 className="min-w-0 flex-1 px-4 py-3 text-gray-900 outline-none"
-                placeholder="nume.prenume"
+                placeholder="office sau nume.prenume"
                 aria-describedby="mail-preview mail-rules"
               />
               <span className="flex items-center border-l border-gray-200 bg-gray-50 px-3 text-sm text-gray-600">

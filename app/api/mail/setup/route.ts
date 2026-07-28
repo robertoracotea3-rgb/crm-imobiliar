@@ -6,11 +6,18 @@ import {
   MAIL_DOMAIN,
   normalizeMailLocalPart,
   personalMailAddress,
+  PRIVILEGED_AGENCY_MAIL_LOCAL_PARTS,
   validateMailLocalPart,
 } from '@/lib/mail';
 import { ownMailbox } from '@/lib/server/mailbox-access';
 
-function suggestions(fullName: string): string[] {
+function allowedAgencyAliases(role: string): string[] {
+  return ['owner', 'admin'].includes(role)
+    ? [...PRIVILEGED_AGENCY_MAIL_LOCAL_PARTS]
+    : [];
+}
+
+function suggestions(fullName: string, allowedAliases: readonly string[]): string[] {
   const words = fullName
     .split(/\s+/)
     .map(normalizeMailLocalPart)
@@ -18,6 +25,7 @@ function suggestions(fullName: string): string[] {
   const first = words[0] || '';
   const last = words.at(-1) || '';
   return [...new Set([
+    ...allowedAliases,
     first,
     first && last && first !== last ? `${first}.${last}` : '',
     first && last && first !== last ? `${last}.${first}` : '',
@@ -38,11 +46,13 @@ export async function GET(request: Request) {
       .eq('agency_id', auth.context.agencyId)
       .eq('user_id', auth.context.user.id)
       .maybeSingle();
+    const allowedAliases = allowedAgencyAliases(auth.context.role);
     return Response.json({
       mailbox,
       domain: MAIL_DOMAIN,
       can_claim: !mailbox && contextHasPermission(auth.context, 'mail', 'create'),
-      suggestions: suggestions(profile?.full_name || ''),
+      allowed_aliases: allowedAliases,
+      suggestions: suggestions(profile?.full_name || '', allowedAliases),
     }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     return Response.json({
@@ -56,7 +66,10 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
   const body = await request.json().catch(() => ({}));
   const localPart = normalizeMailLocalPart(body.local_part);
-  const validationError = validateMailLocalPart(localPart);
+  const validationError = validateMailLocalPart(
+    localPart,
+    allowedAgencyAliases(auth.context.role),
+  );
   if (validationError) return Response.json({ error: validationError }, { status: 400 });
   if (body.confirm_permanent !== true) {
     return Response.json({

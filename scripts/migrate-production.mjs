@@ -183,7 +183,7 @@ async function migrationSql() {
   const names = (await readdir(resolve('migrations')))
     .filter(name => /^\d{8}_\d{3}_[^.]+\.sql$/.test(name))
     .sort();
-  if (names.length !== 35 || names.at(-1) !== '20260727_350_agent_webmail.sql') {
+  if (names.length !== 36 || names.at(-1) !== '20260728_360_owner_office_mailbox.sql') {
     throw new Error(`Lanțul Production nu este cel verificat (găsite ${names.length} migrări).`);
   }
   const selectedNames = flag('latest-only') ? [names.at(-1)] : names;

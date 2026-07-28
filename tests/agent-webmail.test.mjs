@@ -31,6 +31,24 @@ test('mailbox selection is permanent, validated server-side and part of first lo
   assert.match(feature, /MAIL_ONBOARDING_ENABLED/);
 });
 
+test('office mailbox is offered only to agency owners and admins', async () => {
+  const [setupRoute, setupPage, mailRules, migration] = await Promise.all([
+    read('app/api/mail/setup/route.ts'),
+    read('app/auth/email-setup/page.tsx'),
+    read('lib/mail.ts'),
+    read('migrations/20260728_360_owner_office_mailbox.sql'),
+  ]);
+  assert.match(setupRoute, /\['owner', 'admin'\]\.includes\(role\)/);
+  assert.match(setupRoute, /allowed_aliases/);
+  assert.match(setupPage, /validateMailLocalPart\(localPart, allowedAliases\)/);
+  assert.match(mailRules, /PRIVILEGED_AGENCY_MAIL_LOCAL_PARTS = \['office'\]/);
+  assert.match(migration, /normalized_part = 'office'[\s\S]*profile_row\.role in \('owner', 'admin'\)/);
+  assert.doesNotMatch(
+    migration.match(/add constraint crm_mailboxes_reserved_check[\s\S]*?\);/)?.[0] || '',
+    /'office'/,
+  );
+});
+
 test('personal inbox is authorized, auditable and provider acceptance is explicit', async () => {
   const [send, provider, deliveryEvents, inbox, message, attachment, sidebar] = await Promise.all([
     read('app/api/mail/send/route.ts'),

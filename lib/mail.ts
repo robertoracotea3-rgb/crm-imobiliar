@@ -23,6 +23,8 @@ export const RESERVED_MAIL_LOCAL_PARTS = new Set([
   'www',
 ]);
 
+export const PRIVILEGED_AGENCY_MAIL_LOCAL_PARTS = ['office'] as const;
+
 export function normalizeMailLocalPart(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value
@@ -36,12 +38,18 @@ export function normalizeMailLocalPart(value: unknown): string {
     .slice(0, 30);
 }
 
-export function validateMailLocalPart(value: unknown): string | null {
+export function validateMailLocalPart(
+  value: unknown,
+  allowedReservedParts: readonly string[] = [],
+): string | null {
   const localPart = normalizeMailLocalPart(value);
   if (!MAIL_LOCAL_PART_PATTERN.test(localPart)) {
     return 'Alege între 3 și 30 de caractere: litere mici, cifre, punct, cratimă sau underscore.';
   }
-  if (RESERVED_MAIL_LOCAL_PARTS.has(localPart)) {
+  if (
+    RESERVED_MAIL_LOCAL_PARTS.has(localPart)
+    && !allowedReservedParts.includes(localPart)
+  ) {
     return 'Această adresă este rezervată pentru funcțiile generale ale agenției.';
   }
   return null;
