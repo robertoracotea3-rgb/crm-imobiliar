@@ -26,6 +26,15 @@ const nextConfig: NextConfig = {
     ],
   },
   turbopack: {},
+  // sharp rămâne extern (nu e bundle-uit) și se încarcă din node_modules la runtime.
+  serverExternalPackages: ['sharp'],
+  // Binarul nativ al lui sharp face dlopen la libvips-cpp.so din @img/sharp-libvips-*;
+  // tracing-ul nu poate vedea acel .so, așa că îl includem explicit — altfel rutele
+  // care importă sharp cad cu ERR_DLOPEN_FAILED pe Vercel (linux-x64).
+  outputFileTracingIncludes: {
+    '/api/properties/upload-photos': ['./node_modules/@img/**/*'],
+    '/api/settings/watermark': ['./node_modules/@img/**/*'],
+  },
 };
 
 export default nextConfig;
