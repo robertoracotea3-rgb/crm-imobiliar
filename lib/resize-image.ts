@@ -5,8 +5,14 @@
 
 const MAX_DIMENSION = 1920; // px — suficient pentru variantele server (max 1600)
 const JPEG_QUALITY = 0.82;
-// Tipuri pe care browserul nu le poate desena pe canvas → le lăsăm neatinse.
-const SKIP_TYPES = new Set(['image/gif', 'image/heic', 'image/heif']);
+// GIF-urile pot fi animate, iar canvas-ul ar păstra doar primul cadru → le lăsăm
+// neatinse (serverul oricum refuză imaginile animate).
+//
+// HEIC/HEIF NU mai sunt sărite: Safari și iOS le pot desena nativ pe canvas, deci
+// acolo se convertesc în JPEG și scad de la ~3 MB la ~300 KB. Pe browserele care
+// nu le pot decoda, loadImage() eșuează și fail-safe-ul de mai jos întoarce
+// fișierul original — exact comportamentul dinainte, fără regresie.
+const SKIP_TYPES = new Set(['image/gif']);
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -31,8 +37,10 @@ export async function resizeImage(file: File): Promise<File> {
     const { width, height } = img;
     const scale = Math.min(1, MAX_DIMENSION / Math.max(width, height));
 
-    // Deja mică și sub 1MB → nu mai recomprimăm
-    if (scale === 1 && file.size < 1_000_000) return file;
+    // Deja mică și sub 1MB → nu mai recomprimăm. HEIC/HEIF fac excepție: chiar
+    // și mici, serverul le procesează mai lent, iar JPEG-ul e universal.
+    const alreadySmall = scale === 1 && file.size < 1_000_000;
+    if (alreadySmall && !/^image\/hei[cf]$/.test(file.type)) return file;
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(width * scale);
@@ -44,7 +52,10 @@ export async function resizeImage(file: File): Promise<File> {
     const blob: Blob | null = await new Promise(res =>
       canvas.toBlob(res, 'image/jpeg', JPEG_QUALITY)
     );
-    if (!blob || blob.size >= file.size) return file; // nu am câștigat nimic
+    // Pentru HEIC păstrăm rezultatul chiar dacă nu e mai mic: serverul primește
+    // un JPEG pe care îl poate procesa oriunde.
+    const isHeic = /^image\/hei[cf]$/.test(file.type);
+    if (!blob || (blob.size >= file.size && !isHeic)) return file; // nu am câștigat nimic
 
     const newName = file.name.replace(/\.(png|webp|heic|heif|bmp|tiff?)$/i, '.jpg');
     return new File([blob], newName, { type: 'image/jpeg', lastModified: Date.now() });
