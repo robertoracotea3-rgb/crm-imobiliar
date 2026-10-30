@@ -4,7 +4,7 @@ export const brasovPanorama = {
 };
 
 export const brasovOldTown = {
-  src: 'https://images.pexels.com/photos/17713520/pexels-photo-17713520.jpeg?auto=compress&cs=tinysrgb&w=2000',
+  src: 'https://images.unsplash.com/photo-1754836982329-92ff4ac13d77?auto=format&fit=crop&w=2000&q=85',
   alt: 'Biserica Neagră și centrul istoric al Brașovului, cu muntele Tâmpa în fundal',
 };
 
@@ -23,10 +23,10 @@ export function BrasovPhotoCredit({
         licenseName: 'Unsplash License',
       }
     : {
-        author: 'Reanimated Man X',
-        source: 'https://www.pexels.com/photo/gothic-black-church-in-brasov-17713520/',
-        license: 'https://www.pexels.com/license/',
-        licenseName: 'Pexels License',
+        author: 'Andy Arbeit',
+        source: 'https://unsplash.com/photos/medieval-town-with-a-large-church-and-mountain-background-dVUJWokVkRA',
+        license: 'https://unsplash.com/license',
+        licenseName: 'Unsplash License',
       };
 
   return (
