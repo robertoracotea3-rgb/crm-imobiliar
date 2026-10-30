@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: 'Proprietăți de vânzare și închi
 
 export default async function PropertiesPage() {
   const properties = await getPublicProperties();
-  return <PublicSiteFrame><main id="continut" className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
+  return <PublicSiteFrame><main id="continut" className="kira-content-page mx-auto max-w-7xl px-5 py-12 sm:px-8">
     <p className="text-sm font-semibold uppercase tracking-[.14em] text-[#0c7456]">Oferta Kira Imobiliare</p>
     <h1 className="mt-3 font-[var(--font-playfair)] text-4xl sm:text-5xl">Proprietăți de vânzare și închiriat</h1>
     <p className="mt-4 max-w-3xl leading-7 text-[#617067]">Ofertele se actualizează pe măsură ce sunt publicate de echipă. Pentru disponibilitate și detalii la zi, contactează-ne direct.</p>
