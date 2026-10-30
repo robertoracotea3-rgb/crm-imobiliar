@@ -20,7 +20,9 @@ function normalizeName(value: string): string {
 }
 
 function client() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // The site queries Supabase only from server-only code. Prefer the private
+  // server variable; retain the old name as a migration fallback.
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
 }
