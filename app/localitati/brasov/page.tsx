@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { PublicSiteFrame } from '@/components/public/PublicSiteFrame';
 import { PropertyCards } from '@/components/public/PropertyCards';
 import { getPublicProperties } from '@/lib/public-properties';
+import { brasovOldTown, BrasovPhotoCredit } from '@/components/public/BrasovVisuals';
 
 export const metadata: Metadata = {
   title: 'Imobiliare Brașov | Proprietăți',
@@ -39,20 +40,23 @@ export default async function BrasovPage() {
 
   return (
     <PublicSiteFrame>
-      <main id="continut" className="bg-[#faf9f6]">
+      <main id="continut" className="kira-brasov-page bg-[#faf9f6]">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema).replace(/</g, '\\u003c') }} />
-        <section className="relative isolate overflow-hidden bg-[#080c13] text-white">
-          <div aria-hidden="true" className="absolute -right-32 -top-40 h-[34rem] w-[34rem] rounded-full bg-[#bd8c3a]/20 blur-[110px]" />
-          <div className="relative mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-24">
-            <p className="inline-flex rounded-full border border-[#d9b368]/35 bg-white/[.04] px-4 py-2 text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Kira Imobiliare · Brașov</p>
-            <h1 className="mt-7 max-w-4xl font-[var(--font-playfair)] text-5xl leading-[1.06] tracking-[-.03em] text-[#fffaf0] sm:text-6xl lg:text-7xl">Imobiliare în <span className="text-[#dfb766]">Brașov</span>, cu oameni de partea ta.</h1>
-            <p className="mt-6 max-w-2xl text-base leading-8 text-white/70 sm:text-lg">Vrei să vinzi un apartament, cauți o casă sau ai nevoie de o chirie în Brașov? Kira Imobiliare îți oferă îndrumare pentru a găsi pașii potriviți.</p>
+        <section className="kira-city-detail-hero relative isolate flex min-h-[34rem] items-center overflow-hidden bg-[#07192b] text-white sm:min-h-[38rem]">
+          <img src={brasovOldTown.src} alt={brasovOldTown.alt} className="absolute inset-0 h-full w-full object-cover object-[center_48%]" fetchPriority="high" />
+          <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,19,34,.92)_0%,rgba(6,22,38,.76)_45%,rgba(6,22,38,.25)_100%)]" />
+          <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(0deg,rgba(5,16,28,.72)_0%,transparent_52%)]" />
+          <div className="relative mx-auto w-full max-w-7xl px-5 py-16 sm:px-8 sm:py-24">
+            <p className="inline-flex rounded-full border border-[#f0c263]/45 bg-[#07192b]/55 px-4 py-2 text-xs font-semibold uppercase tracking-[.2em] text-[#f3cf7f] backdrop-blur">Kira Imobiliare · Brașov</p>
+            <h1 className="mt-7 max-w-4xl font-[var(--font-playfair)] text-5xl leading-[1.04] tracking-[-.03em] text-white sm:text-6xl lg:text-7xl">Imobiliare în <span className="text-[#f0c263]">Brașov</span>, cu oameni de partea ta.</h1>
+            <p className="mt-6 max-w-2xl text-base leading-8 text-white/85 sm:text-lg">Vrei să vinzi un apartament, cauți o casă sau ai nevoie de o chirie în Brașov? Kira Imobiliare îți oferă îndrumare pentru a găsi pașii potriviți.</p>
             <div className="mt-9 flex flex-wrap gap-3">
-              <a href="tel:+40775132969" className="rounded-full bg-[#d5aa5c] px-6 py-3.5 font-semibold text-[#111720] transition hover:bg-[#e4bd70]">Sună la 0775 132 969</a>
-              <a href="https://wa.me/40775132969" className="rounded-full border border-white/20 px-6 py-3.5 font-semibold text-white transition hover:border-[#e4bd70]/70">Scrie pe WhatsApp</a>
+              <a href="tel:+40775132969" className="kira-button rounded-xl bg-[#f0c263] px-6 py-3.5 font-semibold text-[#111720] shadow-[0_10px_34px_rgba(201,154,72,.25)]">Sună la 0775 132 969</a>
+              <a href="https://wa.me/40775132969" className="rounded-xl border border-white/35 bg-white/[.06] px-6 py-3.5 font-semibold text-white backdrop-blur transition hover:border-[#f0c263]/70 hover:bg-white/[.12]">Scrie pe WhatsApp</a>
             </div>
-            <p className="mt-5 text-sm text-white/50">Sediul companiei: Făgăraș · Programările și serviciile în Brașov se stabilesc direct cu echipa.</p>
+            <p className="mt-5 text-sm text-white/75">Sediul companiei: Făgăraș · Programările și serviciile în Brașov se stabilesc direct cu echipa.</p>
           </div>
+          <BrasovPhotoCredit photo="old-town" className="absolute bottom-3 right-5 z-10 sm:right-8" />
         </section>
 
         <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20">
