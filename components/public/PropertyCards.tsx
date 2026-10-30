@@ -1,7 +1,21 @@
 import Link from 'next/link';
 import { publicPropertyPath, type PublicProperty } from '@/lib/public-properties';
 
-function categoryLabel(value: string | null) {\n  if (!value) return 'Proprietate';\n  const labels: Record<string, string> = { casa_vila: 'Casă / vilă', apartament: 'Apartament', teren: 'Teren', spatiu_comercial: 'Spațiu comercial', garsoniera: 'Garsonieră' };\n  const normalized = value.toLocaleLowerCase('ro').replace(/[ -]+/g, '_');\n  return labels[normalized] || value.replace(/[_-]+/g, ' ').replace(/\\b\\p{L}/gu, (letter) => letter.toLocaleUpperCase('ro'));\n}\n\nfunction price(value: number | null, currency: string | null) {
+function categoryLabel(value: string | null) {
+  if (!value) return 'Proprietate';
+  const labels: Record<string, string> = {
+    casa_vila: 'Casă / vilă',
+    apartament: 'Apartament',
+    teren: 'Teren',
+    spatiu_comercial: 'Spațiu comercial',
+    garsoniera: 'Garsonieră',
+  };
+  const normalized = value.toLocaleLowerCase('ro').replace(/[ -]+/g, '_');
+  const readable = value.replace(/[_-]+/g, ' ');
+  return labels[normalized] || readable.charAt(0).toLocaleUpperCase('ro') + readable.slice(1);
+}
+
+function price(value: number | null, currency: string | null) {
   if (!value) return 'Preț la cerere';
   return new Intl.NumberFormat('ro-RO').format(value) + ' ' + (currency || 'EUR');
 }
