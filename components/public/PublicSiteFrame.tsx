@@ -13,12 +13,12 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
       <a className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:bg-white focus:p-3" href="#continut">
         Sari la conținut
       </a>
-      <header className="sticky top-0 z-40 border-b border-[#d7ae63]/25 bg-[#070b12]/95 text-[#fbf4e7] shadow-[0_8px_30px_rgba(0,0,0,.18)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:gap-6 sm:px-8">
+      <header className="kira-site-header sticky top-0 z-40 border-b border-[#d7ae63]/25 bg-[#07192b]/95 text-[#fbf4e7] shadow-[0_8px_30px_rgba(0,0,0,.18)] backdrop-blur-xl">
+        <div className="kira-header-inner mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:gap-6 sm:px-8">
           <Link href="/" aria-label="Kira Imobiliare — pagina principală" className="kira-brand shrink-0" prefetch={false}>
             <KiraLogo className="h-11 w-[11.25rem] sm:h-[3.15rem] sm:w-[12.5rem]" />
           </Link>
-          <nav aria-label="Navigație principală" className="hidden items-center gap-4 text-sm font-medium xl:flex">
+          <nav aria-label="Navigație principală" className="kira-main-nav hidden items-center gap-4 text-sm font-medium xl:flex">
             <Link href="/proprietati">Proprietăți</Link>
             <Link href="/#zone">Localități</Link>
             <Link href="/servicii">Servicii</Link>
@@ -30,7 +30,7 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
             <span className="sm:hidden">Sună</span><span className="hidden sm:inline">Sună: {phone}</span>
           </a>
         </div>
-        <details className="border-t border-white/10 px-5 py-3 xl:hidden">
+        <details className="kira-mobile-menu border-t border-white/10 px-5 py-3 xl:hidden">
           <summary className="cursor-pointer text-sm font-semibold text-[#e4bd70]">Meniu</summary>
           <nav aria-label="Navigație mobilă" className="grid grid-cols-2 gap-3 pt-3 text-sm text-white/85">
             <Link href="/proprietati">Proprietăți</Link>
@@ -44,7 +44,7 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
         </details>
       </header>
       {children}
-      <footer id="contact" className="border-t border-[#d7ae63]/20 bg-[#080d14] text-white">
+      <footer id="contact" className="kira-site-footer border-t border-[#d7ae63]/20 bg-[#07192b] text-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-12 sm:px-8 md:grid-cols-3">
           <div>
             <KiraLogo className="h-14 w-[14rem] sm:h-16 sm:w-[16rem]" />

@@ -19,7 +19,7 @@ export default async function PropertyPage({ params }: Props) {
   const attrs = p.attributes || {};
   const photos = Array.isArray(attrs.photos) ? attrs.photos.filter((x): x is string => typeof x === 'string') : [];
   const price = p.price ? `${new Intl.NumberFormat('ro-RO').format(p.price)} ${p.currency || 'EUR'}` : 'Preț la cerere';
-  return <PublicSiteFrame><main id="continut" className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
+  return <PublicSiteFrame><main id="continut" className="kira-content-page mx-auto max-w-6xl px-5 py-12 sm:px-8">
     <p className="text-sm text-[#617067]">{p.city}{p.county ? `, ${p.county}` : ''} · {p.category}{p.internal_code ? ` · ${p.internal_code}` : ''}</p>
     <h1 className="mt-3 max-w-4xl font-[var(--font-playfair)] text-4xl sm:text-5xl">{p.title}</h1>
     <p className="mt-5 text-3xl font-bold text-[#0c7456]">{price}</p>
