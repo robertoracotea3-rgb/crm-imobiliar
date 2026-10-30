@@ -5,7 +5,7 @@ import { PropertyCards } from '@/components/public/PropertyCards';
 import { getPublicProperties } from '@/lib/public-properties';
 
 export const metadata: Metadata = {
-  title: 'Imobiliare Brașov | Agenție imobiliară Kira Imobiliare',
+  title: 'Imobiliare Brașov | Proprietăți',
   description: 'Cauți imobiliare în Brașov? Kira Imobiliare te ajută cu vânzarea, cumpărarea și închirierea de apartamente, case și terenuri. Contactează-ne pentru o discuție.',
   alternates: { canonical: 'https://www.kiraimobiliare.ro/localitati/brasov' },
   openGraph: {
