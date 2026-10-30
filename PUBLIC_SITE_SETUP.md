@@ -4,11 +4,13 @@ The public site and CRM share this repository. Vercel serves the public pages on
 
 ## Vercel environment
 
-For the public website deployment, configure these server-side variables for Production (and Preview if you want preview listings):
+For the public website deployment, configure these server-side variables for Production and Preview:
 
-- `NEXT_PUBLIC_SUPABASE_URL` — the existing Supabase project URL.
-- `SUPABASE_SERVICE_ROLE_KEY` — the existing service-role key. Keep it server-only; do not use a `NEXT_PUBLIC_` name.
+- `SUPABASE_URL` — the existing Supabase project URL. This stays server-side; avoid exposing infrastructure settings in browser bundles.
+- `SUPABASE_SERVICE_ROLE_KEY` — the existing service-role key. Keep it server-side; never use a `NEXT_PUBLIC_` name.
 - `KIRA_PUBLIC_AGENCY_ID` — the UUID in `profiles.agency_id` for the Kira account. This scopes public property reads to Kira in the multi-agency CRM.
+
+The code accepts `NEXT_PUBLIC_SUPABASE_URL` as a migration fallback for existing deployments, but new configuration should use `SUPABASE_URL`.
 
 If the agency ID or database variables are missing, the public pages still render, but property cards stay empty. Never remove the agency filter to make listings appear; that could expose another agency's inventory.
 
