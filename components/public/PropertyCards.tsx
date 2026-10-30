@@ -22,7 +22,7 @@ function price(value: number | null, currency: string | null) {
 
 export function PropertyCards({ properties }: { properties: PublicProperty[] }) {
   if (!properties.length) return <div className="rounded-2xl border border-[#e4ded2] bg-white p-8 text-[#686b6c] shadow-sm">Nu sunt proprietăți publicate în această selecție momentan. Sună-ne și îți spunem ce oferte se potrivesc cererii tale.</div>;
-  return <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+  return <div className="kira-property-grid grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
     {properties.map((p) => {
       const attrs = p.attributes || {};
       const photos = Array.isArray(attrs.photos) ? attrs.photos.filter((x): x is string => typeof x === 'string') : [];
@@ -30,7 +30,7 @@ export function PropertyCards({ properties }: { properties: PublicProperty[] }) 
       const rooms = attrs.camere || attrs.dormitoare;
       return <article key={p.id} className="kira-public-property-card group overflow-hidden rounded-[1.35rem] border border-[#e7e1d7] bg-white shadow-[0_8px_28px_rgba(25,28,32,.055)]">
         <Link href={publicPropertyPath(p)} className="block">
-          <div className="relative h-56 overflow-hidden bg-[#121820] sm:h-60">
+          <div className="relative h-52 overflow-hidden bg-[#121820] sm:h-56">
             {photos[0] ? <img src={photos[0]} alt={p.title} className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.045]" loading="lazy" /> : <div className="flex h-full items-center justify-center bg-[radial-gradient(ellipse_at_top_right,#55432a_0%,#20232a_48%,#10151d_100%)] font-[var(--font-playfair)] text-4xl text-[#d5aa5c]" aria-hidden="true">KIRA</div>}
             <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
             <span className="absolute left-4 top-4 rounded-full border border-white/25 bg-[#080c13]/75 px-3 py-1.5 text-[.68rem] font-semibold uppercase tracking-[.14em] text-[#f5d894] backdrop-blur">{p.transaction === 'inchiriere' ? 'Închiriere' : 'Vânzare'}</span>
