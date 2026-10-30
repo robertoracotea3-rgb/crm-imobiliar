@@ -194,3 +194,242 @@ select {
     animation: none;
   }
 }
+
+
+/* Public site refresh: Brașov imagery, navy and warm gold, scoped away from the CRM. */
+.kira-public {
+  --kira-navy: #0b3154;
+  --kira-deep: #07192b;
+  --kira-gold: #f0c263;
+  --kira-paper: #fbfaf7;
+  background: var(--kira-paper);
+  color: #172433;
+}
+
+.kira-site-header {
+  border-color: rgb(240 194 99 / 28%);
+}
+
+.kira-header-inner {
+  min-height: 4.4rem;
+}
+
+.kira-main-nav {
+  color: #f8f5ed;
+}
+
+.kira-main-nav a {
+  padding: .6rem .15rem;
+}
+
+.kira-site-header .kira-button {
+  background: var(--kira-gold);
+}
+
+.kira-mobile-menu summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kira-mobile-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.kira-mobile-menu summary::after {
+  content: "+";
+  color: var(--kira-gold);
+  font-size: 1.2rem;
+  transition: transform 180ms ease;
+}
+
+.kira-mobile-menu[open] summary::after {
+  transform: rotate(45deg);
+}
+
+.kira-mobile-menu nav {
+  padding-bottom: .4rem;
+}
+
+.kira-city-hero,
+.kira-city-detail-hero {
+  isolation: isolate;
+}
+
+.kira-city-hero-image {
+  object-position: center 48%;
+  animation: kira-panorama-drift 28s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes kira-panorama-drift {
+  from { transform: scale(1.02) translate3d(-.35%, 0, 0); }
+  to { transform: scale(1.085) translate3d(.35%, -0.3%, 0); }
+}
+
+.kira-city-contour svg {
+  filter: drop-shadow(0 2px 12px rgb(4 12 20 / 45%));
+}
+
+.kira-hero-location-card {
+  text-decoration: none;
+}
+
+.kira-photo-credit {
+  max-width: min(88vw, 30rem);
+  color: rgb(255 255 255 / 82%);
+  font-size: .62rem;
+  line-height: 1.45;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 70%);
+}
+
+.kira-photo-credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgb(240 194 99 / 75%);
+  text-underline-offset: 2px;
+}
+
+.kira-intent-panel {
+  border-color: #e5dccb;
+  box-shadow: 0 20px 58px rgb(11 34 55 / 13%);
+}
+
+.kira-intent-item {
+  min-height: 5.8rem;
+}
+
+.kira-intent-item:hover {
+  background: #fffaf0;
+}
+
+.kira-brasov-card {
+  min-height: 24rem;
+}
+
+.kira-property-grid {
+  align-items: stretch;
+}
+
+.kira-public .kira-public-property-card {
+  border-color: #e7e0d4;
+  border-radius: 1.25rem;
+  box-shadow: 0 10px 30px rgb(13 39 63 / 7%);
+}
+
+.kira-public-property-card h3 {
+  font-family: var(--font-inter);
+}
+
+.kira-brasov-page {
+  background: var(--kira-paper);
+}
+
+.kira-content-page {
+  position: relative;
+  isolation: isolate;
+  min-height: 62vh;
+  padding-block: clamp(3.25rem, 7vw, 6rem) !important;
+  color: #172433;
+}
+
+.kira-content-page::before {
+  position: absolute;
+  z-index: -1;
+  top: 1.5rem;
+  right: max(3vw, calc((100vw - 78rem) / 2));
+  width: min(34rem, 65vw);
+  height: 22rem;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgb(240 194 99 / 11%), transparent 68%);
+  content: "";
+  pointer-events: none;
+}
+
+.kira-content-page > p:first-of-type {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #e6d6b5;
+  border-radius: 999px;
+  background: #fffaf0;
+  padding: .48rem .85rem;
+  color: #835f27 !important;
+  font-size: .69rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.kira-content-page > h1 {
+  max-width: 58rem;
+  color: var(--kira-navy);
+  font-family: var(--font-playfair);
+  font-size: clamp(2.35rem, 5.4vw, 4.3rem);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: 1.05;
+}
+
+.kira-content-page > p:not(:first-of-type) {
+  color: #576879;
+}
+
+.kira-content-page article,
+.kira-content-page dl > div {
+  border-color: #e5ddcf;
+  border-radius: 1.25rem;
+  box-shadow: 0 10px 30px rgb(13 39 63 / 6%);
+}
+
+.kira-content-page article h2,
+.kira-content-page article h3,
+.kira-content-page section h2 {
+  color: var(--kira-navy);
+  font-family: var(--font-playfair);
+}
+
+.kira-content-page article a:not([href^="tel:"]):not([href^="mailto:"]) {
+  color: #8a6428;
+}
+
+.kira-content-page section[class*="bg-[#14251d]"] {
+  background: var(--kira-navy);
+}
+
+.kira-content-page input:focus,
+.kira-content-page select:focus,
+.kira-content-page textarea:focus {
+  border-color: var(--kira-gold);
+  outline: 2px solid rgb(240 194 99 / 40%);
+  outline-offset: 2px;
+}
+
+.kira-site-footer {
+  border-color: rgb(240 194 99 / 28%);
+}
+
+@media (max-width: 640px) {
+  .kira-city-hero-image {
+    object-position: center center;
+  }
+
+  .kira-photo-credit {
+    right: 1rem;
+    left: 1rem;
+    max-width: none;
+    font-size: .56rem;
+  }
+
+  .kira-intent-item {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-city-hero-image {
+    animation: none;
+    transform: none;
+  }
+}
