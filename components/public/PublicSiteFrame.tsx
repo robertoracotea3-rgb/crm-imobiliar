@@ -1,4 +1,4 @@
-import Image from 'next/image';
+import { KiraLogo } from './KiraLogo';
 import Link from 'next/link';
 import { PublicMotion } from './PublicMotion';
 
@@ -13,10 +13,10 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
       <a className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:bg-white focus:p-3" href="#continut">
         Sari la conținut
       </a>
-      <header className="border-b border-[#d7ae63]/30 bg-[#070b12] text-[#fbf4e7] shadow-lg">
+      <header className="sticky top-0 z-40 border-b border-[#d7ae63]/25 bg-[#070b12]/95 text-[#fbf4e7] shadow-[0_8px_30px_rgba(0,0,0,.18)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:gap-6 sm:px-8">
           <Link href="/" aria-label="Kira Imobiliare — pagina principală" className="kira-brand shrink-0" prefetch={false}>
-            <Image src="/images/kira-logo.svg" alt="Kira Imobiliare" width={1536} height={1024} priority className="h-[4.5rem] w-[6.75rem] object-contain sm:h-20 sm:w-[7.5rem]" />
+            <KiraLogo className="h-11 w-[11.25rem] sm:h-[3.15rem] sm:w-[12.5rem]" />
           </Link>
           <nav aria-label="Navigație principală" className="hidden items-center gap-4 text-sm font-medium xl:flex">
             <Link href="/proprietati">Proprietăți</Link>
@@ -47,7 +47,7 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
       <footer id="contact" className="border-t border-[#d7ae63]/20 bg-[#080d14] text-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-5 py-12 sm:px-8 md:grid-cols-3">
           <div>
-            <Image src="/images/kira-logo.svg" alt="Kira Imobiliare" width={1536} height={1024} className="h-20 w-[7.5rem] object-contain sm:h-24 sm:w-36" />
+            <KiraLogo className="h-14 w-[14rem] sm:h-16 sm:w-[16rem]" />
             <p className="mt-3 max-w-sm text-sm leading-6 text-white/75">
               Consultanță imobiliară pentru vânzare, cumpărare și închiriere în Făgăraș, împrejurimi și Brașov.
             </p>
