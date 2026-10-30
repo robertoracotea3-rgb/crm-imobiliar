@@ -26,8 +26,8 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
             <Link href="/blog">Blog</Link>
             <Link href="/#contact">Contact</Link>
           </nav>
-          <a href={phoneLink} className="kira-button rounded-full bg-[#c99a48] px-4 py-2.5 text-sm font-semibold text-[#101722] shadow-[0_4px_20px_rgba(201,154,72,.2)]">
-            Sună: {phone}
+          <a href={phoneLink} aria-label={`Sună la ${phone}`} className="kira-button whitespace-nowrap rounded-full bg-[#c99a48] px-3 py-2 text-xs font-semibold text-[#101722] shadow-[0_4px_20px_rgba(201,154,72,.2)] sm:px-4 sm:py-2.5 sm:text-sm">
+            <span className="sm:hidden">Sună</span><span className="hidden sm:inline">Sună: {phone}</span>
           </a>
         </div>
         <details className="border-t border-white/10 px-5 py-3 xl:hidden">
