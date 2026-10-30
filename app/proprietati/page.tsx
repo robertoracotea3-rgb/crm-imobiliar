@@ -3,7 +3,7 @@ import { PublicSiteFrame } from '@/components/public/PublicSiteFrame';
 import { PropertyCards } from '@/components/public/PropertyCards';
 import { getPublicProperties } from '@/lib/public-properties';
 
-export const metadata: Metadata = { title: 'Proprietăți de vânzare și închiriat', description: 'Vezi proprietățile Kira Imobiliare publicate în Făgăraș, Brașov și împrejurimi.' };
+export const metadata: Metadata = { title: 'Proprietăți de vânzare și închiriat', description: 'Vezi proprietățile Kira Imobiliare publicate în Făgăraș, Brașov și împrejurimi.', alternates: { canonical: '/proprietati' } };
 
 export default async function PropertiesPage() {
   const properties = await getPublicProperties();

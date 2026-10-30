@@ -7,9 +7,16 @@ const phone = '0775 132 969';
 
 export async function PublicHome() {
   const properties = (await getPublicProperties()).slice(0, 6);
+  const businessSchema = {
+    '@context': 'https://schema.org', '@type': 'RealEstateAgent', name: 'Kira Imobiliare',
+    url: 'https://www.kiraimobiliare.ro/', telephone: '+40775132969', email: 'contact@kiraimobiliare.ro',
+    address: { '@type': 'PostalAddress', streetAddress: 'Str. Ion Creangă 35', addressLocality: 'Făgăraș', addressRegion: 'Brașov', addressCountry: 'RO' },
+    areaServed: [{ '@type': 'City', name: 'Făgăraș' }, { '@type': 'City', name: 'Brașov' }],
+  };
   return (
     <PublicSiteFrame>
       <main id="continut">
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(businessSchema).replace(/</g, '\\u003c') }} />
         <section className="relative overflow-hidden bg-[#e9eee7]">
           <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 sm:px-8 md:grid-cols-[1.1fr_.9fr] md:py-28">
             <div>

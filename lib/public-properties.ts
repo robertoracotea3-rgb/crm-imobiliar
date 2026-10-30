@@ -15,6 +15,10 @@ export function publicPropertyPath(property: Pick<PublicProperty, 'id' | 'intern
   return `/proprietati/${title || 'oferta'}${code ? `-${code}` : `-${property.id}`}`;
 }
 
+function normalizeName(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('ro').replace(/[^a-z0-9]/g, '');
+}
+
 function client() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -24,17 +28,16 @@ function client() {
 /** Only explicitly published properties are exposed; private attributes and exact addresses never leave this server module. */
 export async function getPublicProperties(city?: string): Promise<PublicProperty[]> {
   const db = client();
-  if (!db) return [];
-  let query = db.from('properties')
+  const agencyId = process.env.KIRA_PUBLIC_AGENCY_ID;
+  if (!db || !agencyId) return [];
+  const { data, error } = await db.from('properties')
     .select('id,internal_code,title,description,price,currency,category,transaction,city,county,zone,surface_useful,surface_built,surface_land,attributes')
-    .eq('status', 'activa').order('updated_at', { ascending: false }).limit(500);
-  if (city) query = query.ilike('city', `%${city}%`);
-  const { data, error } = await query;
+    .eq('agency_id', agencyId).eq('status', 'activa').order('updated_at', { ascending: false }).limit(500);
   if (error || !data) return [];
   return data.filter((p) => {
     const attrs = (p.attributes || {}) as Record<string, unknown>;
     const publication = (attrs.publicare || {}) as Record<string, unknown>;
-    return publication.site === true && (!city || (p.city || '').toLocaleLowerCase('ro').includes(city.toLocaleLowerCase('ro')));
+    return publication.site === true && (!city || normalizeName(p.city || '').includes(normalizeName(city)));
   }).map((p) => ({ ...p, attributes: sanitizeAttributes((p.attributes || {}) as Record<string, unknown>) })) as PublicProperty[];
 }
 
@@ -45,11 +48,12 @@ function sanitizeAttributes(attrs: Record<string, unknown>): Record<string, unkn
 
 export async function getPublicProperty(id: string): Promise<PublicProperty | null> {
   const db = client();
-  if (!db) return null;
+  const agencyId = process.env.KIRA_PUBLIC_AGENCY_ID;
+  if (!db || !agencyId) return null;
   const suffix = id.match(/-([a-z]{2,6}-\d+)$/i)?.[1];
   let query = db.from('properties')
     .select('id,internal_code,title,description,price,currency,category,transaction,city,county,zone,surface_useful,surface_built,surface_land,attributes')
-    .eq('status', 'activa');
+    .eq('agency_id', agencyId).eq('status', 'activa');
   query = suffix ? query.ilike('internal_code', suffix) : query.eq('id', id);
   const { data, error } = await query.maybeSingle();
   if (error || !data) return null;
