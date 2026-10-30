@@ -1,11 +1,11 @@
 export const brasovPanorama = {
-  src: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/58/Bra%C5%9Fov_-_panorama.jpg/3840px-Bra%C5%9Fov_-_panorama.jpg',
+  src: 'https://images.unsplash.com/photo-1763900933046-001f2c67ae93?auto=format&fit=crop&w=2400&q=85',
   alt: 'Panoramă peste acoperișurile Brașovului, cu Biserica Neagră și muntele Tâmpa în depărtare',
 };
 
 export const brasovOldTown = {
-  src: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Panorama_of_Bra%C8%99ov_old_town_with_the_Black_Church_and_Mount_T%C3%A2mpa_%282025%29.jpg/1280px-Panorama_of_Bra%C8%99ov_old_town_with_the_Black_Church_and_Mount_T%C3%A2mpa_%282025%29.jpg',
-  alt: 'Centrul vechi al Brașovului, Biserica Neagră și muntele Tâmpa',
+  src: 'https://images.pexels.com/photos/17713520/pexels-photo-17713520.jpeg?auto=compress&cs=tinysrgb&w=2000',
+  alt: 'Biserica Neagră și centrul istoric al Brașovului, cu muntele Tâmpa în fundal',
 };
 
 export function BrasovPhotoCredit({
@@ -17,16 +17,16 @@ export function BrasovPhotoCredit({
 }) {
   const credit = photo === 'panorama'
     ? {
-        author: 'Pudelek (Marcin Szala)',
-        source: 'https://commons.wikimedia.org/wiki/File:Bra%C5%9Fov_-_panorama.jpg',
-        license: 'https://creativecommons.org/licenses/by-sa/3.0/',
-        licenseName: 'CC BY-SA 3.0',
+        author: 'Patron Catalin',
+        source: 'https://unsplash.com/photos/historic-european-city-with-church-and-mountain-backdrop-HDpzCYpHp8M',
+        license: 'https://unsplash.com/license',
+        licenseName: 'Unsplash License',
       }
     : {
-        author: 'Paul Colin Hennig · firstdorsal.eu',
-        source: 'https://commons.wikimedia.org/wiki/File:Panorama_of_Bra%C8%99ov_old_town_with_the_Black_Church_and_Mount_T%C3%A2mpa_(2025).jpg',
-        license: 'https://creativecommons.org/licenses/by-sa/4.0/',
-        licenseName: 'CC BY-SA 4.0',
+        author: 'Reanimated Man X',
+        source: 'https://www.pexels.com/photo/gothic-black-church-in-brasov-17713520/',
+        license: 'https://www.pexels.com/license/',
+        licenseName: 'Pexels License',
       };
 
   return (
