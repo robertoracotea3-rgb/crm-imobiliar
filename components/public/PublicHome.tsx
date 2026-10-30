@@ -2,85 +2,143 @@ import Link from 'next/link';
 import { PublicSiteFrame } from './PublicSiteFrame';
 import { getPublicProperties } from '@/lib/public-properties';
 import { PropertyCards } from './PropertyCards';
+import { publicPropertyPath } from '@/lib/public-properties';
 
 const phone = '0775 132 969';
 
 export async function PublicHome() {
   const properties = (await getPublicProperties()).slice(0, 6);
+  const featured = properties[0];
+  const featuredPhotos = Array.isArray(featured?.attributes?.photos)
+    ? featured.attributes.photos.filter((photo): photo is string => typeof photo === 'string')
+    : [];
   const businessSchema = {
     '@context': 'https://schema.org', '@type': 'RealEstateAgent', name: 'Kira Imobiliare',
     url: 'https://www.kiraimobiliare.ro/', telephone: '+40775132969', email: 'contact@kiraimobiliare.ro',
     address: { '@type': 'PostalAddress', streetAddress: 'Str. Ion Creangă 35', addressLocality: 'Făgăraș', addressRegion: 'Brașov', addressCountry: 'RO' },
     areaServed: [{ '@type': 'City', name: 'Făgăraș' }, { '@type': 'City', name: 'Brașov' }],
   };
+
   return (
     <PublicSiteFrame>
       <main id="continut">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(businessSchema).replace(/</g, '\\u003c') }} />
-        <section className="relative overflow-hidden bg-[#e9eee7]">
-          <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-20 sm:px-8 md:grid-cols-[1.1fr_.9fr] md:py-28">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[.16em] text-[#0c7456]">Kira Imobiliare · Făgăraș și Brașov</p>
-              <h1 className="mt-5 max-w-3xl font-[var(--font-playfair)] text-4xl leading-tight text-[#14251d] sm:text-5xl lg:text-6xl">
-                Găsește locul potrivit pentru următorul tău capitol.
+        <section className="kira-hero relative isolate overflow-hidden bg-[#080c13] text-white">
+          <div aria-hidden="true" className="pointer-events-none absolute -right-32 -top-36 h-[34rem] w-[34rem] rounded-full bg-[#bd8c3a]/20 blur-[110px]" />
+          <div aria-hidden="true" className="pointer-events-none absolute -bottom-56 left-1/4 h-[32rem] w-[32rem] rounded-full bg-[#b58b47]/10 blur-[120px]" />
+          <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 sm:px-8 sm:py-24 lg:grid-cols-[1.05fr_.95fr] lg:py-28">
+            <div className="kira-hero-copy">
+              <p className="inline-flex items-center gap-2 rounded-full border border-[#d9b368]/35 bg-white/[.04] px-4 py-2 text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#e4bd70]" /> Kira Imobiliare · Făgăraș & Brașov
+              </p>
+              <h1 className="mt-7 max-w-3xl font-[var(--font-playfair)] text-5xl leading-[1.04] tracking-[-.035em] text-[#fffaf0] sm:text-6xl lg:text-[4.5rem]">
+                Locul tău. <span className="text-[#dfb766]">Următorul</span> capitol.
               </h1>
-              <p className="mt-6 max-w-2xl text-lg leading-8 text-[#4f6057]">
-                Te ajutăm să vinzi, să cumperi sau să închiriezi o proprietate în zona Făgărașului. Pregătim extinderea activității Kira Imobiliare în Brașov.
+              <p className="mt-6 max-w-xl text-base leading-8 text-white/70 sm:text-lg">
+                Pentru o casă de vânzare, un apartament de cumpărat sau o chirie potrivită, ai alături o echipă care cunoaște piața locală din Făgăraș și Brașov.
               </p>
               <div className="mt-9 flex flex-wrap gap-3">
-                <a href="tel:+40775132969" className="rounded-full bg-[#0c7456] px-6 py-3.5 font-semibold text-white hover:bg-[#095c44]">Vorbește cu un agent</a>
-                <Link href="/localitati/brasov" className="rounded-full border border-[#9eafa5] bg-white/70 px-6 py-3.5 font-semibold text-[#18372a] hover:bg-white">Descoperă Brașovul</Link>
+                <Link href="/proprietati" className="kira-button inline-flex items-center gap-3 rounded-full bg-[#d5aa5c] px-6 py-3.5 font-semibold text-[#111720] shadow-[0_10px_34px_rgba(201,154,72,.2)]">
+                  Explorează proprietățile <span aria-hidden="true">↗</span>
+                </Link>
+                <a href="https://wa.me/40775132969" className="inline-flex items-center gap-2 rounded-full border border-white/20 px-6 py-3.5 font-semibold text-white transition hover:border-[#e4bd70]/70 hover:bg-white/[.06]">
+                  Hai să vorbim <span aria-hidden="true">→</span>
+                </a>
               </div>
-              <p className="mt-5 text-sm text-[#5d6d64]">{phone} · contact@kiraimobiliare.ro</p>
+              <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-white/10 pt-6 text-sm text-white/60">
+                <a href="tel:+40775132969" className="font-semibold text-white">{phone}</a>
+                <span className="hidden h-1 w-1 rounded-full bg-[#d5aa5c] sm:block" />
+                <span>Vânzare · Cumpărare · Închiriere</span>
+              </div>
             </div>
-            <div className="rounded-[2rem] bg-[#14251d] p-8 text-white shadow-xl sm:p-10">
-              <p className="text-sm font-semibold uppercase tracking-[.14em] text-[#a9d5c1]">O decizie importantă, cu pași clari</p>
-              <h2 className="mt-4 font-[var(--font-playfair)] text-3xl leading-snug">Consultanță imobiliară, aproape de tine.</h2>
-              <p className="mt-5 leading-7 text-white/75">Discutăm despre nevoile tale, clarificăm opțiunile și stabilim împreună pașii următori.</p>
-              <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                {['Vânzare', 'Cumpărare', 'Închiriere'].map((service) => <div key={service} className="rounded-xl border border-white/15 px-4 py-3 text-center text-sm font-medium">{service}</div>)}
+
+            <div className="kira-hero-visual relative mx-auto w-full max-w-[34rem] lg:ml-auto">
+              {featuredPhotos[0] ? (
+                <Link href={featured ? publicPropertyPath(featured) : '/proprietati'} aria-label={featured ? `Vezi oferta: ${featured.title}` : 'Vezi proprietățile'}>
+                  <div className="relative aspect-[.92] overflow-hidden rounded-[1.8rem] border border-white/15 bg-[#171b21] shadow-[0_30px_100px_rgba(0,0,0,.45)] sm:aspect-[1.08]">
+                    <img src={featuredPhotos[0]} alt={featured?.title || 'Proprietate recomandată Kira Imobiliare'} className="h-full w-full object-cover transition duration-700 hover:scale-[1.035]" fetchPriority="high" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#070b11] via-[#070b11]/10 to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
+                      <p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">În oferta Kira</p>
+                      <h2 className="mt-3 max-w-md font-[var(--font-playfair)] text-2xl leading-snug text-white sm:text-3xl">{featured?.title}</h2>
+                      <p className="mt-2 text-sm text-white/70">{[featured?.city, featured?.county].filter(Boolean).join(', ')}</p>
+                    </div>
+                    <span className="absolute right-5 top-5 rounded-full border border-white/20 bg-[#080c13]/70 px-4 py-2 text-xs font-semibold text-[#f5d894] backdrop-blur">Ofertă publicată</span>
+                  </div>
+                </Link>
+              ) : (
+                <div className="relative flex aspect-[.92] flex-col justify-between overflow-hidden rounded-[1.8rem] border border-[#d5aa5c]/25 bg-[linear-gradient(145deg,#171d26_0%,#0b1018_55%,#302619_100%)] p-7 shadow-[0_30px_100px_rgba(0,0,0,.45)] sm:aspect-[1.08] sm:p-9">
+                  <div aria-hidden="true" className="absolute -right-10 top-14 h-72 w-72 rounded-full border border-[#e2bd77]/20" />
+                  <div aria-hidden="true" className="absolute -right-2 top-24 h-56 w-56 rounded-full border border-[#e2bd77]/15" />
+                  <div className="relative">
+                    <p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Cu tine, la fiecare pas</p>
+                    <p className="mt-5 max-w-sm font-[var(--font-playfair)] text-3xl leading-tight text-white sm:text-4xl">O decizie bună începe cu o conversație bună.</p>
+                  </div>
+                  <div className="relative grid grid-cols-2 gap-3">
+                    <Link href="/localitati/fagaras" className="rounded-2xl border border-white/15 bg-white/[.04] p-4 transition hover:border-[#e4bd70]/50 hover:bg-white/[.08]">
+                      <span className="block text-xs uppercase tracking-[.16em] text-white/50">Descoperă zona</span><span className="mt-2 block text-lg font-semibold text-white">Făgăraș <span className="text-[#e4bd70]">↗</span></span>
+                    </Link>
+                    <Link href="/localitati/brasov" className="rounded-2xl border border-white/15 bg-white/[.04] p-4 transition hover:border-[#e4bd70]/50 hover:bg-white/[.08]">
+                      <span className="block text-xs uppercase tracking-[.16em] text-white/50">Descoperă zona</span><span className="mt-2 block text-lg font-semibold text-white">Brașov <span className="text-[#e4bd70]">↗</span></span>
+                    </Link>
+                  </div>
+                </div>
+              )}
+              <div className="absolute -bottom-5 -left-3 hidden rounded-2xl border border-[#d5aa5c]/25 bg-[#111720]/95 px-5 py-4 shadow-xl backdrop-blur sm:block">
+                <p className="text-xs uppercase tracking-[.16em] text-white/50">Alături de tine</p>
+                <p className="mt-1 text-sm font-semibold text-[#f5d894]">De la prima discuție la chei</p>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
-          <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-sm font-semibold uppercase tracking-[.14em] text-[#0c7456]">Oferte publicate</p><h2 className="mt-2 font-[var(--font-playfair)] text-3xl sm:text-4xl">Proprietăți recomandate</h2></div><Link href="/proprietati" className="font-semibold text-[#0c7456]">Vezi toate proprietățile →</Link></div>
-          <div className="mt-8"><PropertyCards properties={properties} /></div>
-        </section>
-
-        <section id="servicii" className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
-          <p className="text-sm font-semibold uppercase tracking-[.14em] text-[#0c7456]">Cum te ajutăm</p>
-          <h2 className="mt-3 max-w-2xl font-[var(--font-playfair)] text-3xl leading-tight sm:text-4xl">Servicii imobiliare adaptate obiectivului tău</h2>
-          <div className="mt-10 grid gap-5 md:grid-cols-3">
-            {[
-              ['Vrei să vinzi?', 'Discutăm despre proprietate, stabilim informațiile necesare și planificăm promovarea ofertei.'],
-              ['Cauți să cumperi?', 'Spune-ne ce cauți și te ajutăm să analizezi ofertele și să programezi pașii următori.'],
-              ['Ai nevoie să închiriezi?', 'Clarificăm zona, bugetul și tipul de proprietate pentru a orienta căutarea.'],
-            ].map(([title, body]) => <article key={title} className="rounded-2xl border border-[#e1e6df] bg-white p-7 shadow-sm"><h3 className="text-xl font-semibold">{title}</h3><p className="mt-3 leading-7 text-[#617067]">{body}</p></article>)}
+        <section aria-label="Caută după intenție" className="relative z-10 mx-auto -mt-1 max-w-7xl px-5 sm:px-8">
+          <div className="grid overflow-hidden rounded-2xl border border-[#e5e0d6] bg-white shadow-[0_18px_60px_rgba(21,25,31,.09)] sm:grid-cols-3">
+            {[['01', 'Vreau să cumpăr', 'Descoperă proprietățile disponibile', '/proprietati'], ['02', 'Vreau să vând', 'Află pașii și promovarea ofertei', '/servicii'], ['03', 'Caut o chirie', 'Spune-ne zona și ce ți se potrivește', '/proprietati']].map(([number, title, body, href]) => (
+              <Link key={number} href={href} className="group flex items-start gap-4 border-b border-[#eee9df] p-5 transition hover:bg-[#fbf8f2] sm:border-b-0 sm:border-r sm:p-6 last:border-r-0">
+                <span className="pt-1 text-xs font-semibold tracking-[.15em] text-[#b58b47]">{number}</span>
+                <span><span className="block font-semibold text-[#151a20]">{title}<span className="ml-2 text-[#b58b47] transition group-hover:translate-x-1">↗</span></span><span className="mt-1 block text-sm text-[#73777a]">{body}</span></span>
+              </Link>
+            ))}
           </div>
         </section>
 
-        <section id="zone" className="bg-white py-20">
-          <div className="mx-auto max-w-7xl px-5 sm:px-8">
-            <p className="text-sm font-semibold uppercase tracking-[.14em] text-[#0c7456]">Zone</p>
-            <h2 className="mt-3 font-[var(--font-playfair)] text-3xl sm:text-4xl">Suntem aproape de piața locală</h2>
-            <div className="mt-9 grid gap-5 md:grid-cols-2">
-              <article className="rounded-2xl bg-[#f7f6f2] p-7 sm:p-9"><p className="text-sm font-semibold text-[#0c7456]">Activitate locală</p><h3 className="mt-2 text-2xl font-semibold">Făgăraș și împrejurimi</h3><p className="mt-3 max-w-xl leading-7 text-[#617067]">Aici se află sediul Kira Imobiliare. Contactează echipa pentru informații despre serviciile și ofertele curente.</p><a href="tel:+40775132969" className="mt-6 inline-block font-semibold text-[#0c7456]">Sună la {phone} →</a></article>
-              <article className="rounded-2xl bg-[#e9eee7] p-7 sm:p-9"><p className="text-sm font-semibold text-[#0c7456]">Extindere în pregătire</p><h3 className="mt-2 text-2xl font-semibold">Brașov</h3><p className="mt-3 max-w-xl leading-7 text-[#617067]">Pregătim extinderea activității în municipiul Brașov. Lasă-ne un mesaj și discutăm despre oferta disponibilă și următorii pași.</p><Link href="/localitati/brasov" className="mt-6 inline-block font-semibold text-[#0c7456]">Vezi pagina Brașov →</Link></article>
+        <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8 sm:py-24">
+          <div className="flex flex-wrap items-end justify-between gap-5">
+            <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#a27835]">Oferte publicate</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl tracking-tight text-[#171b20] sm:text-4xl">Proprietăți cu potențial</h2><p className="mt-3 max-w-xl text-[#73777a]">Vezi detaliile ofertelor publicate de echipa Kira Imobiliare.</p></div>
+            <Link href="/proprietati" className="rounded-full border border-[#d9d2c5] px-5 py-3 text-sm font-semibold text-[#272b30] transition hover:border-[#b58b47] hover:text-[#8a6428]">Toate proprietățile <span aria-hidden="true">→</span></Link>
+          </div>
+          <div className="mt-9"><PropertyCards properties={properties} /></div>
+        </section>
+
+        <section id="servicii" className="border-y border-[#e8e3d9] bg-[#f7f5ef]">
+          <div className="mx-auto max-w-7xl px-5 py-20 sm:px-8 sm:py-24">
+            <div className="max-w-2xl"><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#a27835]">Servicii imobiliare</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl leading-tight text-[#171b20] sm:text-4xl">Pași limpezi pentru o mutare importantă.</h2><p className="mt-4 leading-7 text-[#656a6d]">Îți oferim îndrumare directă, de la prima discuție până la următorul pas.</p></div>
+            <div className="mt-10 grid gap-4 md:grid-cols-3">
+              {[
+                ['01', 'Vânzare', 'Pregătim oferta, prezentarea proprietății și pașii de promovare împreună cu tine.'],
+                ['02', 'Cumpărare', 'Clarificăm criteriile, discutăm opțiunile și te ajutăm să compari ofertele.'],
+                ['03', 'Închiriere', 'Pornim de la zona, bugetul și tipul de proprietate pe care îl cauți.'],
+              ].map(([number, title, body]) => <article key={number} className="rounded-2xl border border-[#e7e1d5] bg-white p-7 shadow-[0_8px_26px_rgba(26,29,32,.035)]"><span className="text-xs font-semibold tracking-[.16em] text-[#b58b47]">{number}</span><h3 className="mt-4 font-[var(--font-playfair)] text-2xl text-[#171b20]">{title}</h3><p className="mt-3 leading-7 text-[#6d7275]">{body}</p></article>)}
             </div>
           </div>
         </section>
 
-        <section className="mx-auto grid max-w-7xl gap-8 px-5 py-16 sm:px-8 md:grid-cols-2">
-          <article className="rounded-2xl border border-[#e1e6df] bg-white p-7 sm:p-9"><p className="text-sm font-semibold uppercase tracking-wide text-[#0c7456]">Evaluare proprietate</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl">Află care sunt pașii pentru vânzare</h2><p className="mt-4 leading-7 text-[#617067]">Trimite-ne câteva informații despre proprietate și discutăm împreună despre evaluare și promovare.</p><a href="mailto:contact@kiraimobiliare.ro?subject=Solicitare%20evaluare%20proprietate" className="mt-6 inline-block rounded-full bg-[#0c7456] px-5 py-3 font-semibold text-white">Solicită o evaluare</a></article>
-          <article className="rounded-2xl bg-[#e9eee7] p-7 sm:p-9"><p className="text-sm font-semibold uppercase tracking-wide text-[#0c7456]">Ghiduri imobiliare</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl">Ia o decizie cu informații clare</h2><p className="mt-4 leading-7 text-[#617067]">Găsești pe site articole despre pregătirea unei vânzări, cumpărarea unei locuințe și documentele tranzacției.</p><Link href="/blog" className="mt-6 inline-block font-semibold text-[#0c7456]">Citește articolele →</Link></article>
+        <section id="zone" className="mx-auto max-w-7xl px-5 py-20 sm:px-8 sm:py-24">
+          <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#a27835]">Unde activăm</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl text-[#171b20] sm:text-4xl">Două piețe. Aceeași grijă.</h2></div><p className="max-w-md text-sm leading-6 text-[#73777a]">Servicii imobiliare locale în Făgăraș, cu prezență extinsă în Brașov.</p></div>
+          <div className="mt-9 grid gap-5 md:grid-cols-2">
+            <article className="group relative overflow-hidden rounded-3xl bg-[#10151d] p-8 text-white sm:p-10"><div aria-hidden="true" className="absolute -right-10 -top-14 h-56 w-56 rounded-full border border-[#d5aa5c]/25 transition duration-500 group-hover:scale-110" /><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Sediul Kira</p><h3 className="mt-3 font-[var(--font-playfair)] text-3xl">Făgăraș & împrejurimi</h3><p className="mt-4 max-w-lg leading-7 text-white/65">Cunoaștem zona și oferim consultanță pentru vânzare, cumpărare și închiriere.</p><Link href="/localitati/fagaras" className="mt-7 inline-flex font-semibold text-[#f1ce84]">Imobiliare în Făgăraș <span className="ml-2">→</span></Link></article>
+            <article className="group relative overflow-hidden rounded-3xl border border-[#e2dacb] bg-[#f5f0e6] p-8 sm:p-10"><div aria-hidden="true" className="absolute -right-10 -top-14 h-56 w-56 rounded-full border border-[#b58b47]/25 transition duration-500 group-hover:scale-110" /><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#98702f]">Kira Imobiliare</p><h3 className="mt-3 font-[var(--font-playfair)] text-3xl text-[#171b20]">Brașov</h3><p className="mt-4 max-w-lg leading-7 text-[#656a6d]">Cauți să vinzi, să cumperi sau să închiriezi în Brașov? Hai să discutăm despre opțiunile potrivite.</p><Link href="/localitati/brasov" className="mt-7 inline-flex font-semibold text-[#8a6428]">Imobiliare în Brașov <span className="ml-2">→</span></Link></article>
+          </div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
-          <div className="flex flex-col justify-between gap-6 rounded-3xl bg-[#0c7456] p-8 text-white sm:flex-row sm:items-center sm:p-10">
-            <div><h2 className="font-[var(--font-playfair)] text-3xl">Ai un plan imobiliar?</h2><p className="mt-2 text-white/80">Discută cu echipa Kira Imobiliare.</p></div>
-            <a href="https://wa.me/40775132969" className="w-fit rounded-full bg-white px-6 py-3.5 font-semibold text-[#0c513d] hover:bg-[#eff7f2]">Scrie pe WhatsApp</a>
+        <section className="mx-auto max-w-7xl px-5 pb-20 sm:px-8 sm:pb-24">
+          <div className="relative overflow-hidden rounded-[2rem] bg-[#0b1017] px-7 py-10 text-white sm:px-12 sm:py-12">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-32 h-96 w-96 rounded-full bg-[#bd8c3a]/20 blur-[90px]" />
+            <div className="relative flex flex-col justify-between gap-8 md:flex-row md:items-center">
+              <div><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Începe cu un mesaj</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl sm:text-4xl">Ai un plan imobiliar?</h2><p className="mt-3 text-white/65">Spune-ne ce cauți. Discutăm fără grabă despre următorul pas.</p></div>
+              <div className="flex flex-wrap gap-3"><a href="https://wa.me/40775132969" className="rounded-full bg-[#d5aa5c] px-6 py-3.5 font-semibold text-[#111720] transition hover:bg-[#e4bd70]">Scrie pe WhatsApp</a><a href="tel:+40775132969" className="rounded-full border border-white/20 px-6 py-3.5 font-semibold transition hover:border-[#e4bd70]/70">Sună la {phone}</a></div>
+            </div>
           </div>
         </section>
       </main>
