@@ -17,7 +17,7 @@ const CRM_PATHS = [
   '/prospects', '/viewings', '/calendar', '/finance', '/portals', '/team',
   '/notifications', '/settings', '/setup', '/tasks', '/matches', '/api',
 ];
-const PUBLIC_PATHS = [
+const PUBLIC_SITE_PATHS = [
   '/proprietati', '/localitati', '/servicii', '/agenti', '/despre-noi', '/blog', '/contact',
   '/politica-confidentialitate', '/politica-cookies', '/termeni', '/anpc-sal', '/accesibilitate',
 ];
@@ -54,7 +54,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(destination, 307);
   }
 
-  if (isCrmApplicationHost(host) && (PUBLIC_PATHS.some((path) => matchesPath(pathname, path)) || PUBLIC_CATEGORY_SLUGS.has(pathname.slice(1)))) {
+  if (isCrmApplicationHost(host) && (PUBLIC_SITE_PATHS.some((path) => matchesPath(pathname, path)) || PUBLIC_CATEGORY_SLUGS.has(pathname.slice(1)))) {
     const destination = new URL(request.url);
     destination.hostname = 'www.kiraimobiliare.ro';
     destination.protocol = 'https:';
@@ -91,3 +91,4 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
+
