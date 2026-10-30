@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { PublicProperty } from '@/lib/public-properties';
+import { publicPropertyPath, type PublicProperty } from '@/lib/public-properties';
 
 function price(value: number | null, currency: string | null) {
   if (!value) return 'Preț la cerere';
@@ -21,7 +21,7 @@ export function PropertyCards({ properties }: { properties: PublicProperty[] }) 
           <p className="mt-2 text-sm text-[#617067]">{[p.city, p.county].filter(Boolean).join(', ')}</p>
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#617067]">{surface ? <span>{surface} m²</span> : null}{rooms ? <span>{rooms} camere</span> : null}</div>
           <p className="mt-4 text-xl font-bold text-[#14251d]">{price(p.price, p.currency)}</p>
-          <Link href={`/proprietati/${p.id}`} className="mt-4 inline-flex font-semibold text-[#0c7456]">Vezi detaliile →</Link>
+          <Link href={publicPropertyPath(p)} className="mt-4 inline-flex font-semibold text-[#0c7456]">Vezi detaliile →</Link>
         </div>
       </article>;
     })}

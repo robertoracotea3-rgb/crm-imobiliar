@@ -2,12 +2,18 @@ import 'server-only';
 import { createClient } from '@supabase/supabase-js';
 
 export type PublicProperty = {
-  id: string; title: string; description: string | null; price: number | null;
+  id: string; internal_code: string | null; title: string; description: string | null; price: number | null;
   currency: string | null; category: string | null; transaction: string | null;
   city: string | null; county: string | null; zone: string | null;
   surface_useful: number | null; surface_built: number | null; surface_land: number | null;
   attributes: Record<string, unknown>;
 };
+
+export function publicPropertyPath(property: Pick<PublicProperty, 'id' | 'internal_code' | 'title'>): string {
+  const title = property.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const code = property.internal_code?.toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return `/proprietati/${title || 'oferta'}${code ? `-${code}` : `-${property.id}`}`;
+}
 
 function client() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,7 +26,7 @@ export async function getPublicProperties(city?: string): Promise<PublicProperty
   const db = client();
   if (!db) return [];
   let query = db.from('properties')
-    .select('id,title,description,price,currency,category,transaction,city,county,zone,surface_useful,surface_built,surface_land,attributes')
+    .select('id,internal_code,title,description,price,currency,category,transaction,city,county,zone,surface_useful,surface_built,surface_land,attributes')
     .eq('status', 'activa').order('updated_at', { ascending: false }).limit(500);
   if (city) query = query.ilike('city', `%${city}%`);
   const { data, error } = await query;
@@ -40,9 +46,12 @@ function sanitizeAttributes(attrs: Record<string, unknown>): Record<string, unkn
 export async function getPublicProperty(id: string): Promise<PublicProperty | null> {
   const db = client();
   if (!db) return null;
-  const { data, error } = await db.from('properties')
-    .select('id,title,description,price,currency,category,transaction,city,county,zone,surface_useful,surface_built,surface_land,attributes')
-    .eq('id', id).eq('status', 'activa').maybeSingle();
+  const suffix = id.match(/-([a-z]{2,6}-\d+)$/i)?.[1];
+  let query = db.from('properties')
+    .select('id,internal_code,title,description,price,currency,category,transaction,city,county,zone,surface_useful,surface_built,surface_land,attributes')
+    .eq('status', 'activa');
+  query = suffix ? query.ilike('internal_code', suffix) : query.eq('id', id);
+  const { data, error } = await query.maybeSingle();
   if (error || !data) return null;
   const attrs = (data.attributes || {}) as Record<string, unknown>;
   const publication = (attrs.publicare || {}) as Record<string, unknown>;

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PublicSiteFrame } from '@/components/public/PublicSiteFrame';
-import { getPublicProperty } from '@/lib/public-properties';
+import { getPublicProperty, publicPropertyPath } from '@/lib/public-properties';
 
 export const dynamic = 'force-dynamic';
 type Props = { params: Promise<{ id: string }> };
@@ -9,7 +9,7 @@ type Props = { params: Promise<{ id: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
   const property = await getPublicProperty(id);
-  return property ? { title: property.title, description: property.description?.slice(0, 160) || `${property.category || 'Proprietate'} ${property.transaction || ''} în ${property.city || 'zona Făgăraș'}. Contactează Kira Imobiliare.` } : { title: 'Proprietate indisponibilă' };
+  return property ? { title: property.title, description: property.description?.slice(0, 160) || `${property.category || 'Proprietate'} ${property.transaction || ''} în ${property.city || 'zona Făgăraș'}. Contactează Kira Imobiliare.`, alternates: { canonical: publicPropertyPath(property) } } : { title: 'Proprietate indisponibilă' };
 }
 
 export default async function PropertyPage({ params }: Props) {
@@ -20,7 +20,7 @@ export default async function PropertyPage({ params }: Props) {
   const photos = Array.isArray(attrs.photos) ? attrs.photos.filter((x): x is string => typeof x === 'string') : [];
   const price = p.price ? `${new Intl.NumberFormat('ro-RO').format(p.price)} ${p.currency || 'EUR'}` : 'Preț la cerere';
   return <PublicSiteFrame><main id="continut" className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
-    <p className="text-sm text-[#617067]">{p.city}{p.county ? `, ${p.county}` : ''} · {p.category}</p>
+    <p className="text-sm text-[#617067]">{p.city}{p.county ? `, ${p.county}` : ''} · {p.category}{p.internal_code ? ` · ${p.internal_code}` : ''}</p>
     <h1 className="mt-3 max-w-4xl font-[var(--font-playfair)] text-4xl sm:text-5xl">{p.title}</h1>
     <p className="mt-5 text-3xl font-bold text-[#0c7456]">{price}</p>
     {photos.length ? <div className="mt-8 grid gap-3 sm:grid-cols-2">{photos.slice(0, 8).map((photo) => <img key={photo} src={photo} alt={p.title} className="max-h-[32rem] w-full rounded-2xl object-cover" />)}</div> : null}
