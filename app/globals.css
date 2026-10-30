@@ -153,3 +153,44 @@ select {
     transform: none;
   }
 }
+
+/* Brand-led entrance on the homepage. Motion stays subtle and respects system settings. */
+@keyframes kira-rise-in {
+  from { opacity: 0; transform: translate3d(0, 18px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+.kira-public .kira-hero-copy { animation: kira-rise-in 760ms cubic-bezier(.2,.75,.25,1) both; }
+.kira-public .kira-hero-visual { animation: kira-rise-in 900ms 100ms cubic-bezier(.2,.75,.25,1) both; }
+
+.kira-public .kira-brand svg {
+  display: block;
+  overflow: visible;
+  transition: transform 300ms cubic-bezier(.2,.8,.2,1), filter 300ms ease;
+}
+
+@media (hover: hover) {
+  .kira-public .kira-brand:hover svg {
+    transform: translateY(-1px);
+    filter: drop-shadow(0 0 9px rgb(228 189 112 / 32%));
+  }
+}
+
+.kira-public .kira-public-property-card {
+  transition: transform 300ms cubic-bezier(.2,.8,.2,1), border-color 240ms ease, box-shadow 300ms ease;
+}
+
+@media (hover: hover) {
+  .kira-public .kira-public-property-card:hover {
+    transform: translateY(-5px);
+    border-color: rgb(181 139 71 / 52%);
+    box-shadow: 0 20px 48px rgb(20 23 28 / 12%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-public .kira-hero-copy,
+  .kira-public .kira-hero-visual {
+    animation: none;
+  }
+}
