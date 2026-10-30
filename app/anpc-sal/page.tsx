@@ -1,0 +1,4 @@
+import type { Metadata } from 'next';
+import { LegalPage } from '@/components/public/LegalPage';
+export const metadata: Metadata = { title: 'ANPC și soluționarea litigiilor' };
+export default function Page() { return <LegalPage title="ANPC / soluționarea litigiilor" intro="Pentru sesizări privind protecția consumatorilor, consultă canalele oficiale ale Autorității Naționale pentru Protecția Consumatorilor." sections={[["Autoritatea competentă", "Informațiile actualizate despre reclamații și protecția consumatorilor sunt disponibile pe site-ul oficial ANPC: anpc.ro."], ["Soluționarea alternativă", "Pentru informații actuale despre mecanismele SAL și eligibilitatea unei cereri, consultă paginile oficiale ale ANPC și legislația aplicabilă."], ["Contact", "Pentru o sesizare către Kira Imobiliare, trimite detaliile solicitării la contact@kiraimobiliare.ro."]]}/>; }

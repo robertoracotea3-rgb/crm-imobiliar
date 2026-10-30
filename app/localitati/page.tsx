@@ -1,0 +1,7 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { PublicSiteFrame } from '@/components/public/PublicSiteFrame';
+export const metadata: Metadata = { title: 'Localități deservite', description: 'Află despre serviciile imobiliare Kira în Făgăraș, Brașov și localitățile din apropiere.' };
+const places = ['Făgăraș', 'Brașov', 'Victoria', 'Șercaia', 'Hârseni', 'Beclean', 'Voila', 'Recea', 'Drăguș', 'Ucea', 'Sâmbăta de Sus', 'Cincu', 'Dridif'];
+const slug = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replaceAll(' ', '-');
+export default function LocalitiesPage() { return <PublicSiteFrame><main id="continut" className="mx-auto max-w-6xl px-5 py-14 sm:px-8"><p className="text-sm font-semibold uppercase tracking-wide text-[#0c7456]">Unde activăm</p><h1 className="mt-3 font-[var(--font-playfair)] text-4xl sm:text-5xl">Făgăraș, Brașov și împrejurimi</h1><p className="mt-5 max-w-3xl leading-8 text-[#617067]">Sediul Kira Imobiliare este în Făgăraș. Pentru proprietăți și servicii în localitățile de mai jos, contactează-ne să confirmăm oferta și disponibilitatea actuală.</p><div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{places.map((place) => <Link key={place} href={`/localitati/${slug(place)}`} className="rounded-xl border border-[#e1e6df] bg-white p-5 font-semibold hover:border-[#0c7456]">Imobiliare {place} <span aria-hidden="true" className="float-right text-[#0c7456]">→</span></Link>)}</div></main></PublicSiteFrame>; }

@@ -1,9 +1,12 @@
 import Link from 'next/link';
 import { PublicSiteFrame } from './PublicSiteFrame';
+import { getPublicProperties } from '@/lib/public-properties';
+import { PropertyCards } from './PropertyCards';
 
 const phone = '0775 132 969';
 
-export function PublicHome() {
+export async function PublicHome() {
+  const properties = (await getPublicProperties()).slice(0, 6);
   return (
     <PublicSiteFrame>
       <main id="continut">
@@ -34,6 +37,11 @@ export function PublicHome() {
           </div>
         </section>
 
+        <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8">
+          <div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-sm font-semibold uppercase tracking-[.14em] text-[#0c7456]">Oferte publicate</p><h2 className="mt-2 font-[var(--font-playfair)] text-3xl sm:text-4xl">Proprietăți recomandate</h2></div><Link href="/proprietati" className="font-semibold text-[#0c7456]">Vezi toate proprietățile →</Link></div>
+          <div className="mt-8"><PropertyCards properties={properties} /></div>
+        </section>
+
         <section id="servicii" className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
           <p className="text-sm font-semibold uppercase tracking-[.14em] text-[#0c7456]">Cum te ajutăm</p>
           <h2 className="mt-3 max-w-2xl font-[var(--font-playfair)] text-3xl leading-tight sm:text-4xl">Servicii imobiliare adaptate obiectivului tău</h2>
@@ -55,6 +63,11 @@ export function PublicHome() {
               <article className="rounded-2xl bg-[#e9eee7] p-7 sm:p-9"><p className="text-sm font-semibold text-[#0c7456]">Extindere în pregătire</p><h3 className="mt-2 text-2xl font-semibold">Brașov</h3><p className="mt-3 max-w-xl leading-7 text-[#617067]">Pregătim extinderea activității în municipiul Brașov. Lasă-ne un mesaj și discutăm despre oferta disponibilă și următorii pași.</p><Link href="/localitati/brasov" className="mt-6 inline-block font-semibold text-[#0c7456]">Vezi pagina Brașov →</Link></article>
             </div>
           </div>
+        </section>
+
+        <section className="mx-auto grid max-w-7xl gap-8 px-5 py-16 sm:px-8 md:grid-cols-2">
+          <article className="rounded-2xl border border-[#e1e6df] bg-white p-7 sm:p-9"><p className="text-sm font-semibold uppercase tracking-wide text-[#0c7456]">Evaluare proprietate</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl">Află care sunt pașii pentru vânzare</h2><p className="mt-4 leading-7 text-[#617067]">Trimite-ne câteva informații despre proprietate și discutăm împreună despre evaluare și promovare.</p><a href="mailto:contact@kiraimobiliare.ro?subject=Solicitare%20evaluare%20proprietate" className="mt-6 inline-block rounded-full bg-[#0c7456] px-5 py-3 font-semibold text-white">Solicită o evaluare</a></article>
+          <article className="rounded-2xl bg-[#e9eee7] p-7 sm:p-9"><p className="text-sm font-semibold uppercase tracking-wide text-[#0c7456]">Ghiduri imobiliare</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl">Ia o decizie cu informații clare</h2><p className="mt-4 leading-7 text-[#617067]">Găsești pe site articole despre pregătirea unei vânzări, cumpărarea unei locuințe și documentele tranzacției.</p><Link href="/blog" className="mt-6 inline-block font-semibold text-[#0c7456]">Citește articolele →</Link></article>
         </section>
 
         <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8">

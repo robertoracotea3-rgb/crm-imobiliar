@@ -19,9 +19,11 @@ export async function generateMetadata(): Promise<Metadata> {
     return {
       metadataBase: new URL(canonicalHost(host)),
       title: { default: "Kira Imobiliare | Făgăraș și Brașov", template: "%s | Kira Imobiliare" },
-      description: "Consultanță pentru vânzarea, cumpărarea și închirierea proprietăților în zona Făgărașului. Pregătim extinderea activității Kira Imobiliare în Brașov.",
+      description: "Consultanță pentru vânzarea, cumpărarea și închirierea proprietăților în Făgăraș, împrejurimi și Brașov.",
       alternates: { canonical: "/" },
       robots: { index: true, follow: true },
+      openGraph: { type: "website", locale: "ro_RO", siteName: "Kira Imobiliare", title: "Kira Imobiliare | Făgăraș și Brașov", description: "Consultanță imobiliară pentru vânzare, cumpărare și închiriere.", url: canonicalHost(host) },
+      twitter: { card: "summary_large_image", title: "Kira Imobiliare | Făgăraș și Brașov", description: "Consultanță imobiliară pentru vânzare, cumpărare și închiriere." },
     };
   }
 

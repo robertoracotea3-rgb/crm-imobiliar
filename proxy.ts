@@ -17,6 +17,14 @@ const CRM_PATHS = [
   '/prospects', '/viewings', '/calendar', '/finance', '/portals', '/team',
   '/notifications', '/settings', '/setup', '/tasks', '/matches', '/api',
 ];
+const PUBLIC_PATHS = [
+  '/proprietati', '/localitati', '/servicii', '/agenti', '/despre-noi', '/blog', '/contact',
+  '/politica-confidentialitate', '/politica-cookies', '/termeni', '/anpc-sal', '/accesibilitate',
+];
+const PUBLIC_CATEGORY_SLUGS = new Set([
+  'apartamente-de-vanzare-fagaras', 'apartamente-de-inchiriat-fagaras', 'case-de-vanzare-fagaras',
+  'garsoniere-de-vanzare-fagaras', 'terenuri-de-vanzare-fagaras', 'spatii-comerciale-fagaras', 'hale-de-vanzare-fagaras',
+]);
 
 function matchesPath(pathname: string, path: string) {
   return pathname === path || pathname.startsWith(`${path}/`);
@@ -40,6 +48,13 @@ export function proxy(request: NextRequest) {
 
   // Public city pages belong to the public website, never the CRM hostname.
   if (isCrmApplicationHost(host) && pathname.startsWith('/localitati/')) {
+    const destination = new URL(request.url);
+    destination.hostname = 'www.kiraimobiliare.ro';
+    destination.protocol = 'https:';
+    return NextResponse.redirect(destination, 307);
+  }
+
+  if (isCrmApplicationHost(host) && (PUBLIC_PATHS.some((path) => matchesPath(pathname, path)) || PUBLIC_CATEGORY_SLUGS.has(pathname.slice(1)))) {
     const destination = new URL(request.url);
     destination.hostname = 'www.kiraimobiliare.ro';
     destination.protocol = 'https:';
