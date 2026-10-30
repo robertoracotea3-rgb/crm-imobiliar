@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { PublicSiteFrame } from './PublicSiteFrame';
 import { getPublicProperties } from '@/lib/public-properties';
 import { PropertyCards } from './PropertyCards';
+import { publicPropertyPath } from '@/lib/public-properties';
 
 const phone = '0775 132 969';
 
@@ -53,16 +54,16 @@ export async function PublicHome() {
 
             <div className="kira-hero-visual relative mx-auto w-full max-w-[34rem] lg:ml-auto">
               {featuredPhotos[0] ? (
-                <Link href={featured ? `/proprietati/${featured.internal_code || featured.id}` : '/proprietati'} aria-label={featured ? `Vezi oferta: ${featured.title}` : 'Vezi proprietățile'}>
+                <Link href={featured ? publicPropertyPath(featured) : '/proprietati'} aria-label={featured ? `Vezi oferta: ${featured.title}` : 'Vezi proprietățile'}>
                   <div className="relative aspect-[.92] overflow-hidden rounded-[1.8rem] border border-white/15 bg-[#171b21] shadow-[0_30px_100px_rgba(0,0,0,.45)] sm:aspect-[1.08]">
                     <img src={featuredPhotos[0]} alt={featured?.title || 'Proprietate recomandată Kira Imobiliare'} className="h-full w-full object-cover transition duration-700 hover:scale-[1.035]" fetchPriority="high" />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#070b11] via-[#070b11]/10 to-transparent" />
                     <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
-                      <p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Selecția Kira</p>
+                      <p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">În oferta Kira</p>
                       <h2 className="mt-3 max-w-md font-[var(--font-playfair)] text-2xl leading-snug text-white sm:text-3xl">{featured?.title}</h2>
                       <p className="mt-2 text-sm text-white/70">{[featured?.city, featured?.county].filter(Boolean).join(', ')}</p>
                     </div>
-                    <span className="absolute right-5 top-5 rounded-full border border-white/20 bg-[#080c13]/70 px-4 py-2 text-xs font-semibold text-[#f5d894] backdrop-blur">Proprietăți verificate</span>
+                    <span className="absolute right-5 top-5 rounded-full border border-white/20 bg-[#080c13]/70 px-4 py-2 text-xs font-semibold text-[#f5d894] backdrop-blur">Ofertă publicată</span>
                   </div>
                 </Link>
               ) : (
