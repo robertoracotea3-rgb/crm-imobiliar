@@ -17,7 +17,7 @@ export async function PublicHome() {
 
   return (
     <PublicSiteFrame>
-      <main id="continut">
+      <main id="continut" className="kira-homepage">
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(businessSchema).replace(/</g, '\\u003c') }} />
         <section className="kira-city-hero relative isolate flex min-h-[34rem] items-center overflow-hidden bg-[#07192b] text-white sm:min-h-[38rem] lg:min-h-[41rem]">
           <img
@@ -71,9 +71,9 @@ export async function PublicHome() {
         </section>
 
         <section aria-label="Caută după intenție" className="relative z-10 mx-auto -mt-10 max-w-7xl px-5 sm:-mt-12 sm:px-8">
-          <div className="grid overflow-hidden rounded-2xl border border-[#e5e0d6] bg-white shadow-[0_18px_60px_rgba(21,25,31,.09)] sm:grid-cols-3">
+          <div className="kira-intent-panel grid overflow-hidden rounded-2xl border border-[#e5e0d6] bg-white shadow-[0_18px_60px_rgba(21,25,31,.09)] sm:grid-cols-3">
             {[['01', 'Vreau să cumpăr', 'Descoperă proprietățile disponibile', '/proprietati'], ['02', 'Vreau să vând', 'Află pașii și promovarea ofertei', '/servicii'], ['03', 'Caut o chirie', 'Spune-ne zona și ce ți se potrivește', '/proprietati']].map(([number, title, body, href]) => (
-              <Link key={number} href={href} className="group flex items-start gap-4 border-b border-[#eee9df] p-5 transition hover:bg-[#fbf8f2] sm:border-b-0 sm:border-r sm:p-6 last:border-r-0">
+              <Link key={number} href={href} className="kira-intent-item group flex items-start gap-4 border-b border-[#eee9df] p-5 transition hover:bg-[#fbf8f2] sm:border-b-0 sm:border-r sm:p-6 last:border-r-0">
                 <span className="pt-1 text-xs font-semibold tracking-[.15em] text-[#b58b47]">{number}</span>
                 <span><span className="block font-semibold text-[#151a20]">{title}<span className="ml-2 text-[#b58b47] transition group-hover:translate-x-1">↗</span></span><span className="mt-1 block text-sm text-[#73777a]">{body}</span></span>
               </Link>
