@@ -1,10 +1,65 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+function isPublicWebsiteHost(hostValue: string | null) {
+  const host = (hostValue || '').split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+  return host === 'kiraimobiliare.ro' || host === 'www.kiraimobiliare.ro' || /^fortis-website(?:-|\.)/.test(host);
+}
+
+function isCrmApplicationHost(hostValue: string | null) {
+  const host = (hostValue || '').split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+  return host === 'crm.kiraimobiliare.ro' || host === 'crm-fortis.vercel.app' || /^crm-fortis(?:-|\.)/.test(host);
+}
+
 const PUBLIC_PATHS = ['/login', '/register', '/api/auth/register', '/api/feed/'];
+const CRM_PATHS = [
+  '/login', '/register', '/dashboard', '/properties', '/leads', '/clients', '/contacts',
+  '/prospects', '/viewings', '/calendar', '/finance', '/portals', '/team',
+  '/notifications', '/settings', '/setup', '/tasks', '/matches', '/api',
+];
+const PUBLIC_SITE_PATHS = [
+  '/proprietati', '/localitati', '/servicii', '/agenti', '/despre-noi', '/blog', '/contact',
+  '/politica-confidentialitate', '/politica-cookies', '/termeni', '/anpc-sal', '/accesibilitate',
+];
+const PUBLIC_CATEGORY_SLUGS = new Set([
+  'apartamente-de-vanzare-fagaras', 'apartamente-de-inchiriat-fagaras', 'case-de-vanzare-fagaras',
+  'garsoniere-de-vanzare-fagaras', 'terenuri-de-vanzare-fagaras', 'spatii-comerciale-fagaras', 'hale-de-vanzare-fagaras',
+]);
+
+function matchesPath(pathname: string, path: string) {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = request.headers.get('host');
+
+  // Keep the CRM surface on its own hostname. The property XML feed remains public.
+  const isPublicFeed = pathname.startsWith('/api/feed/');
+  if (isPublicWebsiteHost(host) && !isPublicFeed && CRM_PATHS.some((path) => matchesPath(pathname, path))) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    const destination = new URL(request.url);
+    destination.hostname = 'crm.kiraimobiliare.ro';
+    destination.protocol = 'https:';
+    return NextResponse.redirect(destination, 307);
+  }
+
+  // Public city pages belong to the public website, never the CRM hostname.
+  if (isCrmApplicationHost(host) && pathname.startsWith('/localitati/')) {
+    const destination = new URL(request.url);
+    destination.hostname = 'www.kiraimobiliare.ro';
+    destination.protocol = 'https:';
+    return NextResponse.redirect(destination, 307);
+  }
+
+  if (isCrmApplicationHost(host) && (PUBLIC_SITE_PATHS.some((path) => matchesPath(pathname, path)) || PUBLIC_CATEGORY_SLUGS.has(pathname.slice(1)))) {
+    const destination = new URL(request.url);
+    destination.hostname = 'www.kiraimobiliare.ro';
+    destination.protocol = 'https:';
+    return NextResponse.redirect(destination, 307);
+  }
 
   // Allow public paths
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
@@ -36,3 +91,4 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
+

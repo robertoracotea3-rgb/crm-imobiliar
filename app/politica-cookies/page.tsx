@@ -1,0 +1,4 @@
+import type { Metadata } from 'next';
+import { LegalPage } from '@/components/public/LegalPage';
+export const metadata: Metadata = { title: 'Politica privind cookie-urile' };
+export default function Page() { return <LegalPage title="Politica privind cookie-urile" intro="Cookie-urile sunt fișiere mici stocate de browser. Site-ul poate folosi tehnologii tehnice necesare pentru livrarea și securizarea paginilor. Cookie-urile opționale de analiză sau publicitate trebuie activate numai după informarea și obținerea consimțământului atunci când legea o cere." sections={[["Cum le poți controla", "Poți configura browserul să blocheze sau să șteargă cookie-urile. Dacă site-ul adaugă servicii de analiză ori publicitate, această politică și opțiunile de consimțământ vor fi actualizate înainte de activare."], ["Contact", "Pentru întrebări privind confidențialitatea, scrie la contact@kiraimobiliare.ro."]]}/>; }
