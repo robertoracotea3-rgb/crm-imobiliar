@@ -4,13 +4,12 @@ The public site and CRM share this repository. Vercel serves the public pages on
 
 ## Vercel environment
 
-For the public website deployment, configure these server-side variables for Production and Preview:
+The public property feed uses Supabase from server-side code. Configure the URL and service key for the public deployment in the required environments:
 
-- `SUPABASE_URL` — the existing Supabase project URL. This stays server-side; avoid exposing infrastructure settings in browser bundles.
-- `SUPABASE_SERVICE_ROLE_KEY` — the existing service-role key. Keep it server-side; never use a `NEXT_PUBLIC_` name.
+- `SUPABASE_URL` — preferred server-only name for the Supabase project URL. Use the project root, for example `https://<project-ref>.supabase.co`; do not append `/rest/v1/`.
+- `NEXT_PUBLIC_SUPABASE_URL` — retained for existing CRM/browser code paths during migration. The URL itself is public configuration, not a credential.
+- `SUPABASE_SERVICE_ROLE_KEY` — the service-role key. Keep it secret and server-side; never use a `NEXT_PUBLIC_` name.
 - `KIRA_PUBLIC_AGENCY_ID` — the UUID in `profiles.agency_id` for the Kira account. This scopes public property reads to Kira in the multi-agency CRM.
-
-The code accepts `NEXT_PUBLIC_SUPABASE_URL` as a migration fallback for existing deployments, but new configuration should use `SUPABASE_URL`.
 
 If the agency ID or database variables are missing, the public pages still render, but property cards stay empty. Never remove the agency filter to make listings appear; that could expose another agency's inventory.
 
@@ -20,7 +19,7 @@ A property appears only when its CRM status is `activa` and `attributes.publicar
 
 ## Domains
 
-Keep the public domain and CRM domain assigned to the Vercel deployments configured for their respective hosts. The app selects the public or CRM layout from the incoming host. Verify both domains in Vercel after deployment.
+Keep the public domain and CRM domain assigned to the Vercel deployments configured for their respective hosts. The app selects the public or CRM layout from the incoming host. Public website previews intentionally return 404 for CRM API paths; test CRM API routes on the CRM host.
 
 ## Before launch
 
