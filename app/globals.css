@@ -36,3 +36,120 @@ textarea,
 select {
   color: #111827;
 }
+
+/* Public Kira site: quiet motion, warm metallic details, and clear focus states. */
+.kira-public {
+  --kira-gold: #c99a48;
+  scroll-behavior: smooth;
+}
+
+.kira-public a,
+.kira-public button,
+.kira-public summary {
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 220ms ease, transform 220ms ease;
+}
+
+.kira-public a:focus-visible,
+.kira-public button:focus-visible,
+.kira-public summary:focus-visible {
+  outline: 3px solid #e1b662;
+  outline-offset: 4px;
+}
+
+.kira-public .kira-brand {
+  display: block;
+  border-radius: 0.75rem;
+  filter: drop-shadow(0 0 10px rgb(201 154 72 / 22%));
+}
+
+.kira-public .kira-brand img {
+  transition: transform 360ms cubic-bezier(.2,.8,.2,1), filter 360ms ease;
+}
+
+@media (hover: hover) {
+  .kira-public .kira-brand:hover img {
+    transform: scale(1.045);
+    filter: drop-shadow(0 0 12px rgb(228 189 112 / 44%));
+  }
+
+  .kira-public header nav a:hover,
+  .kira-public footer a:hover {
+    color: #e4bd70;
+  }
+
+  .kira-public main article:hover {
+    transform: translateY(-5px);
+    border-color: rgb(201 154 72 / 48%);
+    box-shadow: 0 16px 38px rgb(20 37 29 / 12%);
+  }
+
+  .kira-public main article:hover img {
+    transform: scale(1.035);
+  }
+
+  .kira-public .kira-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 9px 24px rgb(201 154 72 / 32%);
+  }
+}
+
+.kira-public header nav a {
+  position: relative;
+}
+
+.kira-public header nav a::after {
+  position: absolute;
+  right: 0;
+  bottom: -8px;
+  left: 0;
+  height: 1px;
+  background: #e4bd70;
+  content: "";
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 220ms ease;
+}
+
+.kira-public header nav a:hover::after {
+  transform: scaleX(1);
+}
+
+.kira-public main article {
+  transition: transform 300ms cubic-bezier(.2,.8,.2,1), border-color 240ms ease, box-shadow 300ms ease;
+}
+
+.kira-public main article img {
+  transition: transform 600ms cubic-bezier(.2,.8,.2,1);
+}
+
+.kira-public main > .kira-reveal {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0);
+  transition: opacity 680ms ease, transform 680ms cubic-bezier(.2,.75,.25,1);
+  transition-delay: calc(var(--reveal-order, 0) * 45ms);
+}
+
+.kira-public main > .kira-reveal.kira-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kira-public {
+    scroll-behavior: auto;
+  }
+
+  .kira-public *,
+  .kira-public *::before,
+  .kira-public *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .kira-public main > .kira-reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
