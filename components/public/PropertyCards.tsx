@@ -19,7 +19,7 @@ export function PropertyCards({ properties }: { properties: PublicProperty[] }) 
         <div className="p-5"><p className="text-xs font-semibold uppercase tracking-wide text-[#0c7456]">{p.transaction === 'inchiriere' ? 'Închiriere' : 'Vânzare'} · {p.category || 'Proprietate'}</p>
           <h3 className="mt-2 line-clamp-2 min-h-14 text-lg font-semibold">{p.title}</h3>
           <p className="mt-2 text-sm text-[#617067]">{[p.city, p.county].filter(Boolean).join(', ')}</p>
-          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#617067]">{surface ? <span>{surface} m²</span> : null}{rooms ? <span>{rooms} camere</span> : null}</div>
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm text-[#617067]">{surface ? <span>{surface} m²</span> : null}{rooms ? <span>{String(rooms)} camere</span> : null}</div>
           <p className="mt-4 text-xl font-bold text-[#14251d]">{price(p.price, p.currency)}</p>
           <Link href={publicPropertyPath(p)} className="mt-4 inline-flex font-semibold text-[#0c7456]">Vezi detaliile →</Link>
         </div>
