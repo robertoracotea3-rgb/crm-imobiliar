@@ -1,5 +1,5 @@
 export const brasovPanorama = {
-  src: 'https://images.unsplash.com/photo-1763900933046-001f2c67ae93?auto=format&fit=crop&w=2400&q=85',
+  src: 'https://images.unsplash.com/photo-1763900933046-001f2c67ae93?auto=format&fit=crop&w=1920&q=85',
   alt: 'Panoramă peste acoperișurile Brașovului, cu Biserica Neagră și muntele Tâmpa în depărtare',
 };
 
