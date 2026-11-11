@@ -83,7 +83,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
             pattern="[0-9]{6}"
             maxLength={6}
             value={code}
-            onChange={(event) => setCode(event.target.value.replace(/\\D/g, '').slice(0, 6))}
+            onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
             required
             className="w-full rounded-lg border border-gray-300 px-4 py-3 text-lg tracking-[0.3em] text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="••••••"
