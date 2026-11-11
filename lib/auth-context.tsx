@@ -195,15 +195,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.rpc('crm_revoke_session');
-    await supabase.auth.signOut();
-    setUser(null);
-    setAgency(null);
-    setRole(null);
-    setMfaRequired(false);
-    setMfaMethod(null);
-    setMfaChallenge(null);
-    setAuthError(null);
+    try {
+      const { error } = await supabase.rpc('crm_revoke_session');
+      if (error) console.warn('CRM session revoke error:', error);
+    } finally {
+      await supabase.auth.signOut();
+      setUser(null);
+      setAgency(null);
+      setRole(null);
+      setMfaRequired(false);
+      setMfaMethod(null);
+      setMfaChallenge(null);
+      setAuthError(null);
+    }
   };
 
   return (
