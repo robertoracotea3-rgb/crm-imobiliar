@@ -27,12 +27,11 @@ export default async function BrasovPage() {
     name: 'Kira Imobiliare',
     url: 'https://www.kiraimobiliare.ro/localitati/brasov',
     telephone: '+40775132969',
-    email: 'contact@kiraimobiliare.ro',
+    email: 'kiraimobiliare@gmail.com',
     areaServed: { '@type': 'City', name: 'Brașov' },
     address: {
       '@type': 'PostalAddress',
-      streetAddress: 'Str. Ion Creangă 35',
-      addressLocality: 'Făgăraș',
+      addressLocality: 'Brașov',
       addressRegion: 'Brașov',
       addressCountry: 'RO',
     },
@@ -54,7 +53,7 @@ export default async function BrasovPage() {
               <a href="tel:+40775132969" className="kira-button rounded-xl bg-[#f0c263] px-6 py-3.5 font-semibold text-[#111720] shadow-[0_10px_34px_rgba(201,154,72,.25)]">Sună la 0775 132 969</a>
               <a href="https://wa.me/40775132969" className="rounded-xl border border-white/35 bg-white/[.06] px-6 py-3.5 font-semibold text-white backdrop-blur transition hover:border-[#f0c263]/70 hover:bg-white/[.12]">Scrie pe WhatsApp</a>
             </div>
-            <p className="mt-5 text-sm text-white/75">Sediul companiei: Făgăraș · Programările și serviciile în Brașov se stabilesc direct cu echipa.</p>
+            <p className="mt-5 text-sm text-white/75">Kira Imobiliare · loc. Brașov, jud. Brașov · Programările se stabilesc direct cu echipa.</p>
           </div>
           <BrasovPhotoCredit photo="old-town" className="absolute bottom-3 right-5 z-10 sm:right-8" />
         </section>
@@ -83,10 +82,10 @@ export default async function BrasovPage() {
 
         <section className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20">
           <div className="grid gap-6 md:grid-cols-[1.1fr_.9fr]">
-            <article className="rounded-3xl bg-[#10151d] p-8 text-white sm:p-10"><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Kira Imobiliare în Brașov</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl">O discuție clară. Un plan potrivit pentru tine.</h2><p className="mt-4 leading-7 text-white/65">Contactează echipa pentru a vorbi despre o proprietate, o evaluare sau o căutare în Brașov. Sediul nostru este în Făgăraș.</p><a href="mailto:contact@kiraimobiliare.ro?subject=Imobiliare%20Bra%C8%99ov" className="mt-7 inline-flex rounded-full bg-[#d5aa5c] px-5 py-3 font-semibold text-[#111720]">Trimite un email</a></article>
-            <article className="rounded-3xl border border-[#e2dacb] bg-white p-8 sm:p-10"><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#a27835]">Și în apropiere</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl text-[#171b20]">Făgăraș și împrejurimi</h2><p className="mt-4 leading-7 text-[#6d7275]">Vezi ofertele și serviciile Kira Imobiliare în zona în care se află sediul agenției.</p><Link href="/localitati/fagaras" className="mt-7 inline-flex font-semibold text-[#8a6428]">Imobiliare în Făgăraș →</Link></article>
+            <article className="rounded-3xl bg-[#10151d] p-8 text-white sm:p-10"><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#e4bd70]">Kira Imobiliare în Brașov</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl">O discuție clară. Un plan potrivit pentru tine.</h2><p className="mt-4 leading-7 text-white/65">Contactează echipa pentru a vorbi despre o proprietate, o evaluare sau o căutare în Brașov.</p><a href="mailto:kiraimobiliare@gmail.com?subject=Imobiliare%20Bra%C8%99ov" className="mt-7 inline-flex rounded-full bg-[#d5aa5c] px-5 py-3 font-semibold text-[#111720]">Trimite un email</a></article>
+            <article className="rounded-3xl border border-[#e2dacb] bg-white p-8 sm:p-10"><p className="text-xs font-semibold uppercase tracking-[.2em] text-[#a27835]">Și în apropiere</p><h2 className="mt-3 font-[var(--font-playfair)] text-3xl text-[#171b20]">Făgăraș și împrejurimi</h2><p className="mt-4 leading-7 text-[#6d7275]">Vezi ofertele și serviciile Kira Imobiliare din Făgăraș și împrejurimi.</p><Link href="/localitati/fagaras" className="mt-7 inline-flex font-semibold text-[#8a6428]">Imobiliare în Făgăraș →</Link></article>
           </div>
-          <p className="mt-8 text-sm text-[#73777a]">Kira Imobiliare · Str. Ion Creangă 35, Făgăraș, județul Brașov · <a className="underline decoration-[#b58b47] underline-offset-4" href="tel:+40775132969">0775 132 969</a></p>
+          <p className="mt-8 text-sm text-[#73777a]">Kira Imobiliare · loc. Brașov, jud. Brașov · <a className="underline decoration-[#b58b47] underline-offset-4" href="tel:+40775132969">0775 132 969</a></p>
         </section>
       </main>
     </PublicSiteFrame>

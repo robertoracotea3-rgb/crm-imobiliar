@@ -5,20 +5,23 @@ import type L from 'leaflet';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { useExplorer } from './PropertyExplorer';
-import { approxPosition } from './places';
+import { mapSpot } from './places';
 
 const LeafletMap = dynamic(() => import('./LeafletMap'), {
   ssr: false,
   loading: () => <div className="grid h-full w-full place-items-center text-sm text-white/40">Se încarcă harta…</div>,
 });
 
-/** The dark map with the search results as gold pins. Pins show the area only, never the address. */
+/** The dark map with the search results: a gold pin where the CRM has one, otherwise only a circle on the zone. */
 export function PropertyMap() {
   const { results } = useExplorer();
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const [full, setFull] = useState(false);
-  const pinned = useMemo(() => results.filter((p) => approxPosition(p)).length, [results]);
+  const { pinned, zones } = useMemo(() => {
+    const spots = results.map((p) => mapSpot(p)).filter((s) => !!s);
+    return { pinned: spots.length, zones: spots.filter((s) => !s.exact).length };
+  }, [results]);
   const onMap = useCallback((m: L.Map) => { map.current = m; }, []);
 
   useEffect(() => {
@@ -44,7 +47,7 @@ export function PropertyMap() {
         {full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
       </button>
       <p className="pointer-events-none absolute bottom-3 left-3 z-[500] rounded-lg bg-[#121417]/80 px-3 py-1.5 text-[11px] text-white/70 backdrop-blur">
-        {pinned ? `${pinned} ${pinned === 1 ? 'proprietate' : 'proprietăți'} pe hartă · pinul arată zona, nu adresa` : 'Proprietățile apar pe hartă imediat ce sunt publicate'}
+        {pinned ? `${pinned} ${pinned === 1 ? 'proprietate' : 'proprietăți'} pe hartă${zones ? ' · cercul arată doar zona' : ''}` : 'Proprietățile apar pe hartă imediat ce sunt publicate'}
       </p>
     </div>
   );

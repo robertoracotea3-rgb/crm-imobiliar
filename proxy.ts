@@ -34,8 +34,8 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get('host');
 
-  // Keep the CRM surface on its own hostname. The property XML feed remains public.
-  const isPublicFeed = pathname.startsWith('/api/feed/');
+  // Keep the CRM surface on its own hostname. The property XML feed and the site's "Adaugă anunț" form remain public.
+  const isPublicFeed = pathname.startsWith('/api/feed/') || pathname.startsWith('/api/site/');
   if (isPublicWebsiteHost(host) && !isPublicFeed && CRM_PATHS.some((path) => matchesPath(pathname, path))) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });

@@ -7,8 +7,9 @@ export const SITE = {
   phone: '0775 132 969',
   phoneLink: 'tel:+40775132969',
   whatsapp: '40775132969',
-  email: 'contact@kiraimobiliare.ro',
-  address: 'Str. Ion Creangă 35, Făgăraș, jud. Brașov',
+  email: 'kiraimobiliare@gmail.com',
+  address: 'Jud. Brașov, loc. Brașov',
+  hours: 'Luni–Vineri 09:00–18:00',
 };
 
 /** A WhatsApp chat with the agency, optionally with the message already written. */
@@ -34,7 +35,11 @@ export type CardProperty = {
   photos: string[];
   photoCount: number;
   updatedAt: number | null;
+  /** The pin set in the CRM. With aprox, only a point near the property, and the site draws a circle on the zone. Missing in favourites saved before. */
+  geo?: GeoPoint | null;
 };
+
+export type GeoPoint = { lat: number; lng: number; aprox: boolean };
 
 export const TYPE_OPTIONS = ['Apartament', 'Garsonieră', 'Casă / Vilă', 'Teren', 'Spațiu comercial', 'Birou', 'Spațiu industrial', 'Cameră'];
 

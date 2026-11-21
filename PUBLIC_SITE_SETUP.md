@@ -8,7 +8,9 @@ The listings come from **Kira Imobiliare**, the agency's CRM (PC and phone apps)
 A property appears on the site when, in the CRM, it is ticked **„Site Kira”** under Promovare and its status is **Activă**.
 It disappears when it is unticked, set to Rezervată / Retrasă / Tranzacționată, or deleted (within about a minute).
 
-The site reads the CRM's database with the **publishable** key, through the SQL function `crm_site_properties()` (from `crm-online.sql`, version 4).
+The site reads the CRM's database with the **publishable** key, through the SQL function `crm_site_properties()` (from `crm-online.sql`, version 5). Each property carries `geo` (`crm_site_geo`): the pin set in the CRM, or, when the agent ticked "Locație aproximativă", a point 120–320 m away from it, which the map draws as a 500 m circle. Without a pin, the map draws a circle on the locality (`components/public/places.ts`).
+
+The "Adaugă anunț" form posts to `/api/site/preluare` (allowed on the public host in `proxy.ts`), which checks the origin, the size and two bot traps, then calls `crm_site_preluare(p)`: the request becomes a "Preluare" activity in the CRM (at most 3 a day per phone, 40 an hour in total). If the database is older than version 5 or unreachable, the form offers the same message on WhatsApp.
 That function returns only the listing text: title, description, price, type, transaction, surfaces, rooms, floor, year, condition, heating,
 locality, area, county, the ticked features and the photo ids. It never returns the street, the number, the owner, the internal notes,
 clients, activities or contracts. A storage policy lets visitors read only the photos of published properties.
@@ -40,6 +42,6 @@ Public website hosts return 404 for `/api/*` except the feed, and redirect old C
 
 ## Before launch
 
-- In Supabase › SQL Editor, run `crm-online.sql` version 4 (it adds the site functions; it deletes nothing).
+- In Supabase › SQL Editor, run `crm-online.sql` version 5 (it adds the site functions, the map position and the "Adaugă anunț" requests; it deletes nothing).
 - Set the two variables above, redeploy, and check a Preview deployment: `/proprietati`, a property page, a photo, `/sitemap.xml`.
 - Confirm privacy/cookie wording against the data flows and third-party scripts actually enabled.

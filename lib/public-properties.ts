@@ -1,12 +1,13 @@
 import 'server-only';
 import { cache } from 'react';
-import type { CardProperty } from '@/components/public/site';
+import type { CardProperty, GeoPoint } from '@/components/public/site';
 
 /*
  * Proprietățile de pe site vin din Kira Imobiliare (CRM-ul): apar cele bifate „Site Kira” la Promovare,
  * cât timp au statusul Activă. Site-ul le citește din baza online a CRM-ului (Supabase) cu cheia publică
  * (publishable), prin funcția crm_site_properties(), care dă doar textul anunțului: niciodată strada,
  * numărul, proprietarul, notele, clienții sau contractele. Pozele trec prin /poze/<id> (app/poze/[id]/route.ts).
+ * Poziția pe hartă (geo) e pinul pus în CRM; la „Locație aproximativă” baza trimite doar un punct mutat față de adresă.
  *
  * Variabile în Vercel (Settings > Environment Variables):
  *   KIRA_CRM_URL               adresa proiectului, de forma https://abcdefghijklmnop.supabase.co
@@ -29,6 +30,8 @@ export type PublicProperty = {
   features: string[];
   /** When the CRM last changed the property (ms). */
   updated_at: number | null;
+  /** The CRM pin: exact, or (aprox) a point moved 120–320 m away, around which the map draws the zone. */
+  geo: GeoPoint | null;
 };
 
 type CrmSiteRow = Record<string, unknown> & { id: string };
@@ -126,6 +129,15 @@ function autoTitle(p: { tip: string | null; camere: number | null; suprafata: nu
   return loc ? `${s}, ${loc}` : s;
 }
 
+/** {lat, lng, aprox} from crm_site_geo, only inside the region the agency works in (Romania's box). */
+function geoPoint(v: unknown): GeoPoint | null {
+  if (!v || typeof v !== 'object') return null;
+  const g = v as Record<string, unknown>;
+  const lat = num(g.lat), lng = num(g.lng);
+  if (lat == null || lng == null || lat < 43.5 || lat > 48.5 || lng < 20 || lng > 30) return null;
+  return { lat, lng, aprox: g.aprox === true };
+}
+
 function futureDate(v: unknown): string | null {
   const m = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})/.exec(v) : null;
   if (!m) return null;
@@ -177,6 +189,7 @@ function toPublic(r: CrmSiteRow): PublicProperty {
     surface_useful: isLand ? null : suprafata, surface_built: null, surface_land: isLand ? suprafata : null,
     attributes, type_label: tip, facts, features,
     updated_at: num(r.m),
+    geo: geoPoint(r.geo),
   };
 }
 
@@ -208,7 +221,7 @@ export function toCard(p: PublicProperty): CardProperty {
     rooms: typeof p.attributes.camere === 'number' ? p.attributes.camere : null,
     floor: typeof p.attributes.etaj === 'string' ? p.attributes.etaj : null,
     year: typeof p.attributes.an_constructie === 'number' ? p.attributes.an_constructie : null,
-    photos: photos.slice(0, 4), photoCount: photos.length, updatedAt: p.updated_at,
+    photos: photos.slice(0, 4), photoCount: photos.length, updatedAt: p.updated_at, geo: p.geo,
   };
 }
 

@@ -1,8 +1,8 @@
 import { norm, type CardProperty } from './site';
 
 /*
- * Approximate centres of the localities and Brașov districts Kira works in. The CRM never sends a street
- * or a number to the site, so a pin shows the area only, nudged a little per property so pins do not overlap.
+ * Approximate centres of the localities and Brașov districts Kira works in. They place a property whose agent
+ * has not yet put a pin on the CRM map: the site then draws only a circle on its area, never a pin.
  */
 const LOCALITIES: Record<string, [number, number]> = {
   fagaras: [45.8417, 24.9731], brasov: [45.6427, 25.5887], victoria: [45.7300, 24.7069], sercaia: [45.8364, 25.1342],
@@ -49,4 +49,16 @@ export function approxPosition(p: Pick<CardProperty, 'id' | 'city' | 'zone'>): [
   const angle = (h % 360) * (Math.PI / 180);
   const dist = 0.0015 + ((h >>> 9) % 100) / 100 * 0.0035; // roughly 150-550 m
   return [base[0] + Math.sin(angle) * dist, base[1] + Math.cos(angle) * dist * 1.4];
+}
+
+export type MapSpot = { pos: [number, number]; exact: boolean; radius: number };
+
+/**
+ * How the property appears on the map: the CRM pin; a 500 m circle when the agent ticked "Locație aproximativă";
+ * a wider circle on the locality or district when there is no pin yet; null when even the locality is unknown.
+ */
+export function mapSpot(p: Pick<CardProperty, 'id' | 'city' | 'zone' | 'geo'>): MapSpot | null {
+  if (p.geo) return { pos: [p.geo.lat, p.geo.lng], exact: !p.geo.aprox, radius: p.geo.aprox ? 500 : 0 };
+  const pos = approxPosition(p);
+  return pos ? { pos, exact: false, radius: 900 } : null;
 }

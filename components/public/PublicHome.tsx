@@ -16,8 +16,9 @@ export async function PublicHome() {
   const businessSchema = {
     '@context': 'https://schema.org', '@type': 'RealEstateAgent', name: 'Kira Imobiliare',
     url: 'https://www.kiraimobiliare.ro/', telephone: '+40775132969', email: SITE.email,
-    address: { '@type': 'PostalAddress', streetAddress: 'Str. Ion Creangă 35', addressLocality: 'Făgăraș', addressRegion: 'Brașov', addressCountry: 'RO' },
-    areaServed: [{ '@type': 'City', name: 'Făgăraș' }, { '@type': 'City', name: 'Brașov' }],
+    address: { '@type': 'PostalAddress', addressLocality: 'Brașov', addressRegion: 'Brașov', addressCountry: 'RO' },
+    areaServed: [{ '@type': 'City', name: 'Brașov' }, { '@type': 'City', name: 'Făgăraș' }],
+    openingHoursSpecification: [{ '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'], opens: '09:00', closes: '18:00' }],
   };
 
   return (
@@ -42,7 +43,7 @@ export async function PublicHome() {
 
               <div className="kira-hero-copy px-5 pt-14 sm:px-10 sm:pt-20 lg:px-14 lg:pt-24">
                 <p className="inline-flex items-center gap-2 rounded-full border border-[#C8A252]/45 bg-[#121417]/45 px-4 py-2 text-[11px] font-bold uppercase tracking-[.24em] text-[#E9CF8E] backdrop-blur">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#D4AF37]" /> Făgăraș · Brașov · împrejurimi
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#D4AF37]" /> Brașov · Făgăraș · împrejurimi
                 </p>
                 <h1 className="mt-7 max-w-3xl font-[var(--font-playfair)] text-[2.6rem] font-medium leading-[1.04] tracking-[-.02em] text-[#F6F3EE] sm:text-6xl lg:text-[4.4rem]">
                   Găsește-ți căminul de vis cu{' '}
@@ -149,17 +150,9 @@ export async function PublicHome() {
                 <p className="text-[11px] font-bold uppercase tracking-[.24em] text-[#9a7a35]">Unde activăm</p>
                 <h2 className="mt-3 font-[var(--font-playfair)] text-4xl font-medium sm:text-5xl">Două piețe. Aceeași grijă.</h2>
               </div>
-              <p className="max-w-md text-[15px] leading-7 text-[#121417]/60">Sediul nostru e în Făgăraș; lucrăm și în localitățile din jur și în Brașov.</p>
+              <p className="max-w-md text-[15px] leading-7 text-[#121417]/60">Suntem în Brașov și lucrăm și în Făgăraș, cu localitățile din jur.</p>
             </div>
             <div className="mt-10 grid gap-6 md:grid-cols-2">
-              <Link href="/localitati/fagaras" className="group relative flex min-h-[22rem] flex-col justify-end overflow-hidden rounded-[1.6rem] bg-[#121417] p-8 text-white sm:p-10">
-                <div aria-hidden="true" className="absolute -right-16 -top-16 h-72 w-72 rounded-full border border-[#C8A252]/25 transition duration-700 group-hover:scale-110" />
-                <div aria-hidden="true" className="absolute -right-4 -top-4 h-48 w-48 rounded-full border border-[#C8A252]/15 transition duration-700 group-hover:scale-110" />
-                <p className="text-[11px] font-bold uppercase tracking-[.24em] text-[#C8A252]">Sediul Kira</p>
-                <h3 className="mt-3 font-[var(--font-playfair)] text-4xl">Făgăraș & împrejurimi</h3>
-                <p className="mt-3 max-w-md leading-7 text-white/65">Victoria, Șercaia, Hârseni, Voila, Recea, Drăguș, Ucea și satele din jur.</p>
-                <span className="mt-6 inline-flex items-center gap-1.5 font-semibold text-[#E9CF8E]">Imobiliare în Făgăraș <ArrowUpRight size={16} className="transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></span>
-              </Link>
               {/* Card is a div with a stretched link, so the photo credit can stay its own link (no <a> inside <a>). */}
               <div className="group relative flex min-h-[22rem] flex-col justify-end overflow-hidden rounded-[1.6rem] bg-[#121417] p-8 text-white sm:p-10">
                 <img src={brasovOldTown.src} alt={brasovOldTown.alt} className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-[1.04]" loading="lazy" />
@@ -173,6 +166,14 @@ export async function PublicHome() {
                 </div>
                 <BrasovPhotoCredit photo="old-town" className="relative z-10 mt-4" />
               </div>
+              <Link href="/localitati/fagaras" className="group relative flex min-h-[22rem] flex-col justify-end overflow-hidden rounded-[1.6rem] bg-[#121417] p-8 text-white sm:p-10">
+                <div aria-hidden="true" className="absolute -right-16 -top-16 h-72 w-72 rounded-full border border-[#C8A252]/25 transition duration-700 group-hover:scale-110" />
+                <div aria-hidden="true" className="absolute -right-4 -top-4 h-48 w-48 rounded-full border border-[#C8A252]/15 transition duration-700 group-hover:scale-110" />
+                <p className="text-[11px] font-bold uppercase tracking-[.24em] text-[#C8A252]">Țara Făgărașului</p>
+                <h3 className="mt-3 font-[var(--font-playfair)] text-4xl">Făgăraș & împrejurimi</h3>
+                <p className="mt-3 max-w-md leading-7 text-white/65">Victoria, Șercaia, Hârseni, Voila, Recea, Drăguș, Ucea și satele din jur.</p>
+                <span className="mt-6 inline-flex items-center gap-1.5 font-semibold text-[#E9CF8E]">Imobiliare în Făgăraș <ArrowUpRight size={16} className="transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5" /></span>
+              </Link>
             </div>
           </div>
         </section>

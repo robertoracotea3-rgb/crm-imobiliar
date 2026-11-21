@@ -20,7 +20,7 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
             <div>
               <img src="/images/kira-logo-gold.png" alt="Kira Imobiliare" width={420} height={518} className="h-28 w-auto" loading="lazy" />
               <p className="mt-5 max-w-xs text-sm leading-6 text-white/60">
-                Consultanță imobiliară pentru vânzare, cumpărare și închiriere în Făgăraș, împrejurimi și Brașov.
+                Consultanță imobiliară pentru vânzare, cumpărare și închiriere în Brașov, Făgăraș și împrejurimi.
               </p>
             </div>
             <div className="text-sm leading-7 text-white/70">
@@ -29,13 +29,13 @@ export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
               <a href={`mailto:${SITE.email}`} className="block hover:text-[#E9CF8E]">{SITE.email}</a>
               <a href={waLink()} className="block hover:text-[#E9CF8E]">Scrie-ne pe WhatsApp</a>
               <p className="mt-2">{SITE.address}</p>
-              <p>Luni–Vineri 09:00–18:00 · Sâmbătă 09:00–14:00</p>
+              <p>{SITE.hours}</p>
             </div>
             <div className="flex flex-col items-start gap-2 text-sm text-white/70">
               <p className="mb-2 text-[11px] font-bold uppercase tracking-[.22em] text-[#C8A252]">Explorează</p>
               <Link href="/proprietati" className="hover:text-[#E9CF8E]">Proprietăți</Link>
-              <Link href="/localitati/fagaras" className="hover:text-[#E9CF8E]">Imobiliare Făgăraș</Link>
               <Link href="/localitati/brasov" className="hover:text-[#E9CF8E]">Imobiliare Brașov</Link>
+              <Link href="/localitati/fagaras" className="hover:text-[#E9CF8E]">Imobiliare Făgăraș</Link>
               <Link href="/servicii" className="hover:text-[#E9CF8E]">Servicii imobiliare</Link>
               <Link href="/agenti" className="hover:text-[#E9CF8E]">Echipa Kira</Link>
               <Link href="/blog" className="hover:text-[#E9CF8E]">Ghiduri</Link>

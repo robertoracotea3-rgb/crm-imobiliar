@@ -8,8 +8,9 @@ import { SITE, TYPE_OPTIONS, num, placeLabel, priceLabel, transactionLabel, waLi
 
 /*
  * Everything on the public site that opens on top of the page: the favourites drawer, the contact /
- * viewing form, the 3-step "Adaugă anunț" form and the phone menu. Forms send nothing to a server:
- * they write a WhatsApp message to the agency that the visitor sends themselves.
+ * viewing form, the 3-step "Adaugă anunț" form and the phone menu. The contact form writes a WhatsApp
+ * message the visitor sends themselves; "Adaugă anunț" goes straight into the agency's CRM as a Preluare
+ * (app/api/site/preluare), and offers the same WhatsApp message only if that does not work.
  */
 
 type Panel =
@@ -143,14 +144,14 @@ function CloseButton({ onClose, dark = false }: { onClose: () => void; dark?: bo
 const field = 'mt-1.5 w-full rounded-xl border border-[#121417]/12 bg-white px-4 py-3 text-[15px] text-[#121417] outline-none transition focus:border-[#C8A252] focus:ring-2 focus:ring-[#C8A252]/25';
 const labelCls = 'block text-[13px] font-semibold text-[#121417]/80';
 
-function Done({ title, text, wa, onClose }: { title: string; text: string; wa: string; onClose: () => void }) {
+function Done({ title, text, wa, onClose, pending = false }: { title: string; text: string; wa?: string; onClose: () => void; pending?: boolean }) {
   return (
     <div className="px-7 pb-8 pt-10 text-center sm:px-10">
-      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#C8A252] text-[#121417]"><Check size={26} /></span>
+      <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#C8A252] text-[#121417]">{pending ? <MessageCircle size={26} /> : <Check size={26} />}</span>
       <h2 className="mt-5 font-[var(--font-playfair)] text-3xl">{title}</h2>
       <p className="mx-auto mt-3 max-w-sm leading-7 text-[#121417]/70">{text}</p>
       <div className="mt-7 flex flex-wrap justify-center gap-3">
-        <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-[#121417] px-6 py-3 font-semibold text-[#F6F3EE] transition hover:bg-black"><MessageCircle size={18} /> Deschide WhatsApp</a>
+        {wa && <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full bg-[#121417] px-6 py-3 font-semibold text-[#F6F3EE] transition hover:bg-black"><MessageCircle size={18} /> Deschide WhatsApp</a>}
         <a href={SITE.phoneLink} className="inline-flex items-center gap-2 rounded-full border border-[#121417]/15 px-6 py-3 font-semibold transition hover:border-[#C8A252]"><Phone size={17} /> {SITE.phone}</a>
       </div>
       <button type="button" onClick={onClose} className="mt-6 text-sm font-semibold text-[#121417]/60 underline-offset-4 hover:underline">Închide</button>
@@ -161,11 +162,13 @@ function Done({ title, text, wa, onClose }: { title: string; text: string; wa: s
 const phoneOk = (v: string) => v.replace(/\D/g, '').length >= 9;
 const today = () => new Date().toISOString().slice(0, 10);
 const roDate = (iso: string) => (iso ? iso.split('-').reverse().join('.') : '');
+/** Saturday or Sunday: the agency works Monday to Friday, 9 to 18. */
+const weekend = (iso: string) => { const d = new Date(`${iso}T12:00:00`).getDay(); return d === 0 || d === 6; };
 
 /* ---------- contact / viewing / private discussion ---------- */
 
 const TOPICS = ['Vreau să cumpăr', 'Vreau să vând', 'Caut o chirie', 'Evaluare gratuită', 'Discuție privată (Private Client)', 'Programare vizionare'];
-const SLOTS = ['09:00 – 12:00', '12:00 – 15:00', '15:00 – 18:00', 'Sâmbătă 09:00 – 14:00'];
+const SLOTS = ['09:00 – 12:00', '12:00 – 15:00', '15:00 – 18:00'];
 
 function ContactForm({ onClose, topic, property }: { onClose: () => void; topic?: string; property?: { code: string | null; title: string } }) {
   const [f, setF] = useState({ name: '', phone: '', topic: topic || (property ? 'Programare vizionare' : TOPICS[0]), date: '', slot: SLOTS[0], message: '' });
@@ -177,6 +180,7 @@ function ContactForm({ onClose, topic, property }: { onClose: () => void; topic?
     e.preventDefault();
     if (!f.name.trim()) return setError('Scrie-ne numele tău.');
     if (!phoneOk(f.phone)) return setError('Telefonul pare incomplet.');
+    if (f.date && weekend(f.date)) return setError('Programul nostru e de luni până vineri, 9–18. Alege o zi lucrătoare.');
     const lines = [
       `Bună ziua! Sunt ${f.name.trim()}.`,
       `Subiect: ${f.topic}${property ? ` – ${property.title}${property.code ? ` (cod ${property.code})` : ''}` : ''}.`,
@@ -198,7 +202,7 @@ function ContactForm({ onClose, topic, property }: { onClose: () => void; topic?
         <form onSubmit={submit} className="px-7 pb-8 pt-9 sm:px-10" noValidate>
           <p className="text-[11px] font-bold uppercase tracking-[.22em] text-[#9a7a35]">{property ? 'Programează o vizionare' : 'Contactează-ne'}</p>
           <h2 className="mt-3 pr-10 font-[var(--font-playfair)] text-[2rem] leading-tight">{property ? property.title : 'Hai să stabilim o discuție'}</h2>
-          <p className="mt-2 text-[15px] leading-6 text-[#121417]/65">Alege ziua și intervalul. Confirmăm telefonic disponibilitatea.</p>
+          <p className="mt-2 text-[15px] leading-6 text-[#121417]/65">Alege ziua și intervalul, de luni până vineri, 9–18. Confirmăm telefonic disponibilitatea.</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <label className={labelCls}>Nume<input className={field} value={f.name} onChange={set('name')} autoComplete="name" required /></label>
             <label className={labelCls}>Telefon<input className={field} value={f.phone} onChange={set('phone')} type="tel" autoComplete="tel" inputMode="tel" required /></label>
@@ -228,18 +232,24 @@ function ListingWizard({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(1);
   const [f, setF] = useState({ tranzactie: 'Vânzare', tip: TYPE_OPTIONS[0], localitate: '', zona: '', suprafata: '', camere: '', pret: '', detalii: '', name: '', phone: '', email: '', acord: false });
   const [error, setError] = useState('');
-  const [sent, setSent] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<{ ok: true } | { ok: false; wa: string } | null>(null);
+  const [trap, setTrap] = useState('');
+  const opened = useRef(0);
+  useEffect(() => { opened.current = Date.now(); }, []);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setF({ ...f, [k]: e.target instanceof HTMLInputElement && e.target.type === 'checkbox' ? e.target.checked : e.target.value });
 
-  function next(e: React.FormEvent) {
+  async function next(e: React.FormEvent) {
     e.preventDefault();
+    if (sending) return;
     setError('');
     if (step === 1 && !f.localitate.trim()) return setError('Scrie localitatea proprietății.');
     if (step === 2 && !f.suprafata.trim()) return setError('Scrie suprafața aproximativă.');
     if (step < 3) return setStep(step + 1);
     if (!f.name.trim()) return setError('Scrie-ne numele tău.');
     if (!phoneOk(f.phone)) return setError('Telefonul pare incomplet.');
+    if (f.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) return setError('Adresa de email pare greșită (sau las-o goală).');
     if (!f.acord) return setError('Bifează acordul ca să te putem contacta.');
     const text = [
       'Bună ziua! Vreau să listez o proprietate la Kira Imobiliare.',
@@ -248,17 +258,39 @@ function ListingWizard({ onClose }: { onClose: () => void }) {
       f.detalii.trim(),
       `${f.name.trim()} · ${f.phone.trim()}${f.email.trim() ? ` · ${f.email.trim()}` : ''}`,
     ].filter(Boolean).join('\n');
-    const link = waLink(text);
-    setSent(link);
-    window.open(link, '_blank', 'noopener');
+    const amount = (v: string) => { const n = parseFloat(v.replace(/\s/g, '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? n : null; };
+    const whole = (v: string) => { const n = parseInt(v.replace(/\D/g, ''), 10); return Number.isFinite(n) && n > 0 ? n : null; };
+    setSending(true);
+    try {
+      const res = await fetch('/api/site/preluare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tranzactie: f.tranzactie === 'Închiriere' ? 'inchiriere' : 'vanzare', tip: f.tip,
+          localitate: f.localitate.trim(), zona: f.zona.trim(), suprafata: amount(f.suprafata), camere: whole(f.camere), pret: whole(f.pret),
+          detalii: f.detalii.trim(), nume: f.name.trim(), telefon: f.phone.trim(), email: f.email.trim(),
+          website: trap, t: Date.now() - opened.current,
+        }),
+      });
+      const out = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (res.ok && out?.ok) return setSent({ ok: true });
+      if (out?.error === 'too_many') return setError(`Am primit deja cererile tale de azi. Te sunăm noi; dacă e urgent, sună-ne la ${SITE.phone}.`);
+      setSent({ ok: false, wa: waLink(text) });
+    } catch {
+      setSent({ ok: false, wa: waLink(text) });
+    } finally {
+      setSending(false);
+    }
   }
 
   const steps = ['Proprietate & locație', 'Suprafață & preț', 'Datele tale'];
   return (
     <Overlay onClose={onClose} label="Adaugă anunț">
       <CloseButton onClose={onClose} />
-      {sent ? (
-        <Done onClose={onClose} wa={sent} title="Mulțumim!" text="Mesajul cu detaliile proprietății e pregătit în WhatsApp. După ce îl trimiți, te sunăm pentru evaluare și pașii de promovare." />
+      {sent?.ok ? (
+        <Done onClose={onClose} title="Am primit cererea" text="Mulțumim! Un agent Kira te sună în cel mult o zi lucrătoare (luni–vineri, 9–18) pentru evaluare și pașii de promovare." />
+      ) : sent ? (
+        <Done onClose={onClose} wa={sent.wa} pending title="Trimite-ne cererea pe WhatsApp" text="Acum nu am putut-o înregistra pe site. Mesajul cu toate detaliile e gata: deschide WhatsApp și apasă Trimite, sau sună-ne." />
       ) : (
         <form onSubmit={next} className="px-7 pb-8 pt-9 sm:px-10" noValidate>
           <p className="text-[11px] font-bold uppercase tracking-[.22em] text-[#9a7a35]">Adaugă anunț · evaluare gratuită</p>
@@ -292,15 +324,21 @@ function ListingWizard({ onClose }: { onClose: () => void }) {
                 <input type="checkbox" checked={f.acord} onChange={set('acord')} className="mt-1 h-4 w-4 accent-[#C8A252]" />
                 <span>Sunt de acord să fiu contactat de Kira Imobiliare pentru această proprietate.</span>
               </label>
+              <label aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">Website<input tabIndex={-1} autoComplete="off" value={trap} onChange={(e) => setTrap(e.target.value)} /></label>
             </>)}
           </div>
           {error && <p role="alert" className="mt-4 rounded-xl bg-[#7a1d1d]/10 px-4 py-3 text-sm font-semibold text-[#7a1d1d]">{error}</p>}
           <div className="mt-6 flex gap-3">
             {step > 1 && <button type="button" onClick={() => { setError(''); setStep(step - 1); }} className="rounded-full border border-[#121417]/15 px-6 py-3.5 font-semibold transition hover:border-[#C8A252]">Înapoi</button>}
-            <button type="submit" className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[#C8A252] px-6 py-3.5 font-semibold text-[#121417] shadow-[0_12px_32px_rgba(200,162,82,.35)] transition hover:bg-[#D4AF37]">
-              {step < 3 ? 'Continuă' : 'Trimite pe WhatsApp'} <ArrowRight size={18} />
+            <button type="submit" disabled={sending} className="inline-flex flex-1 items-center justify-center gap-2 rounded-full bg-[#C8A252] px-6 py-3.5 font-semibold text-[#121417] shadow-[0_12px_32px_rgba(200,162,82,.35)] transition hover:bg-[#D4AF37] disabled:cursor-wait disabled:opacity-70">
+              {step < 3 ? 'Continuă' : sending ? 'Se trimite…' : 'Trimite cererea'} <ArrowRight size={18} />
             </button>
           </div>
+          {step === 3 && (
+            <p className="mt-4 text-center text-xs leading-5 text-[#121417]/55">
+              Cererea ajunge doar la agenție, ca să te putem suna. <Link href="/politica-confidentialitate" className="underline underline-offset-2" onClick={onClose}>Confidențialitate</Link>
+            </p>
+          )}
         </form>
       )}
     </Overlay>
