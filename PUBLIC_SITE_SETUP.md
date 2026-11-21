@@ -1,29 +1,43 @@
 # Public Kira site setup
 
-The public site and CRM share this repository. Vercel serves the public pages on `kiraimobiliare.ro` / `www.kiraimobiliare.ro` and the CRM on `crm.kiraimobiliare.ro`.
+The public site and the old CRM code share this repository. Vercel serves the public pages on `kiraimobiliare.ro` / `www.kiraimobiliare.ro`.
+
+## Where the listings come from
+
+The listings come from **Kira Imobiliare**, the agency's CRM (PC and phone apps), through its online database on Supabase.
+A property appears on the site when, in the CRM, it is ticked **„Site Kira”** under Promovare and its status is **Activă**.
+It disappears when it is unticked, set to Rezervată / Retrasă / Tranzacționată, or deleted (within about a minute).
+
+The site reads the CRM's database with the **publishable** key, through the SQL function `crm_site_properties()` (from `crm-online.sql`, version 4).
+That function returns only the listing text: title, description, price, type, transaction, surfaces, rooms, floor, year, condition, heating,
+locality, area, county, the ticked features and the photo ids. It never returns the street, the number, the owner, the internal notes,
+clients, activities or contracts. A storage policy lets visitors read only the photos of published properties.
+
+- `lib/public-properties.ts` reads and maps the listings (cached for 60 s, never waits more than 3.5 s).
+- `app/poze/[id]/route.ts` serves a published photo at `/poze/<id>` from the private `crm-poze` bucket.
+- Property pages live at `/proprietati/<title>-<code>` (e.g. `/proprietati/apartament-3-camere-de-vanzare-galaxiei-p101`).
+  The code decides: an older link (a changed title) redirects permanently to the current one. The CRM builds the same link.
 
 ## Vercel environment
 
-The public property feed uses Supabase from server-side code. Configure the URL and service key for the public deployment in the required environments:
+Project › Settings › Environment Variables (Production and Preview):
 
-- `SUPABASE_URL` — preferred server-only name for the Supabase project URL. Use the project root, for example `https://<project-ref>.supabase.co`; do not append `/rest/v1/`.
-- `NEXT_PUBLIC_SUPABASE_URL` — retained for existing CRM/browser code paths during migration. The URL itself is public configuration, not a credential.
-- `SUPABASE_SERVICE_ROLE_KEY` — the service-role key. Keep it secret and server-side; never use a `NEXT_PUBLIC_` name.
-- `KIRA_PUBLIC_AGENCY_ID` — the UUID in `profiles.agency_id` for the Kira account. This scopes public property reads to Kira in the multi-agency CRM.
+- `KIRA_CRM_URL` — the CRM's Supabase project URL, e.g. `https://abcdefghijklmnop.supabase.co` (no `/rest/v1/`).
+- `KIRA_CRM_PUBLISHABLE_KEY` — the project's publishable key (`sb_publishable_...`). It is public by design: the database rules decide what it can read.
+  A secret key (`sb_secret_...`) or a `service_role` key is refused by the code; never use one for the public site.
 
-If the agency ID or database variables are missing, the public pages still render, but property cards stay empty. Never remove the agency filter to make listings appear; that could expose another agency's inventory.
+Without these variables the pages still render, instantly, with no listings.
 
-## How listings appear
-
-A property appears only when its CRM status is `activa` and `attributes.publicare.site` is enabled. The public site reads only the fields used for a listing and a small allowlist of display attributes. It does not expose the street address, owner contact, private notes, or other CRM fields.
+The old variables (`SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `KIRA_PUBLIC_AGENCY_ID`) belonged to the old CRM database,
+which was deleted. The public pages no longer use them; they are still referenced by the old CRM code and the XML feed (`/api/feed/properties.xml`).
 
 ## Domains
 
-Keep the public domain and CRM domain assigned to the Vercel deployments configured for their respective hosts. The app selects the public or CRM layout from the incoming host. Public website previews intentionally return 404 for CRM API paths; test CRM API routes on the CRM host.
+Keep the public domain assigned to this Vercel project. The app selects the public layout from the incoming host.
+Public website hosts return 404 for `/api/*` except the feed, and redirect old CRM paths to `crm.kiraimobiliare.ro`.
 
 ## Before launch
 
-- Preview the public site and CRM separately and confirm redirects work in both directions.
-- Confirm the agency ID against the Kira profile in Supabase.
+- In Supabase › SQL Editor, run `crm-online.sql` version 4 (it adds the site functions; it deletes nothing).
+- Set the two variables above, redeploy, and check a Preview deployment: `/proprietati`, a property page, a photo, `/sitemap.xml`.
 - Confirm privacy/cookie wording against the data flows and third-party scripts actually enabled.
-- Check the production sitemap, canonical URLs, and social profile links.
