@@ -625,9 +625,30 @@
     return Promise.race([work, sleep(2500)]);
   }
 
+  /* ---------- the agency's database, so an agent types only the account ----------
+     The project address and the publishable key (public by design: email, password and membership guard the data)
+     come built into the app (online\conectare.json at build time) or from app.kiraimobiliare.ro/conectare.json,
+     which the site serves from its Vercel settings. A secret key never comes this way. */
+  var REMOTE = (/^app\.(kiraimobiliare\.ro|localhost)$/.test(location.hostname) ? location.origin : 'https://app.kiraimobiliare.ro') + '/conectare.json';
+  var remote = null, remoteP = null;
+  function baked(){ var d = window.CRM_ONLINE; return d && normUrl(d.url) && !keyProblem(d.key) ? {url: normUrl(d.url), key: String(d.key).trim()} : null; }
+  function loadRemote(fresh){
+    if (!fresh && (baked() || remote)) return Promise.resolve(baked() || remote);
+    if (!remoteP) remoteP = (async function(){
+      try {
+        var r = await Promise.race([fetch(REMOTE, {cache: 'no-store', credentials: 'omit'}), sleep(8000).then(function(){ return null; })]);
+        var j = r && r.ok ? await r.json() : null;
+        if (j && normUrl(j.url) && !keyProblem(j.key)) remote = {url: normUrl(j.url), key: String(j.key).trim()};
+      } catch(e){}
+      remoteP = null;
+      return baked() || remote;
+    })();
+    return remoteP;
+  }
+
   /* ---------- messages ---------- */
   var MSG = {
-    offline: 'Nu ajung la baza online. Verifică internetul și adresa proiectului (https://….supabase.co).',
+    offline: 'Nu ajung la baza online. Verifică internetul (și adresa proiectului, dacă ai scris-o de mână).',
     bad_url: 'Adresa proiectului nu e corectă. O găsești în Supabase la Project Settings › Data API, de forma https://….supabase.co.',
     bad_key: 'Cheia publică nu se potrivește cu acest proiect. Copiaz-o din nou din Supabase: Project Settings › API Keys.',
     bad_email: 'Scrie adresa de email a contului.',
@@ -641,7 +662,8 @@
     down: 'Baza online nu răspunde acum. Dacă n-ai folosit-o de peste o săptămână, intră pe supabase.com și apasă Restore la proiect.',
     busy_server: 'Prea multe încercări într-un timp scurt. Mai încearcă peste un minut.',
     too_large: 'O poză e prea mare pentru baza online (limita e 25 MB).',
-    relogin: 'Sesiunea online a expirat. Conectează-te din nou.'
+    relogin: 'Sesiunea online a expirat. Conectează-te din nou.',
+    no_project: 'Nu găsesc baza de date a agenției. Verifică internetul și încearcă din nou.'
   };
   function explain(e){
     if (!e) return '';
@@ -739,7 +761,7 @@
       var sb = pop.querySelector('#on-sync'); if (sb) sb.disabled = status.s === 'busy';
     }
     function build(){
-      var defaults = window.CRM_ONLINE || {};
+      var defaults = baked() || remote || {};
       var url = (st && st.url) || defaults.url || '', key = (st && st.key) || defaults.key || '';
       if (mode === 'on'){
         pop.innerHTML = '<h3>Date online</h3><p class="on-state" id="on-st"></p>' +
@@ -755,20 +777,25 @@
           (A.backupFirst ? '<p>Înainte se face automat o copie de siguranță completă în folderul <b>backup</b>.</p>' : '<p>Recomandat: fă întâi o copie (butonul <b>Copie</b>).</p>') +
           '<div class="on-row"><button type="button" class="btn sm primary" id="on-begin">Pornește sincronizarea</button><button type="button" class="btn sm" id="on-cancel">Renunță</button></div>';
       } else {
-        var fixed = !!(defaults.url && defaults.key) && !showProject && (!st || !st.url || st.url === normUrl(defaults.url));
-        if (fixed){ url = defaults.url; key = defaults.key; }
+        // Only the account: the agency's database (built in, from app.kiraimobiliare.ro, or the one this device used).
+        // A device connected to another database keeps it, with the fields shown, as before.
+        var known = defaults.url || '';
+        var fixed = !showProject && (!st || !st.url || !known || st.url === known);
+        if (fixed){ url = known || (st && st.url) || ''; key = known ? defaults.key : ((st && st.key) || ''); }
         pop.innerHTML = '<h3>Date online</h3>' +
           (status.s === 'relogin' ? '<p class="on-err">' + esc(MSG.relogin) + '</p>' :
             status.s === 'error' && status.msg ? '<p class="on-err">' + esc(status.msg) + '</p>' :
+            fixed ? '<p>Intră cu contul tău Kira (emailul și parola primite de la administrator), ca să ai aceleași date pe telefon și pe calculator.</p>' :
             '<p>Conectează CRM-ul la baza ta de date online, ca să ai aceleași date pe telefon și pe calculator. Pașii pentru crearea bazei sunt în „Date online - CITESTE-MA”.</p>') +
           '<form id="on-form" novalidate>' +
-          (fixed ? '<p class="on-proj">Proiect: ' + esc(normUrl(url).replace(/^https?:\/\//, '')) + ' · <button type="button" class="on-link" id="on-chg">Schimbă</button></p>' :
+          (fixed ? '' :
             '<label>Adresa proiectului<input id="on-url" value="' + esc(url) + '" placeholder="https://….supabase.co" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url"></label>' +
             '<label>Cheia publică (Publishable key)<input id="on-key" value="' + esc(key) + '" placeholder="sb_publishable_…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>') +
           '<label>Email<input id="on-email" type="email" value="' + esc((st && st.email) || '') + '" autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="email"></label>' +
           '<label>Parolă<input id="on-pass" type="password" autocomplete="current-password"></label>' +
           '<p class="on-err" id="on-ferr"' + (formErr ? '' : ' hidden') + '>' + esc(formErr) + '</p>' +
           '<div class="on-row"><button type="submit" class="btn sm primary" id="on-go">Conectează</button></div>' +
+          (fixed ? '<p class="on-proj"><button type="button" class="on-link" id="on-chg">Altă bază de date</button></p>' : '') +
           '</form>';
         pop.dataset.url = url; pop.dataset.key = key;
       }
@@ -779,6 +806,7 @@
       pop.hidden = !pop.hidden; btn.setAttribute('aria-expanded', String(!pop.hidden));
       if (!pop.hidden){
         mode = ''; formErr = ''; paint();
+        if (want() === 'login') loadRemote();
         var empty = [].filter.call(pop.querySelectorAll('input'), function(x){ return !x.value; })[0];
         if (empty && !('ontouchstart' in window)) try { empty.focus(); } catch(x){}
       }
@@ -789,11 +817,27 @@
       e.preventDefault();
       if (busyForm) return;
       var q = function(s){ var x = pop.querySelector(s); return x ? x.value : ''; };
-      var url = pop.querySelector('#on-url') ? q('#on-url') : pop.dataset.url, key = pop.querySelector('#on-key') ? q('#on-key') : pop.dataset.key;
+      var manual = !!pop.querySelector('#on-url');
+      var url = manual ? q('#on-url') : pop.dataset.url, key = manual ? q('#on-key') : pop.dataset.key;
       var go = pop.querySelector('#on-go');
       busyForm = true; go.disabled = true; go.textContent = 'Se conectează…'; formError('');
       try {
-        var p = await connect(url, key, q('#on-email'), q('#on-pass'));
+        var p, email = q('#on-email'), pass = q('#on-pass');
+        if (!manual && !(url && key)){
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(email).trim())) throw E('bad_email');
+          if (!pass) throw E('no_password');
+          var d = await loadRemote();
+          if (!d) throw E('no_project');
+          url = d.url; key = d.key;
+        }
+        try { p = await connect(url, key, email, pass); }
+        catch(err){
+          // The key was changed in Supabase (and in Vercel): take the agency's current one.
+          if (manual || err.code !== 'bad_key') throw err;
+          var d2 = await loadRemote(true);
+          if (!d2 || (d2.url === normUrl(url) && d2.key === String(key).trim())) throw err;
+          p = await connect(d2.url, d2.key, email, pass);
+        }
         var pw = pop.querySelector('#on-pass'); if (pw) pw.value = '';
         if (p.first && p.local.p + p.local.c + p.local.a > 0 && p.online.p + p.online.c + p.online.a > 0){ plan = p; mode = ''; paint(); }
         else { mode = ''; paint(); startNow(); }
@@ -860,7 +904,7 @@
    Copia de siguranță are aceeași structură ca folderul de date din Kira Imobiliare pentru Windows. */
 (function(){
   'use strict';
-  var VERSION = '1.6.0';
+  var VERSION = '1.7.0';
   var DB_NAME = 'crm-imobiliar', DB_VER = 1;
   var COLS = {properties: 'proprietati', clients: 'clienti', activities: 'activitati', contracts: 'contracte', meta: 'setari'};
   var EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'};
@@ -1647,7 +1691,7 @@
 
   <section class="kl-panel" id="kl-p-windows" role="tabpanel" aria-labelledby="kl-t-windows" hidden>
     <h2>Pe calculator (Windows 10 și 11)</h2>
-    <p class="kl-note">Versiunea 1.6.0 · arhivă .zip de 289 KB</p>
+    <p class="kl-note">Versiunea 1.7.0 · arhivă .zip de 290 KB</p>
     <a class="kl-btn" href="descarca/Kira-Imobiliare-Windows.zip" download>Descarcă pentru Windows</a>
     <ol>
       <li>Click dreapta pe arhiva descărcată › <b>Extrage tot</b>.</li>
@@ -1658,7 +1702,7 @@
 
   <div class="kl-foot">
     <p>Actualizări: pe telefon, aplicația îți arată singură „Versiune nouă” și butonul <b>Actualizează</b>. Datele rămân pe telefon.</p>
-    <p>Aplicația de telefon: versiunea 1.6.0 · <a href="?browser=1">deschide în browser</a></p>
+    <p>Aplicația de telefon: versiunea 1.7.0 · <a href="?browser=1">deschide în browser</a></p>
   </div>
 </div>
 </div></template>

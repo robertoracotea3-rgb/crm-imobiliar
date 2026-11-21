@@ -1,5 +1,5 @@
 /* Kira Imobiliare pe telefon: pornește și fără internet, iar pozele (/_blob/<id>) vin din baza de date a telefonului. */
-var VERSION = '1.6.0-7d90e2e7';
+var VERSION = '1.7.0-4745dd27';
 var CACHE = 'crm-' + VERSION;
 var SHELL = ['./', './manifest.webmanifest', './apple-touch-icon.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
@@ -78,6 +78,8 @@ self.addEventListener('fetch', function(e){
   if (/\/semnare\.html$/.test(url.pathname)) return;
   // Downloads (the Windows kit) always come fresh from the address, never from the phone's copy.
   if (/\/descarca\//.test(url.pathname)) return;
+  // The agency's database address comes fresh too (it is never kept on the phone by the worker).
+  if (/\/conectare\.json$/.test(url.pathname)) return;
   var key = nav ? './' : req;
   // Answer from the phone at once (works offline); fetch the newest version for the next start.
   e.respondWith(caches.open(CACHE).then(function(c){

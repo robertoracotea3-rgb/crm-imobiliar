@@ -52,6 +52,11 @@ On that host `next.config.ts` rewrites every path to `public/aplicatie/`: in a b
 and push. Phones pick the new version up by themselves and show "Versiune nouă · Actualizează"; nothing else is needed.
 `/aplicatie` answers 404 on every other host, so the app never shares an origin (and its stored data) with the site.
 
+`app.kiraimobiliare.ro/conectare.json` (`app/aplicatie/conectare.json/route.ts`) hands the CRM apps (phone and PC) the same
+`KIRA_CRM_URL` and `KIRA_CRM_PUBLISHABLE_KEY`, so agents sign in with only their email and password. Both are public by
+design: the data needs an account the administrator added (`crm_is_member`). `crmConfig()` refuses a secret or service_role
+key, so one is never handed out. Change the database or the key only in Vercel (then Redeploy); the apps follow.
+
 ## Before launch
 
 - In Supabase › SQL Editor, run `crm-online.sql` version 5 (it adds the site functions, the map position and the "Adaugă anunț" requests; it deletes nothing).
