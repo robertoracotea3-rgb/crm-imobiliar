@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#F1F4F8">
+<title>Semnare document · Kira Imobiliare</title>
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{
+  --bg:#F1F4F8;--surface:#FFFFFF;--ink:#16202C;--muted:#5B6878;--line:#D8DEE6;
+  --accent:#1D4ED8;--accent-ink:#FFFFFF;--good:#0F7A4B;--good-bg:#E3F4EB;--bad:#B42318;--bad-bg:#FDECEA;--warn-bg:#FFF4DC;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink)}
+body{font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%;
+  padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.wrap{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.top{display:flex;align-items:center;gap:10px;padding:4px 2px}
+.top img{width:34px;height:34px;border-radius:9px;background:#000;flex:none}
+.top b{font-size:16px;letter-spacing:.01em}
+.top span{color:var(--muted);font-size:13px;margin-left:auto;text-align:right}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 18px 20px}
+.card h1{font-size:22px;line-height:1.25;margin:0 0 8px}
+.card p{margin:0 0 10px}
+.card p:last-child{margin-bottom:0}
+.card.good{border-color:#B7E2CB;background:var(--good-bg)}
+.card.bad{border-color:#F4C7C2;background:var(--bad-bg)}
+.small{font-size:14px;color:var(--muted)}
+.steps{margin:6px 0 12px;padding-left:22px}
+.steps li{margin:3px 0}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:10px 18px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);font:inherit;font-weight:650;text-decoration:none;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn[aria-disabled="true"]{opacity:.55;pointer-events:none}
+.btn:focus-visible{outline:3px solid #93B4F8;outline-offset:2px}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:sp 0.9s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.loading{display:flex;align-items:center;gap:12px}
+.doc-label{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:6px 2px -6px}
+.kd{max-width:none}
+.kd-sf{max-width:none}
+.foot{font-size:12.5px;color:var(--muted);text-align:center;margin-top:4px}
+@media (max-width:560px){
+  .card{padding:16px 14px 18px}
+  .card h1{font-size:20px}
+  .row .btn{flex:1 1 100%}
+  .kd{padding:18px 14px 22px!important;font-size:14px!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><img src="icon-192.png" alt=""><b>Kira Imobiliare</b><span>Semnare electronică</span></header>
+  <main id="app" aria-live="polite">
+    <div class="card loading"><div class="spin" aria-hidden="true"></div><p>Se deschide documentul…</p></div>
+  </main>
+  <p class="foot">Pagina nu folosește cookie-uri. Linkul este personal: nu îl trimiteți altor persoane.</p>
+</div>
+<noscript><p style="text-align:center">Pentru semnare, activați JavaScript în browser.</p></noscript>
+<script>/* Kira Imobiliare: documentele (contracte, fișe) afișate pe ecran și în PDF, semnătura desenată
+   cu degetul sau cu mouse-ul și amprenta SHA-256 a textului semnat.
+   Același fișier e folosit de CRM (PC și telefon) și de pagina de semnare (semnare.html).
+   Documentul e un JSON cu blocuri de text; textul exact (șirul JSON) e cel semnat și cel din amprentă. */
+(function(){
+'use strict';
+
+/* ---------------- dates, devices, phones ---------------- */
+const TZ = 'Europe/Bucharest';
+function fmtWhen(ms, secs){
+  const d = new Date(+ms);
+  if (!ms || isNaN(d)) return '';
+  try {
+    const o = {timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'};
+    if (secs) o.second = '2-digit';
+    const p = {};
+    new Intl.DateTimeFormat('ro-RO', o).formatToParts(d).forEach(x => { p[x.type] = x.value; });
+    return p.day + '.' + p.month + '.' + p.year + ', ' + p.hour + ':' + p.minute + (secs ? ':' + p.second : '');
+  } catch(e){
+    const z = n => String(n).padStart(2, '0');
+    return z(d.getDate()) + '.' + z(d.getMonth() + 1) + '.' + d.getFullYear() + ', ' + z(d.getHours()) + ':' + z(d.getMinutes()) + (secs ? ':' + z(d.getSeconds()) : '');
+  }
+}
+const fmtDay = ms => (fmtWhen(ms) || '').split(',')[0];
+function uaShort(ua){
+  ua = String(ua || '');
+  const dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Macintosh/.test(ua) && /Mobile\//.test(ua)) ? 'iPad' : /Android/.test(ua) ? 'Android' :
+    /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
+  let br = /EdgA?\/|EdgiOS/.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /OPR\/|OPiOS/.test(ua) ? 'Opera' : /Firefox|FxiOS/.test(ua) ? 'Firefox' :
+    /CriOS|Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  if (/; wv\)|FBAN|FBAV|Instagram|WhatsApp/.test(ua)) br = br ? br + ' (deschis din aplicație)' : 'browserul unei aplicații';
+  return [dev, br].filter(Boolean).join(' · ') || ua.slice(0, 90);
+}
+// A phone number for wa.me: digits with the country code (07xx… becomes 407xx…).
+function waPhone(t){
+  let d = String(t || '').replace(/[^\d+]/g, '');
+  if (d.charAt(0) === '+') d = d.slice(1);
+  else if (d.slice(0, 2) === '00') d = d.slice(2);
+  else if (/^0\d{9}$/.test(d)) d = '4' + d;
+  d = d.replace(/\D/g, '');
+  return d.length >= 9 && d.length <= 15 ? d : '';
+}
+const IMG_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/]+={0,2}$/;
+const isImg = s => typeof s === 'string' && s.length < 700000 && IMG_RE.test(s);
+function parseDoc(t){
+  let d = null;
+  try { d = JSON.parse(String(t)); } catch(e){ return null; }
+  return d && typeof d === 'object' && d.v === 1 && Array.isArray(d.blocks) ? d : null;
+}
+
+/* ---------------- SHA-256 (the browser's own when available) ---------------- */
+const K256 = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+function sha256Bytes(msg){
+  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const l = msg.length, n = ((l + 9 + 63) >> 6) << 6, m = new Uint8Array(n);
+  m.set(msg); m[l] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(n - 4, (l * 8) >>> 0); dv.setUint32(n - 8, Math.floor(l / 536870912));
+  const w = new Uint32Array(64);
+  const r = (x, k) => (x >>> k) | (x << (32 - k));
+  for (let off = 0; off < n; off += 64){
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++){
+      const s0 = r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (let i = 0; i < 64; i++){
+      const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K256[i] + w[i]) >>> 0;
+      const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  const out = new Uint8Array(32), ov = new DataView(out.buffer);
+  H.forEach((v, i) => ov.setUint32(i * 4, v));
+  return out;
+}
+const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+async function sha256(text){
+  const b = new TextEncoder().encode(String(text));
+  try { if (window.crypto && crypto.subtle) return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', b))); } catch(e){}
+  return hex(sha256Bytes(b));
+}
+
+/* ---------------- what goes next to the signatures and in the signing certificate ---------------- */
+function sigCols(doc, o){
+  const a = doc.agencySig || {}, s = o && o.sign || null, c = doc.client || {};
+  const left = {head: 'AGENȚIA', lines: [{x: a.firm || 'Agenția', b: true}], img: isImg(a.img) ? 'A' : '', after: []};
+  if (a.name) left.lines.push({x: 'prin ' + a.name + (a.role ? ', ' + a.role : '')});
+  left.after.push(a.at ? 'Semnat electronic la ' + fmtWhen(a.at) : 'Semnătura Agenției se aplică la trimiterea documentului.');
+  const right = {head: 'CLIENTUL', lines: [{x: (s && s.name) || c.name || 'Clientul', b: true}], img: s && isImg(s.img) ? 'C' : '', after: []};
+  if (c.rep) right.lines.push({x: c.rep});
+  if (s){
+    right.after.push('Semnat electronic la ' + fmtWhen(s.at, true));
+    if (s.method === 'dispozitiv') right.after.push('pe dispozitivul Agenției, în prezența reprezentantului ei');
+    else if (s.ip) right.after.push('Adresa IP ' + s.ip);
+    (doc.questions || []).forEach(q => {
+      const v = s.answers && s.answers[q.k];
+      if (v && v.v) right.after.push((q.short || q.x) + ': ' + v.v + (v.det ? ' (' + v.det + ')' : ''));
+    });
+  } else right.after.push('Clientul semnează electronic: bifează acordurile, își scrie numele și desenează semnătura.');
+  return [left, right];
+}
+function certBlocks(doc, s, ev){
+  ev = ev || {};
+  const a = doc.agencySig || {};
+  const rows = [
+    ['Document', (doc.title || 'Document') + (doc.no ? ' nr. ' + doc.no : '') + (doc.subtitle ? ', ' + doc.subtitle : '')],
+    ['Amprenta digitală SHA-256 a textului semnat', s.hash || ''],
+    ['Agenția', [a.firm, a.name ? 'prin ' + a.name + (a.role ? ', ' + a.role : '') : '', a.at ? 'semnat la ' + fmtWhen(a.at, true) : ''].filter(Boolean).join(', ')]
+  ];
+  if (ev.sentAt) rows.push(['Trimis Clientului spre semnare', fmtWhen(ev.sentAt, true) + (ev.via ? ', ' + ev.via : '')]);
+  if (ev.opened) rows.push(['Deschis de Client', 'prima dată la ' + fmtWhen(ev.opened, true) + (ev.opens > 1 ? '; deschis de ' + ev.opens + ' ori în total' : '')]);
+  rows.push(['Semnat de Client', (s.name || '') + ', la ' + fmtWhen(s.at, true) + ' (ora României)']);
+  rows.push(['Cum a semnat', s.method === 'dispozitiv'
+    ? 'pe dispozitivul Agenției, în prezența ' + (s.agent ? 'reprezentantului ' + s.agent : 'reprezentantului Agenției') + ': a citit documentul, a bifat acordurile, și-a scris numele și și-a desenat semnătura'
+    : 'pe pagina de semnare deschisă din linkul personal primit: a citit documentul, a bifat acordurile, și-a scris numele și și-a desenat semnătura']);
+  if (s.ip) rows.push(['Adresa IP', s.ip]);
+  if (s.ua) rows.push(['Dispozitiv și browser', uaShort(s.ua)]);
+  rows.push(['Tipul semnăturii', 'semnătură electronică, în sensul Regulamentului (UE) nr. 910/2014 (eIDAS) și al Legii nr. 214/2024']);
+  const cons = (doc.consents || []).map(c => [s.consents && s.consents[c.k] ? 'Bifat' : 'Nebifat' + (c.req ? '' : ' (opțional)'), c.x]);
+  const out = [{t: 'pb'}, {t: 'title', x: 'CERTIFICAT DE SEMNARE ELECTRONICĂ', sub: 'pentru ' + (doc.short || 'documentul') + (doc.no ? ' nr. ' + doc.no : '')},
+    {t: 'kv', rows: rows}, {t: 'h', x: 'Acordurile exprimate de Client la semnare'}, {t: 'kv', rows: cons, kw: 0.2}];
+  const ans = (doc.questions || []).map(q => { const v = s.answers && s.answers[q.k]; return [q.x, v && v.v ? v.v + (v.det ? '. ' + v.det : '') : 'fără răspuns']; });
+  if (ans.length) out.push({t: 'h', x: 'Răspunsurile Clientului'}, {t: 'kv', rows: ans});
+  out.push({t: 'note', x: 'Certificatul este generat de aplicația Kira Imobiliare din înregistrările făcute la semnare. Amprenta SHA-256 se calculează din textul exact al documentului semnat: orice modificare ulterioară a textului ar produce o altă amprentă.'});
+  return out;
+}
+
+/* ---------------- on screen ---------------- */
+const CSS =
+  '.kd{background:#fff;color:#1b2129;font:14.5px/1.58 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:26px 28px 30px;border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.08),0 8px 28px rgba(16,24,40,.08);max-width:780px;margin:0 auto;text-align:left;color-scheme:light}' +
+  '.kd *{box-sizing:border-box}' +
+  '.kd-brand{font-size:11px;font-weight:700;letter-spacing:.03em;color:#1b3a5c;border-bottom:1px solid #d8dee6;padding-bottom:8px;margin-bottom:20px}' +
+  '.kd-title{font-size:21px;line-height:1.25;margin:4px 0 4px;text-align:center;color:#1b3a5c;font-weight:800}' +
+  '.kd-sub{text-align:center;color:#66788a;font-size:15px;margin:0 0 14px}' +
+  '.kd-meta{font-size:13.5px;margin:0 0 6px;color:#1b2129}' +
+  '.kd-h{font-size:16.5px;line-height:1.3;color:#1b3a5c;margin:20px 0 7px;font-weight:800}' +
+  '.kd-p{margin:0 0 9px;text-align:justify;-webkit-hyphens:auto;hyphens:auto}' +
+  '.kd-p b{color:#111827}' +
+  '.kd-li{margin:0 0 6px;padding-left:18px;position:relative}.kd-li::before{content:"•";position:absolute;left:5px}' +
+  '.kd-note{font-size:12.5px;color:#66788a;font-style:italic;margin:6px 0 10px}' +
+  '.kd-kv{width:100%;border-collapse:collapse;margin:6px 0 12px;font-size:13.5px;line-height:1.45}' +
+  '.kd-kv th,.kd-kv td{border:1px solid #d8dee6;padding:6px 9px;vertical-align:top;text-align:left;overflow-wrap:anywhere}' +
+  '.kd-kv th{background:#eef2f6;font-weight:500;width:36%}.kd-kv.narrow th{width:20%}' +
+  '.kd-kv tr.kd-kvh th{font-weight:700}' +
+  '.kd-pb{height:0;border-top:2px dashed #d8dee6;margin:26px -28px 22px}' +
+  '.kd-annex{text-align:center;margin:6px 0 12px}.kd-at{font-size:22px;font-weight:800;color:#1b3a5c;line-height:1.2}.kd-as{color:#66788a;font-size:15px;margin-top:3px}' +
+  '.kd-sig{display:grid;grid-template-columns:1fr 1fr;border:1px solid #d8dee6;margin:10px 0 6px;font-size:13.5px;line-height:1.45}' +
+  '.kd-sig>div{padding:8px 10px;min-width:0;overflow-wrap:anywhere}.kd-sig>div+div{border-left:1px solid #d8dee6}' +
+  '.kd-sig .hd{background:#eef2f6;font-weight:700;font-size:12px;letter-spacing:.04em;color:#1b3a5c;padding:6px 10px}' +
+  '.kd-sig img{display:block;max-width:100%;height:60px;object-fit:contain;object-position:left center;margin:6px 0 4px}' +
+  '.kd-sig .nosig{height:44px;border-bottom:1px dashed #b8c2ce;margin:8px 0 6px}' +
+  '.kd-sig small{display:block;color:#66788a;font-size:12px}' +
+  '@media (max-width:560px){.kd{padding:18px 15px 22px;font-size:14px;border-radius:10px}.kd-p{text-align:left}.kd-pb{margin:22px -15px 18px}.kd-title{font-size:19px}.kd-kv th{width:40%}.kd-sig{grid-template-columns:1fr}.kd-sig>div+div{border-left:0}}' +
+  // the signing form
+  '.kd-sf{background:#fff;color:#1b2129;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:22px 24px 24px;border-radius:12px;box-shadow:0 1px 2px rgba(16,24,40,.08),0 8px 28px rgba(16,24,40,.08);max-width:780px;margin:16px auto 0;text-align:left;color-scheme:light}' +
+  '.kd-sf *{box-sizing:border-box}' +
+  '.kd-sf h2{font-size:19px;line-height:1.3;margin:0 0 4px;color:#1b3a5c;font-weight:800}' +
+  '.kd-sf-lead{margin:0 0 14px;color:#4a5a6b;font-size:14px}' +
+  '.kd-sf-c{display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border:1px solid #d8dee6;border-radius:10px;margin:0 0 8px;cursor:pointer;background:#fff;font-size:14.5px}' +
+  '.kd-sf-c:hover{border-color:#9fb1c6}' +
+  '.kd-sf-c input{width:22px;height:22px;margin:0;flex:none;accent-color:#1b3a5c;cursor:pointer}' +
+  '.kd-sf-c em{color:#66788a;font-style:normal}' +
+  '.kd-sf-q{border:1px solid #d8dee6;border-radius:10px;padding:10px 12px 12px;margin:0 0 8px;min-width:0}' +
+  '.kd-sf-q legend{font-weight:600;padding:0 4px}' +
+  '.kd-sf-opts{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 0}' +
+  '.kd-sf-opts label{display:flex;align-items:center;gap:7px;padding:7px 16px;border:1px solid #c5cfdb;border-radius:999px;cursor:pointer}' +
+  '.kd-sf-opts input{width:18px;height:18px;margin:0;accent-color:#1b3a5c}' +
+  '.kd-sf-l{display:block;font-weight:600;margin:16px 0 6px}' +
+  '.kd-sf-q .kd-sf-l{margin-top:10px;font-weight:500}' +
+  '.kd-sf input[type=text],.kd-sf textarea{display:block;width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid #b8c2ce;border-radius:9px;background:#fff;color:#1b2129}' +
+  '.kd-sf input[type=text]:focus,.kd-sf textarea:focus{outline:2px solid #1b3a5c;outline-offset:1px}' +
+  '.kd-sf-pad{position:relative;border:1.5px dashed #9fb1c6;border-radius:10px;background:#fbfcfe;height:200px;touch-action:none;-webkit-user-select:none;user-select:none}' +
+  '.kd-sf-pad canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block;cursor:crosshair}' +
+  '.kd-sf-pad .ph{position:absolute;left:0;right:0;bottom:40px;text-align:center;color:#8a9aac;pointer-events:none;font-size:14px;padding:0 10px}' +
+  '.kd-sf-pad .ln{position:absolute;left:20px;right:20px;bottom:34px;border-bottom:1px solid #c5cfdb;pointer-events:none}' +
+  '.kd-sf-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:7px;font-size:13px;color:#66788a}' +
+  '.kd-sf-clr{background:#fff;border:1px solid #c5cfdb;border-radius:8px;padding:7px 13px;font:inherit;font-size:13.5px;cursor:pointer;color:#1b2129}' +
+  '.kd-sf .err{border-color:#b42318!important;background:#fff6f5}' +
+  '.kd-sf-err{background:#fce5e2;color:#b42318;border-radius:9px;padding:10px 12px;font-weight:600;margin:14px 0 0}' +
+  '.kd-sf-go{display:block;width:100%;margin-top:16px;padding:15px 18px;border:0;border-radius:11px;background:#1b3a5c;color:#fff;font:inherit;font-size:17px;font-weight:700;cursor:pointer}' +
+  '.kd-sf-go:hover{background:#244b75}.kd-sf-go:disabled{opacity:.6;cursor:default}' +
+  '.kd-sf-note{font-size:12.5px;color:#66788a;margin:12px 0 0}' +
+  '@media (max-width:560px){.kd-sf{padding:18px 15px 20px;border-radius:10px}.kd-sf-pad{height:180px}}';
+function injectCss(){
+  if (document.getElementById('kd-css')) return;
+  const s = document.createElement('style'); s.id = 'kd-css'; s.textContent = CSS;
+  document.head.appendChild(s);
+}
+function el(tag, cls, text){ const n = document.createElement(tag); if (cls) n.className = cls; if (text != null && text !== '') n.textContent = String(text); return n; }
+function linesTo(node, text){ String(text == null ? '' : text).split('\n').forEach((l, i) => { if (i) node.appendChild(el('br')); node.appendChild(document.createTextNode(l)); }); return node; }
+function blocksHTML(root, blocks, doc, o){
+  (blocks || []).forEach(b => {
+    if (!b || typeof b !== 'object') return;
+    switch (b.t){
+      case 'h': root.appendChild(el('h2', 'kd-h', b.x)); break;
+      case 'p': { const p = el('p', 'kd-p'); if (b.b) p.appendChild(el('b', null, b.b + ' ')); linesTo(p, b.x); root.appendChild(p); break; }
+      case 'li': root.appendChild(linesTo(el('p', 'kd-li'), b.x)); break;
+      case 'note': root.appendChild(linesTo(el('p', 'kd-note'), b.x)); break;
+      case 'kv': {
+        const t = el('table', 'kd-kv' + (b.kw && b.kw < 0.3 ? ' narrow' : '')), tb = el('tbody');
+        if (Array.isArray(b.head)){ const tr = el('tr', 'kd-kvh'); tr.appendChild(el('th', null, b.head[0])); tr.appendChild(el('th', null, b.head[1])); tb.appendChild(tr); }
+        (b.rows || []).forEach(r => { if (!Array.isArray(r)) return; const tr = el('tr'); tr.appendChild(el('th', null, r[0])); tr.appendChild(linesTo(el('td'), r[1])); tb.appendChild(tr); });
+        t.appendChild(tb); root.appendChild(t); break;
+      }
+      case 'pb': root.appendChild(el('div', 'kd-pb')); break;
+      case 'title': { const w = el('div', 'kd-annex'); w.appendChild(el('div', 'kd-at', b.x)); if (b.sub) w.appendChild(el('div', 'kd-as', b.sub)); root.appendChild(w); break; }
+      case 'sig': {
+        const g = el('div', 'kd-sig'), cols = sigCols(doc, o);
+        cols.forEach(c => g.appendChild(el('div', 'hd', c.head)));
+        cols.forEach(c => {
+          const d = el('div');
+          c.lines.forEach(l => d.appendChild(el('div', null, l.x)).style.fontWeight = l.b ? '700' : '');
+          const src = c.img === 'A' ? doc.agencySig.img : c.img === 'C' ? o.sign.img : '';
+          if (src){ const im = el('img'); im.alt = 'Semnătura'; im.src = src; d.appendChild(im); } else d.appendChild(el('div', 'nosig'));
+          c.after.forEach(t => d.appendChild(el('small', null, t)));
+          g.appendChild(d);
+        });
+        root.appendChild(g); break;
+      }
+    }
+  });
+}
+// Draws the document into `host`. o.sign (after signing) adds the client's signature and the certificate.
+function render(doc, host, o){
+  o = o || {};
+  injectCss();
+  const root = el('div', 'kd');
+  root.setAttribute('lang', 'ro');
+  if (doc.brand) root.appendChild(el('div', 'kd-brand', doc.brand));
+  root.appendChild(el('h1', 'kd-title', doc.title));
+  if (doc.subtitle) root.appendChild(el('div', 'kd-sub', doc.subtitle));
+  if (doc.meta) root.appendChild(el('div', 'kd-meta', doc.meta));
+  blocksHTML(root, doc.blocks, doc, o);
+  if (o.sign && o.cert !== false) blocksHTML(root, certBlocks(doc, o.sign, o.ev), doc, o);
+  host.textContent = '';
+  host.appendChild(root);
+  return root;
+}
+
+/* ---------------- PDF ---------------- */
+// Helvetica (the standard PDF font): Windows-1252 codes, plus ă Ă ș Ș ț Ț on codes Windows-1252 leaves empty.
+const WR = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278, 556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,
+  1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778, 667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,
+  333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556, 556,556,333,500,278,556,500,722,500,500,500,334,260,334,584, 278,
+  556,667,222,556,333,1000,556,556,333,1000,667,333,1000,556,611,667, 500,222,222,333,333,350,556,1000,333,1000,500,333,944,611,500,667,
+  278,333,556,556,556,556,260,556,333,737,370,556,584,333,737,333, 400,584,333,333,333,556,537,278,333,333,365,556,834,834,834,611,
+  667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278, 722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,
+  556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278, 556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500];
+const WB = [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278, 556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,
+  975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778, 667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,
+  333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611, 611,611,389,556,333,611,556,778,556,556,500,389,280,389,584, 333,
+  556,722,278,556,500,1000,556,556,333,1000,667,333,1000,556,611,667, 556,278,278,500,500,350,556,1000,333,1000,556,333,944,611,500,667,
+  278,333,556,556,556,556,280,556,333,737,370,556,584,333,737,333, 400,584,333,333,333,611,556,278,333,333,365,556,834,834,834,611,
+  722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278, 722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,
+  556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278, 611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556];
+const W = {R: [], B: []};
+for (let i = 0; i < 256; i++){ W.R[i] = i < 32 ? 0 : WR[i - 32]; W.B[i] = i < 32 ? 0 : WB[i - 32]; }
+W.I = W.R;
+// ț and Ț by their Unicode names: the legacy names (t/Tcommaaccent) show up as ţ with a cedilla in several PDF readers.
+const DIFF = '[127 /uni021B 129 /Abreve 141 /abreve 143 /Scommaaccent /scommaaccent 157 /uni021A]';
+const UNI = {};
+[[0x20AC,128],[0x201A,130],[0x0192,131],[0x201E,132],[0x2026,133],[0x2020,134],[0x2021,135],[0x02C6,136],[0x2030,137],[0x0160,138],[0x2039,139],[0x0152,140],
+ [0x017D,142],[0x2018,145],[0x2019,146],[0x201C,147],[0x201D,148],[0x2022,149],[0x2013,150],[0x2014,151],[0x02DC,152],[0x2122,153],[0x0161,154],[0x203A,155],
+ [0x0153,156],[0x017E,158],[0x0178,159],[0x0102,129],[0x0103,141],[0x0218,143],[0x0219,144],[0x021A,157],[0x021B,127],[0x015E,143],[0x015F,144],[0x0162,157],
+ [0x0163,127],[0x2010,45],[0x2011,45],[0x2212,45],[0x00A0,160],[0x2007,160],[0x2009,160],[0x202F,160],[0x2032,39],[0x2033,34],[0x2713,120],[0x2714,120]].forEach(p => { UNI[p[0]] = p[1]; });
+function codeOf(ch){
+  const u = ch.codePointAt(0);
+  if (UNI[u] != null) return UNI[u];
+  if (u >= 32 && u <= 126) return u;
+  if (u >= 0xA1 && u <= 0xFF) return u;
+  if (u === 9 || u === 10 || u === 13) return 32;
+  const base = ch.normalize('NFD').charAt(0);
+  return base && base !== ch ? codeOf(base) : 63;
+}
+const CLEAN = /[­​-‍⁠﻿]/g;
+const enc = s => Array.from(String(s == null ? '' : s).replace(CLEAN, ''), codeOf);
+const wid = (codes, f, size) => codes.reduce((t, c) => t + W[f][c], 0) * size / 1000;
+function pdfStr(codes){
+  let s = '(';
+  codes.forEach(c => { s += c === 40 || c === 41 || c === 92 ? '\\' + String.fromCharCode(c) : c < 32 || c > 126 ? '\\' + c.toString(8).padStart(3, '0') : String.fromCharCode(c); });
+  return s + ')';
+}
+const fx = n => { const r = Math.round(n * 100) / 100; return Object.is(r, -0) ? '0' : String(r); };
+const PW = 595.28, PH = 841.89, ML = 54, MR = 54, CW = PW - ML - MR, TOP = PH - 70, BOTTOM = 64;
+const COL = {ink: [0.106, 0.129, 0.161], navy: [0.106, 0.227, 0.361], grey: [0.4, 0.47, 0.54], line: [0.847, 0.871, 0.902], fill: [0.933, 0.949, 0.965], sigline: [0.72, 0.76, 0.81]};
+const FN = {R: 'F1', B: 'F2', I: 'F3'};
+const rgb = (c, op) => c.map(fx).join(' ') + ' ' + op;
+const SP = 278;   // the space, the same in both weights
+function toWords(runs, size){
+  const out = [];
+  runs.forEach(r => {
+    const f = r.f || 'R';
+    String(r.x == null ? '' : r.x).split(/[ \t\r\n]+/).forEach(s => { if (!s) return; const c = enc(s); out.push({c: c, f: f, w: wid(c, f, size)}); });
+  });
+  return out;
+}
+function toLines(ws, maxW, size){
+  const sp = SP * size / 1000, res = [];
+  let cur = [], cw = 0;
+  const flush = () => { if (cur.length) res.push({ws: cur, w: cw}); cur = []; cw = 0; };
+  ws.forEach(w => {
+    if (w.w > maxW){
+      // A word longer than the line (an address, a code): cut it where it has to be cut.
+      flush();
+      let part = [], pw = 0;
+      w.c.forEach(code => {
+        const cwid = W[w.f][code] * size / 1000;
+        if (pw + cwid > maxW && part.length){ res.push({ws: [{c: part, f: w.f, w: pw}], w: pw}); part = []; pw = 0; }
+        part.push(code); pw += cwid;
+      });
+      if (part.length){ cur = [{c: part, f: w.f, w: pw}]; cw = pw; }
+      return;
+    }
+    const add = cur.length ? sp + w.w : w.w;
+    if (cur.length && cw + add > maxW){ flush(); cur = [w]; cw = w.w; }
+    else { cur.push(w); cw += add; }
+  });
+  flush();
+  return res;
+}
+// Several paragraphs (text with line breaks), each wrapped to the width.
+function textLines(text, f, size, maxW){
+  const out = [];
+  String(text == null ? '' : text).split('\n').forEach(piece => {
+    const ls = toLines(toWords([{x: piece, f: f}], size), maxW, size);
+    if (ls.length) ls.forEach(l => out.push(l)); else out.push({ws: [], w: 0});
+  });
+  return out;
+}
+const baseline = (top, lead, size) => top - lead + (lead - size) / 2 + size * 0.22;
+function fitImg(im, maxW, maxH){ const k = Math.min(maxW / im.w, maxH / im.h); return {w: im.w * k, h: im.h * k}; }
+
+function layout(doc, blocks, o, imgs){
+  const pages = [];
+  let P = null, y = 0;
+  const newPage = () => { P = {ops: [], im: {}}; pages.push(P); y = TOP; };
+  const op = s => { P.ops.push(s); };
+  newPage();
+  function drawLine(ln, st, last, yb){
+    const sp = SP * st.size / 1000, gaps = ln.ws.length - 1;
+    let extra = 0, x = st.x;
+    if (st.align === 'justify' && !last && gaps > 0){ extra = (st.w - ln.w) / gaps; if (extra > sp * 3) extra = 0; }
+    if (st.align === 'center') x = st.x + (st.w - ln.w) / 2;
+    else if (st.align === 'right') x = st.x + st.w - ln.w;
+    let i = 0;
+    while (i < ln.ws.length){
+      const f = ln.ws[i].f;
+      let j = i, codes = [], gw = 0;
+      while (j < ln.ws.length && ln.ws[j].f === f){
+        if (j > i){ codes.push(32); gw += sp + extra; }
+        codes = codes.concat(ln.ws[j].c); gw += ln.ws[j].w; j++;
+      }
+      op('BT ' + rgb(st.color || COL.ink, 'rg') + ' /' + FN[f] + ' ' + fx(st.size) + ' Tf ' + fx(extra) + ' Tw 1 0 0 1 ' + fx(x) + ' ' + fx(yb) + ' Tm ' + pdfStr(codes) + ' Tj ET');
+      x += gw + (j < ln.ws.length ? sp + extra : 0);
+      i = j;
+    }
+  }
+  function para(runs, st){
+    const ls = toLines(toWords(runs, st.size), st.w, st.size);
+    y -= st.before || 0;
+    ls.forEach((ln, i) => {
+      if (y - st.lead < BOTTOM) newPage();
+      drawLine(ln, st, i === ls.length - 1, baseline(y, st.lead, st.size));
+      y -= st.lead;
+    });
+    y -= st.after || 0;
+  }
+  const BODY = {size: 9.8, lead: 13.6, x: ML, w: CW, align: 'justify', color: COL.ink};
+  function heading(x){
+    if (y - 18 - 2 * BODY.lead < BOTTOM) newPage();
+    para([{x: x, f: 'B'}], {size: 12.5, lead: 16, x: ML, w: CW, align: 'left', color: COL.navy, before: y < TOP - 1 ? 9 : 0, after: 3});
+  }
+  function title(x, sub){
+    if (y - 70 < BOTTOM) newPage();
+    para([{x: x, f: 'B'}], {size: 19, lead: 24, x: ML, w: CW, align: 'center', color: COL.navy, before: 4});
+    if (sub) para([{x: sub, f: 'R'}], {size: 11.5, lead: 15, x: ML, w: CW, align: 'center', color: COL.grey, after: 8});
+    else y -= 8;
+  }
+  function cellLines(lines, x, w, top, size, lead, color, from, n){
+    for (let i = 0; i < n; i++) drawLine(lines[from + i], {size: size, x: x, w: w, align: 'left', color: color}, true, baseline(top - i * lead, lead, size));
+  }
+  function kv(b){
+    const size = 9.3, lead = 12.4, pad = 5;
+    const kw = CW * (b.kw || 0.36), vw = CW - kw;
+    const rows = (Array.isArray(b.head) ? [{h: true, r: b.head}] : []).concat((b.rows || []).filter(Array.isArray).map(r => ({r: r})));
+    y -= 2;
+    rows.forEach(row => {
+      const f = row.h ? 'B' : 'R';
+      const kL = textLines(row.r[0], f, size, kw - 2 * pad), vL = textLines(row.r[1], f, size, vw - 2 * pad);
+      const full = Math.max(kL.length, vL.length, 1) * lead + 2 * pad;
+      if (y - full < BOTTOM && full <= TOP - BOTTOM) newPage();
+      let ki = 0, vi = 0, first = true;
+      while (first || ki < kL.length || vi < vL.length){
+        first = false;
+        let fit = Math.floor((y - BOTTOM - 2 * pad) / lead);
+        if (fit < 1){ newPage(); fit = Math.floor((y - BOTTOM - 2 * pad) / lead); }
+        const kn = Math.min(fit, kL.length - ki), vn = Math.min(fit, vL.length - vi);
+        const h = Math.max(kn, vn, 1) * lead + 2 * pad;
+        op(rgb(COL.fill, 'rg') + ' ' + fx(ML) + ' ' + fx(y - h) + ' ' + fx(kw) + ' ' + fx(h) + ' re f');
+        if (row.h) op(rgb(COL.fill, 'rg') + ' ' + fx(ML + kw) + ' ' + fx(y - h) + ' ' + fx(vw) + ' ' + fx(h) + ' re f');
+        op(rgb(COL.line, 'RG') + ' 0.6 w ' + fx(ML) + ' ' + fx(y - h) + ' ' + fx(kw) + ' ' + fx(h) + ' re S ' + fx(ML + kw) + ' ' + fx(y - h) + ' ' + fx(vw) + ' ' + fx(h) + ' re S');
+        cellLines(kL, ML + pad, kw - 2 * pad, y - pad, size, lead, COL.ink, ki, kn);
+        cellLines(vL, ML + kw + pad, vw - 2 * pad, y - pad, size, lead, COL.ink, vi, vn);
+        ki += kn; vi += vn; y -= h;
+        if (ki < kL.length || vi < vL.length) newPage();
+      }
+    });
+    y -= 7;
+  }
+  function sig(){
+    const size = 9.3, lead = 12.4, small = 8.3, slead = 11, pad = 7, cw = CW / 2;
+    const cols = sigCols(doc, o).map(c => {
+      const top = [];
+      c.lines.forEach(l => textLines(l.x, l.b ? 'B' : 'R', size, cw - 2 * pad).forEach(t => top.push(t)));
+      const bottom = [];
+      c.after.forEach(t => textLines(t, 'R', small, cw - 2 * pad).forEach(x => bottom.push(x)));
+      const im = c.img && imgs[c.img] ? fitImg(imgs[c.img], cw - 2 * pad, 54) : null;
+      return {c: c, top: top, bottom: bottom, im: im, h: top.length * lead + (im ? im.h + 8 : 40) + bottom.length * slead + 2 * pad};
+    });
+    const headH = 19, bodyH = Math.max(cols[0].h, cols[1].h);
+    if (y - headH - bodyH < BOTTOM) newPage();
+    y -= 4;
+    cols.forEach((k, i) => {
+      const x = ML + i * cw;
+      op(rgb(COL.fill, 'rg') + ' ' + fx(x) + ' ' + fx(y - headH) + ' ' + fx(cw) + ' ' + fx(headH) + ' re f');
+      op(rgb(COL.line, 'RG') + ' 0.6 w ' + fx(x) + ' ' + fx(y - headH - bodyH) + ' ' + fx(cw) + ' ' + fx(headH + bodyH) + ' re S ' + fx(x) + ' ' + fx(y - headH) + ' m ' + fx(x + cw) + ' ' + fx(y - headH) + ' l S');
+      drawLine(toLines(toWords([{x: k.c.head, f: 'B'}], 8.6), cw, 8.6)[0], {size: 8.6, x: x + pad, w: cw - 2 * pad, align: 'left', color: COL.navy}, true, baseline(y, headH, 8.6));
+      let t = y - headH - pad;
+      cellLines(k.top, x + pad, cw - 2 * pad, t, size, lead, COL.ink, 0, k.top.length);
+      t -= k.top.length * lead;
+      if (k.im){
+        const im = imgs[k.c.img];
+        P.im[k.c.img] = 1;
+        op('q ' + fx(k.im.w) + ' 0 0 ' + fx(k.im.h) + ' ' + fx(x + pad) + ' ' + fx(t - 4 - k.im.h) + ' cm /Im' + k.c.img + ' Do Q');
+        t -= k.im.h + 8;
+        void im;
+      } else {
+        op(rgb(COL.sigline, 'RG') + ' 0.6 w [2 2] 0 d ' + fx(x + pad) + ' ' + fx(t - 32) + ' m ' + fx(x + cw - pad) + ' ' + fx(t - 32) + ' l S [] 0 d');
+        t -= 40;
+      }
+      cellLines(k.bottom, x + pad, cw - 2 * pad, t, small, slead, COL.grey, 0, k.bottom.length);
+    });
+    y -= headH + bodyH + 8;
+  }
+  // the document itself
+  title(doc.title, doc.subtitle);
+  if (doc.meta) para([{x: doc.meta, f: 'R'}], Object.assign({}, BODY, {align: 'left', after: 4}));
+  blocks.forEach(b => {
+    if (!b || typeof b !== 'object') return;
+    switch (b.t){
+      case 'h': heading(b.x); break;
+      case 'p': para((b.b ? [{x: b.b, f: 'B'}] : []).concat([{x: b.x, f: 'R'}]), Object.assign({}, BODY, {after: 4.5})); break;
+      case 'li': {
+        const st = Object.assign({}, BODY, {x: ML + 13, w: CW - 13, after: 3});
+        if (y - st.lead < BOTTOM) newPage();
+        op('BT ' + rgb(COL.ink, 'rg') + ' /F1 ' + fx(st.size) + ' Tf 0 Tw 1 0 0 1 ' + fx(ML + 3) + ' ' + fx(baseline(y, st.lead, st.size)) + ' Tm ' + pdfStr([149]) + ' Tj ET');
+        para([{x: b.x, f: 'R'}], st); break;
+      }
+      case 'note': para([{x: b.x, f: 'I'}], {size: 8.4, lead: 11.4, x: ML, w: CW, align: 'left', color: COL.grey, before: 2, after: 5}); break;
+      case 'kv': kv(b); break;
+      case 'pb': if (y < TOP - 1) newPage(); break;
+      case 'title': title(b.x, b.sub); break;
+      case 'sig': sig(); break;
+    }
+  });
+  // header and footer on every page: "Pagina 1 din 5"
+  const n = pages.length, foot = String(doc.footer || doc.title || '');
+  pages.forEach((p, i) => {
+    const hb = enc(doc.brand || ''), fl = enc(foot), pr = enc('Pagina ' + (i + 1) + ' din ' + n);
+    const head = [
+      'BT ' + rgb(COL.navy, 'rg') + ' /F2 8.4 Tf 0 Tw 1 0 0 1 ' + fx(ML) + ' ' + fx(PH - 40) + ' Tm ' + pdfStr(hb) + ' Tj ET',
+      rgb(COL.line, 'RG') + ' 0.6 w ' + fx(ML) + ' ' + fx(PH - 48) + ' m ' + fx(PW - MR) + ' ' + fx(PH - 48) + ' l S'
+    ];
+    const tail = [
+      rgb(COL.line, 'RG') + ' 0.6 w ' + fx(ML) + ' 48 m ' + fx(PW - MR) + ' 48 l S',
+      'BT ' + rgb(COL.grey, 'rg') + ' /F1 7.8 Tf 0 Tw 1 0 0 1 ' + fx(ML) + ' 35 Tm ' + pdfStr(fl.slice(0, 120)) + ' Tj ET',
+      'BT ' + rgb(COL.grey, 'rg') + ' /F1 7.8 Tf 0 Tw 1 0 0 1 ' + fx(PW - MR - wid(pr, 'R', 7.8)) + ' 35 Tm ' + pdfStr(pr) + ' Tj ET'
+    ];
+    p.ops = head.concat(p.ops, tail);
+  });
+  return pages;
+}
+function b64ToBytes(b64){ const s = atob(b64), out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; }
+function toJpeg(src){
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => {
+      try {
+        const w = Math.max(1, Math.min(1400, im.naturalWidth || 1)), h = Math.max(1, Math.round((im.naturalHeight || 1) * w / (im.naturalWidth || 1)));
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.drawImage(im, 0, 0, w, h);
+        const u = c.toDataURL('image/jpeg', 0.92);
+        res({bytes: b64ToBytes(u.slice(u.indexOf(',') + 1)), w: w, h: h});
+      } catch(e){ rej(e); }
+    };
+    im.onerror = () => rej(new Error('Semnătura nu a putut fi citită.'));
+    im.src = src;
+  });
+}
+function u16(s){
+  let h = 'FEFF';
+  String(s || '').split('').forEach(ch => { h += ch.charCodeAt(0).toString(16).padStart(4, '0').toUpperCase(); });
+  return '<' + h + '>';
+}
+function assemble(pages, imgs, doc){
+  const parts = [], off = [];
+  let len = 0;
+  const ascii = s => { const b = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 0xFF; return b; };
+  const push = x => { const b = typeof x === 'string' ? ascii(x) : x; parts.push(b); len += b.length; };
+  const obj = (num, body) => { off[num] = len; push(num + ' 0 obj\n'); (Array.isArray(body) ? body : [body]).forEach(push); push('\nendobj\n'); };
+  push('%PDF-1.4\n'); push(new Uint8Array([37, 226, 227, 207, 211, 10]));
+  let n = 1;
+  const CAT = n++, PAGES = n++, F1 = n++, F2 = n++, F3 = n++, D1 = n++, D2 = n++, D3 = n++;
+  const used = {};
+  pages.forEach(p => Object.keys(p.im).forEach(k => { used[k] = 1; }));
+  const imNum = {};
+  Object.keys(used).forEach(k => { if (imgs[k]) imNum[k] = n++; });
+  const pn = pages.map(() => { const a = n++, b = n++; return [a, b]; });
+  const INFO = n++;
+  obj(CAT, '<< /Type /Catalog /Pages ' + PAGES + ' 0 R /Lang (ro-RO) >>');
+  obj(PAGES, '<< /Type /Pages /Kids [' + pn.map(x => x[0] + ' 0 R').join(' ') + '] /Count ' + pages.length + ' >>');
+  const font = (base, wk, d) => '<< /Type /Font /Subtype /Type1 /BaseFont /' + base + ' /Encoding << /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences ' + DIFF +
+    ' >> /FirstChar 32 /LastChar 255 /Widths [' + W[wk].slice(32, 256).join(' ') + '] /FontDescriptor ' + d + ' 0 R >>';
+  obj(F1, font('Helvetica', 'R', D1)); obj(F2, font('Helvetica-Bold', 'B', D2)); obj(F3, font('Helvetica-Oblique', 'R', D3));
+  obj(D1, '<< /Type /FontDescriptor /FontName /Helvetica /Flags 32 /FontBBox [-166 -225 1000 931] /ItalicAngle 0 /Ascent 718 /Descent -207 /CapHeight 718 /XHeight 523 /StemV 88 >>');
+  obj(D2, '<< /Type /FontDescriptor /FontName /Helvetica-Bold /Flags 32 /FontBBox [-170 -228 1003 962] /ItalicAngle 0 /Ascent 718 /Descent -207 /CapHeight 718 /XHeight 532 /StemV 140 >>');
+  obj(D3, '<< /Type /FontDescriptor /FontName /Helvetica-Oblique /Flags 96 /FontBBox [-170 -225 1116 931] /ItalicAngle -12 /Ascent 718 /Descent -207 /CapHeight 718 /XHeight 523 /StemV 88 >>');
+  Object.keys(imNum).forEach(k => {
+    const im = imgs[k];
+    obj(imNum[k], ['<< /Type /XObject /Subtype /Image /Width ' + im.w + ' /Height ' + im.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + im.bytes.length + ' >>\nstream\n', im.bytes, '\nendstream']);
+  });
+  pages.forEach((p, i) => {
+    const xo = Object.keys(p.im).filter(k => imNum[k]).map(k => '/Im' + k + ' ' + imNum[k] + ' 0 R').join(' ');
+    obj(pn[i][0], '<< /Type /Page /Parent ' + PAGES + ' 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /Font << /F1 ' + F1 + ' 0 R /F2 ' + F2 + ' 0 R /F3 ' + F3 + ' 0 R >>' +
+      (xo ? ' /XObject << ' + xo + ' >>' : '') + ' >> /Contents ' + pn[i][1] + ' 0 R >>');
+    const content = p.ops.join('\n');
+    obj(pn[i][1], ['<< /Length ' + content.length + ' >>\nstream\n', content, '\nendstream']);
+  });
+  const d = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  obj(INFO, '<< /Title ' + u16((doc.title || 'Document') + (doc.no ? ' nr. ' + doc.no : '')) + ' /Author ' + u16((doc.agencySig && doc.agencySig.firm) || 'Kira Imobiliare') +
+    ' /Subject ' + u16(doc.subtitle || '') + ' /Creator (Kira Imobiliare) /Producer (Kira Imobiliare) /CreationDate (D:' + d + 'Z) >>');
+  const xref = len;
+  push('xref\n0 ' + n + '\n0000000000 65535 f \n');
+  for (let i = 1; i < n; i++) push(String(off[i]).padStart(10, '0') + ' 00000 n \n');
+  const rnd = new Uint8Array(16); crypto.getRandomValues(rnd);
+  const id = hex(rnd);
+  push('trailer\n<< /Size ' + n + ' /Root ' + CAT + ' 0 R /Info ' + INFO + ' 0 R /ID [<' + id + '> <' + id + '>] >>\nstartxref\n' + xref + '\n%%EOF\n');
+  const out = new Uint8Array(len);
+  let p = 0;
+  parts.forEach(b => { out.set(b, p); p += b.length; });
+  return out;
+}
+// The PDF of the document (Uint8Array). o.sign adds the client's signature and the signing certificate.
+async function pdf(doc, o){
+  o = o || {};
+  const imgs = {};
+  if (doc.agencySig && isImg(doc.agencySig.img)) try { imgs.A = await toJpeg(doc.agencySig.img); } catch(e){}
+  if (o.sign && isImg(o.sign.img)) try { imgs.C = await toJpeg(o.sign.img); } catch(e){}
+  const blocks = (doc.blocks || []).concat(o.sign && o.cert !== false ? certBlocks(doc, o.sign, o.ev) : []);
+  return assemble(layout(doc, blocks, o, imgs), imgs, doc);
+}
+
+/* ---------------- the signature box: finger, pen or mouse ---------------- */
+function SigPad(canvas, o){
+  o = o || {};
+  const g = canvas.getContext('2d'), color = o.color || '#0b1f4d', lw = o.width || 2.4;
+  let strokes = [], cur = null, ink = 0, dpr = 1, raf = 0;
+  canvas.style.touchAction = 'none';
+  function fit(){
+    const r = canvas.getBoundingClientRect();
+    dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    canvas.width = Math.max(1, Math.round(r.width * dpr)); canvas.height = Math.max(1, Math.round(r.height * dpr));
+    redraw();
+  }
+  function pos(e){ const r = canvas.getBoundingClientRect(); return {x: e.clientX - r.left, y: e.clientY - r.top}; }
+  function stroke(ctx, s, k, ox, oy){
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw * k;
+    const p = s.map(q => ({x: (q.x - ox) * k, y: (q.y - oy) * k}));
+    if (p.length === 1){ ctx.beginPath(); ctx.arc(p[0].x, p[0].y, lw * k / 2, 0, Math.PI * 2); ctx.fill(); return; }
+    ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y);
+    for (let i = 1; i < p.length - 1; i++) ctx.quadraticCurveTo(p[i].x, p[i].y, (p[i].x + p[i + 1].x) / 2, (p[i].y + p[i + 1].y) / 2);
+    ctx.lineTo(p[p.length - 1].x, p[p.length - 1].y);
+    ctx.stroke();
+  }
+  function redraw(){ raf = 0; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, canvas.width, canvas.height); strokes.forEach(s => stroke(g, s, dpr, 0, 0)); }
+  const later = () => { if (!raf) raf = requestAnimationFrame(redraw); };
+  const changed = () => { if (o.onChange) try { o.onChange(); } catch(e){} };
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button > 0 || o.disabled) return;
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch(x){}
+    cur = [pos(e)]; strokes.push(cur); later();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!cur) return;
+    e.preventDefault();
+    (e.getCoalescedEvents ? e.getCoalescedEvents() : []).concat([e]).forEach(ev => {
+      const p = pos(ev), q = cur[cur.length - 1], d = Math.hypot(p.x - q.x, p.y - q.y);
+      if (d < 0.7) return;
+      ink += d; cur.push(p);
+    });
+    later();
+  });
+  const end = () => { if (!cur) return; cur = null; later(); changed(); };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('lostpointercapture', end);
+  canvas.addEventListener('touchstart', e => { if (e.cancelable) e.preventDefault(); }, {passive: false});
+  let rt = null;
+  window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(fit, 120); });
+  fit();
+  return {
+    fit: fit,
+    clear(){ strokes = []; ink = 0; cur = null; redraw(); changed(); },
+    ink: () => ink,
+    isEmpty: () => !strokes.length,
+    // The drawing cut to its size, as PNG with a transparent background.
+    toDataURL(){
+      if (!strokes.length) return '';
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      strokes.forEach(s => s.forEach(p => { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }));
+      const m = lw * 2 + 4;
+      x0 -= m; y0 -= m; x1 += m; y1 += m;
+      const bw = Math.max(1, x1 - x0), bh = Math.max(1, y1 - y0), k = Math.min(2.5, 700 / bw, 240 / bh);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bw * k)); c.height = Math.max(1, Math.round(bh * k));
+      const ctx = c.getContext('2d');
+      strokes.forEach(s => stroke(ctx, s, k, x0, y0));
+      return c.toDataURL('image/png');
+    }
+  };
+}
+
+/* ---------------- the signing form (same on the signing page and on the agency's device) ----------------
+   The acknowledgments to tick (the required ones must be ticked), the questions, the name and the drawn signature.
+   o.onSubmit({name, consents, answers, img}) runs on "Semnez"; an Error thrown there is shown in the form. */
+function signForm(host, doc, o){
+  o = o || {};
+  injectCss();
+  const box = el('div', 'kd-sf'), uid = 'kd' + Math.random().toString(36).slice(2, 8);
+  box.setAttribute('lang', 'ro');
+  box.appendChild(el('h2', null, o.title || 'Semnarea'));
+  box.appendChild(el('p', 'kd-sf-lead', o.lead || 'Bifați acordurile, scrieți-vă numele și desenați semnătura cu degetul sau cu mouse-ul. Dacă observați o greșeală în document, nu semnați: cereți Agenției corectarea.'));
+  const cons = (doc.consents || []).map((c, i) => {
+    const lab = el('label', 'kd-sf-c'), cb = el('input'), sp = el('span', null, c.x);
+    cb.type = 'checkbox'; cb.id = uid + '-c' + i;
+    if (!c.req) sp.appendChild(el('em', null, ' (opțional)'));
+    lab.appendChild(cb); lab.appendChild(sp);
+    cb.addEventListener('change', () => lab.classList.remove('err'));
+    box.appendChild(lab);
+    return {c: c, cb: cb, lab: lab};
+  });
+  const qs = (doc.questions || []).map((q, i) => {
+    const fs = el('fieldset', 'kd-sf-q'), opts = el('div', 'kd-sf-opts'), nm = uid + '-q' + i;
+    fs.appendChild(el('legend', null, q.x));
+    const radios = (q.opts || []).map(v => {
+      const l = el('label'), r = el('input');
+      r.type = 'radio'; r.name = nm; r.value = v;
+      l.appendChild(r); l.appendChild(document.createTextNode(v)); opts.appendChild(l);
+      return r;
+    });
+    fs.appendChild(opts);
+    let det = null, wrap = null;
+    if (q.det){
+      wrap = el('div'); wrap.hidden = true;
+      const dl = el('label', 'kd-sf-l', q.detLabel || 'Detalii');
+      det = el('textarea'); det.id = nm + '-d'; det.rows = 2; det.maxLength = 500; dl.htmlFor = det.id;
+      wrap.appendChild(dl); wrap.appendChild(det); fs.appendChild(wrap);
+      det.addEventListener('input', () => fs.classList.remove('err'));
+    }
+    radios.forEach(r => r.addEventListener('change', () => {
+      fs.classList.remove('err');
+      if (wrap){ const on = radios.find(x => x.checked); wrap.hidden = !(on && on.value === q.det); }
+    }));
+    box.appendChild(fs);
+    return {q: q, fs: fs, radios: radios, det: det};
+  });
+  const pj = doc.client && doc.client.rep;
+  const nl = el('label', 'kd-sf-l', pj ? 'Numele și prenumele celui care semnează pentru firmă' : 'Numele și prenumele');
+  const name = el('input');
+  name.type = 'text'; name.id = uid + '-n'; name.maxLength = 120; name.autocomplete = 'name'; name.spellcheck = false;
+  name.setAttribute('autocapitalize', 'words'); name.placeholder = 'Scrieți numele complet';
+  nl.htmlFor = name.id;
+  name.addEventListener('input', () => name.classList.remove('err'));
+  box.appendChild(nl); box.appendChild(name);
+  box.appendChild(el('div', 'kd-sf-l', 'Semnătura'));
+  const padBox = el('div', 'kd-sf-pad'), cv = el('canvas'), ph = el('div', 'ph', 'Semnați aici, cu degetul sau cu mouse-ul');
+  cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', 'Spațiul pentru semnătură');
+  padBox.appendChild(el('div', 'ln')); padBox.appendChild(ph); padBox.appendChild(cv);
+  box.appendChild(padBox);
+  const row = el('div', 'kd-sf-row'), clr = el('button', 'kd-sf-clr', 'Șterge semnătura');
+  clr.type = 'button';
+  row.appendChild(el('span', null, 'Semnătura se salvează doar când apăsați „' + (o.submit || 'Semnez') + '”.')); row.appendChild(clr);
+  box.appendChild(row);
+  const err = el('div', 'kd-sf-err'); err.hidden = true; err.setAttribute('role', 'alert');
+  const go = el('button', 'kd-sf-go', o.submit || 'Semnez'); go.type = 'button';
+  box.appendChild(err); box.appendChild(go);
+  if (o.note) box.appendChild(el('p', 'kd-sf-note', o.note));
+  host.appendChild(box);
+  const po = {onChange: () => { padBox.classList.remove('err'); ph.hidden = !pad.isEmpty(); }};
+  const pad = SigPad(cv, po);
+  cv.addEventListener('pointerdown', () => { if (!po.disabled) ph.hidden = true; });
+  clr.addEventListener('click', () => { pad.clear(); ph.hidden = false; });
+  // The box gets its size only once it is on screen (and again when the phone turns).
+  if (window.ResizeObserver){ let w = 0; new ResizeObserver(() => { const n = Math.round(padBox.clientWidth); if (n && n !== w){ w = n; pad.fit(); } }).observe(padBox); }
+  function fail(m, node){
+    err.textContent = m; err.hidden = false;
+    if (node){ node.classList.add('err'); try { node.scrollIntoView({block: 'center', behavior: 'smooth'}); } catch(e){ node.scrollIntoView(); } if (node === name) setTimeout(() => name.focus(), 250); }
+    return {ok: false, m: m};
+  }
+  function check(){
+    err.hidden = true;
+    for (const x of cons) if (x.c.req && !x.cb.checked) return fail('Bifați toate acordurile obligatorii (cele fără „opțional”).', x.lab);
+    const answers = {};
+    for (const x of qs){
+      const r = x.radios.find(y => y.checked);
+      if (!r){ if (x.q.req) return fail('Răspundeți la întrebarea: ' + x.q.x, x.fs); continue; }
+      const a = {v: r.value};
+      if (x.det && r.value === x.q.det){
+        const d = x.det.value.replace(/\s+/g, ' ').trim();
+        if (d.length < 2) return fail('Completați: ' + (x.q.detLabel || 'detaliile') + '.', x.fs);
+        a.det = d.slice(0, 500);
+      }
+      answers[x.q.k] = a;
+    }
+    const nm = name.value.replace(/\s+/g, ' ').trim();
+    if (nm.length < 3 || !/\p{L}.*\p{L}/u.test(nm)) return fail('Scrieți-vă numele și prenumele.', name);
+    if (pad.isEmpty()) return fail('Desenați semnătura în spațiul de mai sus.', padBox);
+    if (pad.ink() < 40) return fail('Semnătura e prea scurtă. Desenați semnătura completă.', padBox);
+    const consents = {};
+    cons.forEach(x => { consents[x.c.k] = !!x.cb.checked; });
+    return {ok: true, v: {name: nm, consents: consents, answers: answers, img: pad.toDataURL()}};
+  }
+  let busy = false;
+  function setBusy(on){
+    busy = on; po.disabled = on; go.disabled = on;
+    go.textContent = on ? (o.busy || 'Se semnează…') : (o.submit || 'Semnez');
+    [name, clr].concat(cons.map(x => x.cb), ...qs.map(x => x.radios.concat(x.det ? [x.det] : []))).forEach(n => { n.disabled = on; });
+  }
+  go.addEventListener('click', async () => {
+    if (busy) return;
+    const r = check();
+    if (!r.ok || !o.onSubmit) return;
+    setBusy(true);
+    try { await o.onSubmit(r.v); }
+    catch(e){ fail((e && e.message) || 'Semnarea nu a reușit. Încercați din nou.'); }
+    finally { setBusy(false); }
+  });
+  return {el: box, pad: pad, check: check, error: m => fail(m), fit: () => pad.fit()};
+}
+
+window.KiraDoc = {
+  version: 1, render: render, pdf: pdf, certBlocks: certBlocks, SigPad: SigPad, signForm: signForm, sha256: sha256, sha256js: s => hex(sha256Bytes(new TextEncoder().encode(String(s)))),
+  fmtWhen: fmtWhen, fmtDay: fmtDay, uaShort: uaShort, waPhone: waPhone, isImg: isImg, parseDoc: parseDoc, injectCss: injectCss
+};
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  var KD = window.KiraDoc, app = document.getElementById('app');
+
+  function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function para(parts, cls){
+    // parts: strings, or [text] for bold
+    var p = el('p', cls);
+    parts.forEach(function(x){ if (Array.isArray(x)) p.appendChild(el('b', null, x[0])); else p.appendChild(document.createTextNode(x)); });
+    return p;
+  }
+  function show(nodes){ app.textContent = ''; nodes.forEach(function(n){ if (n) app.appendChild(n); }); }
+  function card(kind, title, lines, extra){
+    var c = el('section', 'card' + (kind ? ' ' + kind : ''));
+    c.appendChild(el('h1', null, title));
+    (lines || []).forEach(function(l){ if (l) c.appendChild(typeof l === 'string' ? el('p', null, l) : l); });
+    if (extra) c.appendChild(extra);
+    return c;
+  }
+  function message(kind, title, lines, extra){ show([card(kind, title, lines, extra)]); window.scrollTo(0, 0); }
+  function retryRow(){
+    var r = el('div', 'row'), b = el('button', 'btn primary', 'Încearcă din nou');
+    b.type = 'button'; b.addEventListener('click', function(){ start(); });
+    r.appendChild(b); return r;
+  }
+
+  /* ---------- the link: #p=<proiect>&k=<cheie publică>&t=<cheia documentului> ---------- */
+  function readLink(){
+    var q = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var p = q.get('p') || '', u = q.get('u') || '', k = q.get('k') || '', t = q.get('t') || '', base = '';
+    if (/^[a-z0-9]{20}$/.test(p)) base = 'https://' + p + '.supabase.co';
+    else if (/^https?:\/\/[^\s\/?#]+\/?$/i.test(u)) base = u.replace(/\/$/, '');
+    if (!base || !/^[A-Za-z0-9_.-]{20,400}$/.test(k) || !/^[A-Za-z0-9_-]{16,64}$/.test(t)) return null;
+    return {base: base, key: k, token: t};
+  }
+  function friendly(j, status){
+    if (j && j.hint) return String(j.hint);
+    var m = String((j && (j.message || j.msg)) || '');
+    if (status === 401 || /api key/i.test(m)) return 'Linkul nu este complet. Deschideți-l din nou, exact cum l-ați primit.';
+    if (status === 404) return 'Serviciul de semnare nu este disponibil momentan. Anunțați Agenția.';
+    if (status === 429 || status >= 500) return 'Serviciul de semnare nu răspunde acum. Încercați din nou peste câteva minute.';
+    return 'Nu s-a putut finaliza. Încercați din nou.';
+  }
+  async function rpc(L, fn, body){
+    var hd = {'Content-Type': 'application/json', apikey: L.key};
+    if (/^eyJ/.test(L.key)) hd.Authorization = 'Bearer ' + L.key;
+    var r;
+    try { r = await fetch(L.base + '/rest/v1/rpc/' + fn, {method: 'POST', headers: hd, body: JSON.stringify(body), cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer'}); }
+    catch(e){ var x = new Error('Nu ne putem conecta. Verificați conexiunea la internet și încercați din nou.'); x.code = 'offline'; throw x; }
+    var txt = await r.text(), j = null;
+    try { j = JSON.parse(txt); } catch(e){ j = null; }
+    if (!r.ok){ var y = new Error(friendly(j, r.status)); y.code = 'http'; y.status = r.status; throw y; }
+    return j;
+  }
+
+  /* ---------- PDF to download ---------- */
+  function slug(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
+  function fileName(doc, name, signed){
+    return [doc.no, doc.short === 'fișa' ? 'fisa-vizionare' : 'contract', slug(name)].filter(Boolean).join('-').replace(/-+/g, '-') + (signed ? '-semnat' : '') + '.pdf';
+  }
+  var urls = [];
+  function pdfButton(doc, opts, label, name, primary){
+    var a = el('a', 'btn' + (primary ? ' primary' : ''), 'Se pregătește PDF-ul…');
+    a.setAttribute('aria-disabled', 'true'); a.href = '#'; a.setAttribute('role', 'button');
+    KD.pdf(doc, opts).then(function(bytes){
+      var u = URL.createObjectURL(new Blob([bytes], {type: 'application/pdf'}));
+      urls.push(u);
+      a.href = u; a.download = fileName(doc, name, !!opts.sign); a.textContent = label; a.removeAttribute('aria-disabled'); a.removeAttribute('role');
+    }, function(){ a.textContent = 'PDF-ul nu s-a putut pregăti'; });
+    return a;
+  }
+  // "CONTRACT DE INTERMEDIERE IMOBILIARĂ" → "Contract de intermediere imobiliară nr. C002"
+  function docTitle(doc){ return String(doc.title || 'Documentul').toLocaleLowerCase('ro-RO').replace(/^./, function(c){ return c.toLocaleUpperCase('ro-RO'); }) + (doc.no ? ' nr. ' + doc.no : ''); }
+  function shortName(doc){ return doc.short === 'fișa' ? 'fișa de vizionare' : 'contractul'; }
+  // "contractul de intermediere imobiliară nr. C002", "fișa de vizionare nr. C003"
+  function theTitle(doc){
+    var t = docTitle(doc);
+    t = t.charAt(0).toLocaleLowerCase('ro-RO') + t.slice(1);
+    return t.replace(/^contract(?=\s|$)/, 'contractul').replace(/^fișă(?=\s|$)/, 'fișa');
+  }
+  function cap(s){ return s.charAt(0).toLocaleUpperCase('ro-RO') + s.slice(1); }
+
+  /* ---------- the states of the link ---------- */
+  function showState(r){
+    var s = r && r.status;
+    if (s === 'cancelled') return message('bad', 'Linkul a fost oprit de Agenție', ['Agenția a oprit acest link, de exemplu pentru o corectură. Dacă e cazul, veți primi un link nou.']);
+    if (s === 'expired') return message('bad', 'Linkul a expirat', ['Termenul pentru semnare a trecut' + (r.expiresAt ? ' (' + KD.fmtDay(r.expiresAt) + ')' : '') + '. Cereți Agenției un link nou.']);
+    if (s === 'signed_old') return message('good', 'Documentul a fost semnat', ['Documentul a fost semnat. Copia semnată nu se mai poate descărca din acest link; o puteți cere Agenției.']);
+    return message('bad', 'Linkul nu mai este valabil', ['Linkul nu este valid sau a fost înlocuit cu unul nou. Folosiți ultimul link primit de la Agenție.']);
+  }
+
+  async function start(){
+    urls.forEach(function(u){ try { URL.revokeObjectURL(u); } catch(e){} }); urls = [];
+    if (!KD) return message('bad', 'Pagina nu s-a încărcat complet', ['Reîncărcați pagina.'], retryRow());
+    var L = readLink();
+    if (!L) return message('bad', 'Link incomplet', ['Deschideți linkul exact cum l-ați primit pe WhatsApp sau pe email (tot textul, până la capăt). Dacă tot nu merge, cereți Agenției un link nou.']);
+    show([el('div', 'card loading')]);
+    app.firstChild.appendChild(el('div', 'spin')); app.firstChild.appendChild(el('p', null, 'Se deschide documentul…'));
+    var r;
+    try { r = await rpc(L, 'crm_sign_get', {p_token: L.token}); }
+    catch(e){ return message('bad', 'Documentul nu s-a putut deschide', [e.message], retryRow()); }
+    if (!r || (r.status !== 'sent' && r.status !== 'signed')) return showState(r);
+    var doc = KD.parseDoc(r.doc), ok = false;
+    try { ok = !!doc && (await KD.sha256(r.doc)) === r.hash; } catch(e){ ok = false; }
+    if (!ok) return message('bad', 'Documentul nu a putut fi verificat', ['Amprenta documentului nu corespunde. Nu semnați; anunțați Agenția.']);
+    if (r.status === 'signed' && r.patch && r.patch.sign) return showSigned(doc, r, r.patch, false);
+    showSign(L, doc, r);
+  }
+
+  function showSign(L, doc, r){
+    var firm = (doc.agencySig && doc.agencySig.firm) || '';
+    var who = (doc.client && doc.client.name) || '';
+    var intro = card('', 'Semnați ' + shortName(doc), [
+      who ? para(['Bună ziua, ', [who], '!']) : null,
+      para([['Kira Imobiliare'], firm ? ' (' + firm + ')' : '', ' v-a trimis spre semnare ' + theTitle(doc) + (doc.subtitle ? ', ' + doc.subtitle : '') + '.']),
+      (function(){ var o = el('ol', 'steps'); ['Citiți documentul de mai jos. Îl puteți și descărca.', 'La final, bifați acordurile, scrieți-vă numele și semnați cu degetul sau cu mouse-ul.', 'Apăsați „Semnez”, apoi descărcați copia semnată.'].forEach(function(t){ o.appendChild(el('li', null, t)); }); return o; })(),
+      el('p', 'small', (r.expiresAt ? 'Linkul este valabil până la ' + KD.fmtDay(r.expiresAt) + '. ' : '') + 'Dacă observați o greșeală, nu semnați: cereți Agenției corectarea.')
+    ]);
+    var row = el('div', 'row'), go = el('button', 'btn primary', 'Mergi la semnare');
+    go.type = 'button';
+    row.appendChild(go); row.appendChild(pdfButton(doc, {}, 'Descarcă documentul (PDF)', who, false));
+    intro.appendChild(row);
+    var lab = el('div', 'doc-label', 'Documentul');
+    var docHost = el('div');
+    var sfHost = el('div');
+    show([intro, lab, docHost, sfHost]);
+    KD.render(doc, docHost, {});
+    var form = KD.signForm(sfHost, doc, {
+      title: 'Semnarea',
+      submit: 'Semnez',
+      busy: 'Se semnează…',
+      note: 'Când apăsați „Semnez”, semnătura se aplică pe documentul de mai sus. Se înregistrează data și ora, adresa IP și browserul folosit, ca dovadă a semnării.',
+      onSubmit: async function(v){
+        var res = await rpc(L, 'crm_sign_submit', {p_token: L.token, p_hash: r.hash, p_name: v.name, p_consents: v.consents, p_answers: v.answers, p_img: v.img, p_ua: String(navigator.userAgent || '').slice(0, 400)});
+        if (res && res.status === 'signed' && res.patch && res.patch.sign){ showSigned(doc, r, res.patch, true); return; }
+        if (res && res.status === 'changed') throw new Error('Agenția a modificat documentul între timp. Reîncărcați pagina și citiți varianta nouă.');
+        showState(res);
+      }
+    });
+    go.addEventListener('click', function(){ try { form.el.scrollIntoView({behavior: 'smooth', block: 'start'}); } catch(e){ form.el.scrollIntoView(); } });
+  }
+
+  function showSigned(doc, r, patch, fresh){
+    var s = patch.sign, op = patch.opened || {};
+    var ev = {sentAt: r.sentAt, opened: op.first, opens: op.count};
+    var c = card('good', fresh ? 'Gata, ați semnat!' : 'Documentul este semnat', [
+      para([cap(theTitle(doc)) + ' a fost semnat' + (doc.short === 'fișa' ? 'ă' : '') + ' de ', [s.name || ''], ' la ' + KD.fmtWhen(s.at, true) + '.']),
+      el('p', null, 'Agenția primește automat documentul semnat. Descărcați și păstrați copia dumneavoastră: are la final certificatul de semnare (data și ora, adresa IP, amprenta documentului).'),
+      el('p', 'small', 'Copia semnată se poate descărca din acest link timp de 30 de zile.')
+    ]);
+    var row = el('div', 'row');
+    row.appendChild(pdfButton(doc, {sign: s, ev: ev}, 'Descarcă PDF-ul semnat', s.name, true));
+    c.appendChild(row);
+    var docHost = el('div');
+    show([c, el('div', 'doc-label', 'Documentul semnat'), docHost]);
+    KD.render(doc, docHost, {sign: s, ev: ev});
+    window.scrollTo(0, 0);
+  }
+
+  window.addEventListener('hashchange', start);
+  start();
+})();
+</script>
+</body>
+</html>

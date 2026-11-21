@@ -40,6 +40,15 @@ which was deleted. The public pages no longer use them; they are still reference
 Keep the public domain assigned to this Vercel project. The app selects the public layout from the incoming host.
 Public website hosts return 404 for `/api/*` except the feed, and redirect old CRM paths to `crm.kiraimobiliare.ro`.
 
+## The agents' app (app.kiraimobiliare.ro)
+
+`app.kiraimobiliare.ro` must also be assigned to this project (Vercel › Settings › Domains; the DNS is already on Vercel).
+On that host `next.config.ts` rewrites every path to `public/aplicatie/`: in a browser tab it shows the download page
+(iPhone, Android, Windows kit at `/descarca/Kira-Imobiliare-Windows.zip`); added to the home screen it is the CRM.
+`public/aplicatie/` is generated: run the CRM's `mobile/build-mobile.ps1 -Site <this folder>` (after `desktop/build.ps1`)
+and push. Phones pick the new version up by themselves and show "Versiune nouă · Actualizează"; nothing else is needed.
+`/aplicatie` answers 404 on every other host, so the app never shares an origin (and its stored data) with the site.
+
 ## Before launch
 
 - In Supabase › SQL Editor, run `crm-online.sql` version 5 (it adds the site functions, the map position and the "Adaugă anunț" requests; it deletes nothing).

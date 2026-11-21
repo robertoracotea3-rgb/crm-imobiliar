@@ -11,6 +11,12 @@ function isCrmApplicationHost(hostValue: string | null) {
   return host === 'crm.kiraimobiliare.ro' || host === 'crm-fortis.vercel.app' || /^crm-fortis(?:-|\.)/.test(host);
 }
 
+// The agents' app (public/aplicatie) runs only on its own address, app.kiraimobiliare.ro (see next.config.ts).
+function isPhoneAppHost(hostValue: string | null) {
+  const host = (hostValue || '').split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+  return host === 'app.kiraimobiliare.ro' || host === 'app.localhost';
+}
+
 const PUBLIC_PATHS = ['/login', '/register', '/api/auth/register', '/api/feed/'];
 const CRM_PATHS = [
   '/login', '/register', '/dashboard', '/properties', '/leads', '/clients', '/contacts',
@@ -33,6 +39,12 @@ function matchesPath(pathname: string, path: string) {
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get('host');
+
+  // The agents' app is reached only through app.kiraimobiliare.ro (rewritten to /aplicatie there), never on the site's
+  // own addresses: in a browser, the site's pages must not share storage with the app's data.
+  if (matchesPath(pathname, '/aplicatie') && !isPhoneAppHost(host)) {
+    return new NextResponse('Not found', { status: 404 });
+  }
 
   // Keep the CRM surface on its own hostname. The property XML feed and the site's "Adaugă anunț" form remain public.
   const isPublicFeed = pathname.startsWith('/api/feed/') || pathname.startsWith('/api/site/');
