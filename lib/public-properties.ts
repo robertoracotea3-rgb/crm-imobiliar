@@ -46,13 +46,37 @@ function isPublicKey(key: string): boolean {
   try { return JSON.parse(Buffer.from(part, 'base64url').toString('utf8'))?.role === 'anon'; } catch { return false; }
 }
 
+// A value pasted into Vercel with quotes around it still works.
+const unquote = (v: string | undefined) => (v || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+
+/** KIRA_CRM_URL as https://<ref>.supabase.co. Like the CRM, it also takes the dashboard address or the bare project code. */
+function crmUrl(): string {
+  const raw = unquote(process.env.KIRA_CRM_URL);
+  const dash = /supabase\.com\/dashboard\/project\/([a-z0-9]{20})(?![a-z0-9])/i.exec(raw);
+  if (dash) return `https://${dash[1].toLowerCase()}.supabase.co`;
+  if (/^[a-z0-9]{20}$/i.test(raw)) return `https://${raw.toLowerCase()}.supabase.co`;
+  return raw.replace(/\/+$/, '').replace(/\/(rest|storage|auth)\/v1(\/.*)?$/, '');
+}
+
+const crmKey = () => unquote(process.env.KIRA_CRM_PUBLISHABLE_KEY);
+
+const okUrl = (url: string) => /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url) ||
+  (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(url));
+
+/** What is wrong with the two Vercel variables, or null when they look right (shown by /stare-site). Never repeats their values. */
+export function crmConfigProblem(): string | null {
+  const scope = ' (sau nu e bifată la mediul acesta: Production / Preview; după ce o adaugi, trebuie Redeploy)';
+  if (!unquote(process.env.KIRA_CRM_URL)) return 'KIRA_CRM_URL lipsește' + scope;
+  if (!okUrl(crmUrl())) return 'KIRA_CRM_URL nu are forma https://<cod>.supabase.co';
+  const key = crmKey();
+  if (!key) return 'KIRA_CRM_PUBLISHABLE_KEY lipsește' + scope;
+  if (!isPublicKey(key)) return 'KIRA_CRM_PUBLISHABLE_KEY nu e cheia publică: trebuie Publishable key (sb_publishable_...) sau cheia anon';
+  return null;
+}
+
 /** The CRM's online database, or null when it is not set up (the pages then render without listings). */
 export function crmConfig(): { url: string; key: string } | null {
-  const url = (process.env.KIRA_CRM_URL || '').trim().replace(/\/+$/, '').replace(/\/(rest|storage|auth)\/v1(\/.*)?$/, '');
-  const key = (process.env.KIRA_CRM_PUBLISHABLE_KEY || '').trim();
-  const okUrl = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url) ||
-    (process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(url));
-  return okUrl && key && isPublicKey(key) ? { url, key } : null;
+  return crmConfigProblem() ? null : { url: crmUrl(), key: crmKey() };
 }
 
 export function crmHeaders(key: string): Record<string, string> {

@@ -28,6 +28,8 @@ Project › Settings › Environment Variables (Production and Preview):
 
 Without these variables the pages still render, instantly, with no listings.
 
+`/stare-site` says what is wrong when no listings show (missing or malformed variable, script not run, key refused, nothing ticked) without echoing the values. A pasted dashboard address or bare project code also works for `KIRA_CRM_URL`.
+
 The old variables (`SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `KIRA_PUBLIC_AGENCY_ID`) belonged to the old CRM database,
 which was deleted. The public pages no longer use them; they are still referenced by the old CRM code and the XML feed (`/api/feed/properties.xml`).
 
