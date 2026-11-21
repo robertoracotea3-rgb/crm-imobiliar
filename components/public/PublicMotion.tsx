@@ -19,6 +19,8 @@ export function PublicMotion() {
     }, { threshold: 0.12, rootMargin: '0px 0px -32px 0px' });
 
     targets.forEach((target, index) => {
+      // What is already on screen stays put; only sections further down fade in.
+      if (target.getBoundingClientRect().top < window.innerHeight * 0.9) return;
       target.classList.add('kira-reveal');
       target.style.setProperty('--reveal-order', String(index % 5));
       observer.observe(target);

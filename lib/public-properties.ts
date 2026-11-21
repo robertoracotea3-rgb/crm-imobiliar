@@ -1,5 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
+import type { CardProperty } from '@/components/public/site';
 
 /*
  * Proprietățile de pe site vin din Kira Imobiliare (CRM-ul): apar cele bifate „Site Kira” la Promovare,
@@ -194,6 +195,21 @@ export function publicPropertyPath(property: Pick<PublicProperty, 'id' | 'intern
 
 function normalizeName(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('ro').replace(/[^a-z0-9]/g, '');
+}
+
+/** The slim, serialisable shape the interactive parts of the site (cards, map, search, favourites) receive. */
+export function toCard(p: PublicProperty): CardProperty {
+  const photos = Array.isArray(p.attributes.photos) ? (p.attributes.photos as string[]) : [];
+  return {
+    id: p.id, path: publicPropertyPath(p), title: p.title, code: p.internal_code, price: p.price,
+    transaction: p.transaction === 'inchiriere' ? 'inchiriere' : p.transaction === 'vanzare' ? 'vanzare' : null,
+    typeLabel: p.type_label, city: p.city, zone: p.zone, county: p.county,
+    surface: p.surface_useful ?? p.surface_land, land: p.surface_land != null && p.surface_useful == null,
+    rooms: typeof p.attributes.camere === 'number' ? p.attributes.camere : null,
+    floor: typeof p.attributes.etaj === 'string' ? p.attributes.etaj : null,
+    year: typeof p.attributes.an_constructie === 'number' ? p.attributes.an_constructie : null,
+    photos: photos.slice(0, 4), photoCount: photos.length, updatedAt: p.updated_at,
+  };
 }
 
 /** The properties on the site, most recently changed first; optionally only one locality. */

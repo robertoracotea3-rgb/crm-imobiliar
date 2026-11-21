@@ -1,28 +1,26 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound, permanentRedirect } from 'next/navigation';
+import { MapPin } from 'lucide-react';
 import { PublicSiteFrame } from '@/components/public/PublicSiteFrame';
-import { getPublicProperty, publicPropertyPath, type PublicProperty } from '@/lib/public-properties';
+import { PropertyCard } from '@/components/public/PropertyCard';
+import { MortgageCalculator, PropertyGallery, ViewingCard } from '@/components/public/PropertyDetail';
+import { getPublicProperties, getPublicProperty, publicPropertyPath, toCard, type PublicProperty } from '@/lib/public-properties';
+import { money, placeLabel, priceLabel, transactionLabel } from '@/components/public/site';
 
 type Props = { params: Promise<{ id: string }> };
 
-const SITE = 'https://www.kiraimobiliare.ro';
-const PHONE = '0775 132 969';
-const PHONE_INTL = '40775132969';
+const SITE_URL = 'https://www.kiraimobiliare.ro';
 
 function photosOf(p: PublicProperty): string[] {
   const photos = p.attributes?.photos;
   return Array.isArray(photos) ? photos.filter((x): x is string => typeof x === 'string') : [];
 }
 
-function priceText(p: PublicProperty): string {
-  if (!p.price) return 'Preț la cerere';
-  return `${new Intl.NumberFormat('ro-RO').format(p.price)} ${p.currency || 'EUR'}${p.transaction === 'inchiriere' ? ' / lună' : ''}`;
-}
-
 function summary(p: PublicProperty): string {
   if (p.description) return p.description.replace(/\s+/g, ' ').slice(0, 160);
   const where = [p.zone, p.city].filter(Boolean).join(', ') || 'zona Făgăraș';
-  return `${p.title}. ${priceText(p)}. ${where}. Contactează Kira Imobiliare pentru detalii și vizionare.`;
+  return `${p.title}. ${priceLabel(toCard(p))}. ${where}. Contactează Kira Imobiliare pentru detalii și vizionare.`;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -47,45 +45,100 @@ export default async function PropertyPage({ params }: Props) {
   // An older link (the title changed in the CRM): go to the current one.
   if (`/proprietati/${id}` !== path) permanentRedirect(path);
   const photos = photosOf(p);
-  const [cover, ...rest] = photos;
-  const ask = `Bună ziua, mă interesează proprietatea ${p.internal_code ? p.internal_code + ': ' : ''}${p.title} (${SITE}${path})`;
+  const card = toCard(p);
+  const ask = `Bună ziua, mă interesează proprietatea ${p.internal_code ? p.internal_code + ': ' : ''}${p.title} (${SITE_URL}${path})`;
+  const all = await getPublicProperties();
+  const similar = all
+    .filter((x) => x.id !== p.id && (x.category === p.category || (x.city && x.city === p.city)))
+    .sort((a, b) => Number(b.category === p.category) - Number(a.category === p.category))
+    .slice(0, 3)
+    .map(toCard);
+  const perSqm = p.transaction === 'vanzare' && p.price && card.surface ? `${money(p.price / card.surface)} €/m²` : null;
   const jsonLd = {
     '@context': 'https://schema.org', '@type': 'RealEstateListing',
-    name: p.title, description: summary(p), url: SITE + path,
-    image: photos.slice(0, 10).map((x) => SITE + x),
+    name: p.title, description: summary(p), url: SITE_URL + path,
+    image: photos.slice(0, 10).map((x) => SITE_URL + x),
     ...(p.updated_at ? { dateModified: new Date(p.updated_at).toISOString() } : {}),
     ...(p.price ? { offers: { '@type': 'Offer', price: p.price, priceCurrency: p.currency || 'EUR', availability: 'https://schema.org/InStock' } } : {}),
   };
-  return <PublicSiteFrame><main id="continut" className="kira-content-page mx-auto max-w-6xl px-5 py-12 sm:px-8">
-    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
-    <p className="text-sm text-[#617067]">{[p.zone, p.city, p.county].filter(Boolean).join(', ')}{p.type_label ? ` · ${p.type_label}` : ''}{p.internal_code ? ` · Cod ${p.internal_code}` : ''}</p>
-    <h1 className="mt-3 max-w-4xl font-[var(--font-playfair)] text-4xl sm:text-5xl">{p.title}</h1>
-    <p className="mt-5 text-3xl font-bold text-[#0c7456]">{priceText(p)}</p>
-    {cover ? <div className="mt-8">
-      <a href={cover} target="_blank" rel="noopener" className="block"><img src={cover} alt={p.title} className="max-h-[36rem] w-full rounded-2xl object-cover" /></a>
-      {rest.length ? <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{rest.map((photo, i) => <a key={photo} href={photo} target="_blank" rel="noopener" className="block"><img src={photo} alt={`${p.title}, poza ${i + 2}`} className="aspect-[4/3] w-full rounded-xl object-cover" loading="lazy" /></a>)}</div> : null}
-      <p className="mt-2 text-xs text-[#617067]">{photos.length === 1 ? '1 poză' : `${photos.length} poze`} · apasă pe o poză ca s-o vezi mare</p>
-    </div> : null}
-    <div className="mt-9 grid gap-10 md:grid-cols-[1fr_20rem]">
-      <section>
-        <h2 className="text-2xl font-semibold">Descriere</h2>
-        <p className="mt-4 whitespace-pre-line leading-8 text-[#52635a]">{p.description || 'Pentru informații complete despre această proprietate, contactează echipa Kira Imobiliare.'}</p>
-        {p.facts.length ? <>
-          <h2 className="mt-9 text-2xl font-semibold">Caracteristici</h2>
-          <dl className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">{p.facts.map((f) => <div key={f.label} className="rounded-xl bg-white p-4"><dt className="text-sm text-[#617067]">{f.label}</dt><dd className="mt-1 font-semibold">{f.value}</dd></div>)}</dl>
-        </> : null}
-        {p.features.length ? <>
-          <h2 className="mt-9 text-2xl font-semibold">Dotări</h2>
-          <ul className="mt-4 flex flex-wrap gap-2">{p.features.map((f) => <li key={f} className="rounded-full border border-[#e1e6df] bg-white px-3 py-1.5 text-sm">{f}</li>)}</ul>
-        </> : null}
-        <p className="mt-8 text-sm text-[#617067]">Adresa exactă o primești de la noi, la programarea vizionării. Disponibilitatea și prețul se confirmă înainte de vizionare.</p>
-      </section>
-      <aside className="h-fit rounded-2xl bg-[#14251d] p-6 text-white md:sticky md:top-6">
-        <h2 className="text-xl font-semibold">Solicită detalii sau o vizionare</h2>
-        <p className="mt-3 leading-7 text-white/75">Confirmăm disponibilitatea și răspundem la întrebările tale.{p.internal_code ? ` Spune-ne codul ${p.internal_code}.` : ''}</p>
-        <a href={`tel:+${PHONE_INTL}`} className="mt-6 block rounded-full bg-white px-5 py-3 text-center font-semibold text-[#14251d]">Sună: {PHONE}</a>
-        <a href={`https://wa.me/${PHONE_INTL}?text=${encodeURIComponent(ask)}`} className="mt-3 block rounded-full border border-white/30 px-5 py-3 text-center font-semibold">WhatsApp</a>
-      </aside>
-    </div>
-  </main></PublicSiteFrame>;
+
+  return (
+    <PublicSiteFrame>
+      <main id="continut" className="kira-property-page bg-[#F6F3EE]">
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
+        <div className="mx-auto max-w-[92rem] px-5 pb-20 pt-8 sm:px-8 lg:px-10">
+          <nav aria-label="Ești aici" className="text-sm text-[#121417]/55">
+            <Link href="/" className="hover:text-[#9a7a35]">Acasă</Link> <span aria-hidden="true">/</span>{' '}
+            <Link href="/proprietati" className="hover:text-[#9a7a35]">Proprietăți</Link> <span aria-hidden="true">/</span>{' '}
+            <span className="text-[#121417]/80">{p.internal_code || p.title}</span>
+          </nav>
+
+          <header className="mt-6 flex flex-wrap items-end justify-between gap-6">
+            <div className="max-w-4xl">
+              <div className="flex flex-wrap gap-2">
+                {transactionLabel(card.transaction) && <span className="rounded-md bg-[#121417] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[.14em] text-[#E9CF8E]">{transactionLabel(card.transaction)}</span>}
+                {p.type_label && <span className="rounded-md border border-[#121417]/12 bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-[.14em] text-[#121417]/70">{p.type_label}</span>}
+                {p.internal_code && <span className="rounded-md bg-[#C8A252] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[.14em] text-[#121417]">Cod {p.internal_code}</span>}
+              </div>
+              <h1 className="mt-4 font-[var(--font-playfair)] text-4xl font-medium leading-[1.08] tracking-tight sm:text-5xl lg:text-[3.4rem]">{p.title}</h1>
+              <p className="mt-3 inline-flex items-center gap-1.5 text-[#121417]/65"><MapPin size={17} className="text-[#C8A252]" /> {placeLabel(card)}{p.county && p.county !== p.city ? `, jud. ${p.county}` : ''}</p>
+            </div>
+            <div className="text-left sm:text-right">
+              <p className="font-[var(--font-playfair)] text-4xl font-semibold text-[#9a7a35] sm:text-5xl">{priceLabel(card)}</p>
+              {perSqm && <p className="mt-1 text-sm text-[#121417]/55">{perSqm}</p>}
+            </div>
+          </header>
+
+          <div className="mt-8"><PropertyGallery photos={photos} title={p.title} /></div>
+
+          <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_23rem]">
+            <div className="space-y-10">
+              <section>
+                <h2 className="font-[var(--font-playfair)] text-3xl">Descriere</h2>
+                <p className="mt-4 whitespace-pre-line text-[1.02rem] leading-8 text-[#121417]/75">{p.description || 'Pentru informații complete despre această proprietate, contactează echipa Kira Imobiliare.'}</p>
+              </section>
+              {p.facts.length ? (
+                <section>
+                  <h2 className="font-[var(--font-playfair)] text-3xl">Caracteristici</h2>
+                  <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {p.facts.map((f) => (
+                      <div key={f.label} className="rounded-2xl border border-[#121417]/8 bg-white p-4">
+                        <dt className="text-[13px] text-[#121417]/55">{f.label}</dt>
+                        <dd className="mt-1 font-semibold">{f.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              ) : null}
+              {p.features.length ? (
+                <section>
+                  <h2 className="font-[var(--font-playfair)] text-3xl">Dotări</h2>
+                  <ul className="mt-5 flex flex-wrap gap-2">
+                    {p.features.map((f) => <li key={f} className="rounded-full border border-[#C8A252]/35 bg-white px-3.5 py-1.5 text-sm">{f}</li>)}
+                  </ul>
+                </section>
+              ) : null}
+              {p.transaction === 'vanzare' && p.price ? <MortgageCalculator price={p.price} /> : null}
+              <p className="text-sm leading-6 text-[#121417]/55">Adresa exactă o primești de la noi, la programarea vizionării. Disponibilitatea și prețul se confirmă înainte de vizionare.</p>
+            </div>
+            <aside className="lg:sticky lg:top-24 lg:h-fit">
+              <ViewingCard property={card} ask={ask} />
+            </aside>
+          </div>
+
+          {similar.length ? (
+            <section className="mt-20">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <h2 className="font-[var(--font-playfair)] text-3xl sm:text-4xl">Proprietăți asemănătoare</h2>
+                <Link href="/proprietati" className="text-sm font-semibold text-[#9a7a35] hover:text-[#121417]">Toate proprietățile →</Link>
+              </div>
+              <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {similar.map((s) => <PropertyCard key={s.id} p={s} />)}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </main>
+    </PublicSiteFrame>
+  );
 }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { Sora, Inter, Playfair_Display } from "next/font/google";
+import { Sora, Inter, Playfair_Display, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { AuthProvider } from "@/lib/auth-context";
@@ -8,7 +8,9 @@ import { canonicalHost, isPublicWebsiteHost } from "@/lib/site-host";
 
 const sora = Sora({ variable: "--font-sora", subsets: ["latin"] });
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
-const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"], weight: ["700"] });
+const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin", "latin-ext"], weight: ["400", "500", "600", "700"] });
+// Public site UI text (filters, prices, body). latin-ext carries ș, ț, ă, â, î.
+const jakarta = Plus_Jakarta_Sans({ variable: "--font-jakarta", subsets: ["latin", "latin-ext"] });
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
@@ -40,13 +42,13 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const publicSite = isPublicWebsiteHost(host);
 
   return (
-    <html lang="ro" className={`${sora.variable} ${inter.variable} ${playfair.variable} h-full antialiased`}>
+    <html lang="ro" className={`${sora.variable} ${inter.variable} ${playfair.variable} ${jakarta.variable} h-full antialiased`}>
       {!publicSite && (
         <head>
           <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossOrigin="anonymous" />
         </head>
       )}
-      <body className="min-h-full" style={{ backgroundColor: publicSite ? "#f7f6f2" : "#F6F5F1", fontFamily: "var(--font-inter)" }}>
+      <body className="min-h-full" style={{ backgroundColor: publicSite ? "#F6F3EE" : "#F6F5F1", fontFamily: publicSite ? "var(--font-jakarta), var(--font-inter), sans-serif" : "var(--font-inter)" }}>
         {publicSite ? (
           children
         ) : (

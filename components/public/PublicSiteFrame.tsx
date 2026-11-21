@@ -1,75 +1,66 @@
-import { KiraLogo } from './KiraLogo';
 import Link from 'next/link';
 import { PublicMotion } from './PublicMotion';
-
-const phone = '0775 132 969';
-const phoneLink = 'tel:+40775132969';
-const whatsappLink = 'https://wa.me/40775132969';
+import { SiteHeader } from './SiteHeader';
+import { SiteUiProvider } from './SiteUi';
+import { SITE, waLink } from './site';
 
 export function PublicSiteFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="kira-public min-h-screen bg-[#f7f6f2] text-[#172820]">
-      <PublicMotion />
-      <a className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:bg-white focus:p-3" href="#continut">
-        Sari la conținut
-      </a>
-      <header className="kira-site-header sticky top-0 z-40 border-b border-[#d7ae63]/25 bg-[#07192b]/95 text-[#fbf4e7] shadow-[0_8px_30px_rgba(0,0,0,.18)] backdrop-blur-xl">
-        <div className="kira-header-inner mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-2 sm:gap-6 sm:px-8">
-          <Link href="/" aria-label="Kira Imobiliare — pagina principală" className="kira-brand shrink-0" prefetch={false}>
-            <KiraLogo className="h-11 w-[11.25rem] sm:h-[3.15rem] sm:w-[12.5rem]" />
-          </Link>
-          <nav aria-label="Navigație principală" className="kira-main-nav hidden items-center gap-4 text-sm font-medium xl:flex">
-            <Link href="/proprietati">Proprietăți</Link>
-            <Link href="/#zone">Localități</Link>
-            <Link href="/servicii">Servicii</Link>
-            <Link href="/despre-noi">Despre noi</Link>
-            <Link href="/blog">Blog</Link>
-            <Link href="/#contact">Contact</Link>
-          </nav>
-          <a href={phoneLink} aria-label={`Sună la ${phone}`} className="kira-button whitespace-nowrap rounded-full bg-[#c99a48] px-3 py-2 text-xs font-semibold text-[#101722] shadow-[0_4px_20px_rgba(201,154,72,.2)] sm:px-4 sm:py-2.5 sm:text-sm">
-            <span className="sm:hidden">Sună</span><span className="hidden sm:inline">Sună: {phone}</span>
-          </a>
-        </div>
-        <details className="kira-mobile-menu border-t border-white/10 px-5 py-3 xl:hidden">
-          <summary className="cursor-pointer text-sm font-semibold text-[#e4bd70]">Meniu</summary>
-          <nav aria-label="Navigație mobilă" className="grid grid-cols-2 gap-3 pt-3 text-sm text-white/85">
-            <Link href="/proprietati">Proprietăți</Link>
-            <Link href="/localitati">Localități</Link>
-            <Link href="/servicii">Servicii</Link>
-            <Link href="/agenti">Agenți</Link>
-            <Link href="/despre-noi">Despre noi</Link>
-            <Link href="/blog">Blog</Link>
-            <Link href="/contact">Contact</Link>
-          </nav>
-        </details>
-      </header>
-      {children}
-      <footer id="contact" className="kira-site-footer border-t border-[#d7ae63]/20 bg-[#07192b] text-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-5 py-12 sm:px-8 md:grid-cols-3">
-          <div>
-            <KiraLogo className="h-14 w-[14rem] sm:h-16 sm:w-[16rem]" />
-            <p className="mt-3 max-w-sm text-sm leading-6 text-white/75">
-              Consultanță imobiliară pentru vânzare, cumpărare și închiriere în Făgăraș, împrejurimi și Brașov.
-            </p>
+    <SiteUiProvider>
+      <div className="kira-public min-h-screen bg-[#F6F3EE] text-[#121417]">
+        <PublicMotion />
+        <a className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-white focus:p-3" href="#continut">
+          Sari la conținut
+        </a>
+        <SiteHeader />
+        {children}
+        <footer id="contact" className="kira-site-footer relative overflow-hidden border-t border-[#C8A252]/25 bg-[#121417] text-white">
+          <div aria-hidden="true" className="pointer-events-none absolute -left-32 -top-40 h-96 w-96 rounded-full bg-[#C8A252]/10 blur-[110px]" />
+          <div className="relative mx-auto grid max-w-[92rem] gap-10 px-5 py-14 sm:px-8 md:grid-cols-[1.1fr_1fr_1fr_1fr] lg:px-10">
+            <div>
+              <img src="/images/kira-logo-gold.png" alt="Kira Imobiliare" width={420} height={518} className="h-28 w-auto" loading="lazy" />
+              <p className="mt-5 max-w-xs text-sm leading-6 text-white/60">
+                Consultanță imobiliară pentru vânzare, cumpărare și închiriere în Făgăraș, împrejurimi și Brașov.
+              </p>
+            </div>
+            <div className="text-sm leading-7 text-white/70">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[.22em] text-[#C8A252]">Contact</p>
+              <a href={SITE.phoneLink} className="block text-base font-semibold text-white hover:text-[#E9CF8E]">{SITE.phone}</a>
+              <a href={`mailto:${SITE.email}`} className="block hover:text-[#E9CF8E]">{SITE.email}</a>
+              <a href={waLink()} className="block hover:text-[#E9CF8E]">Scrie-ne pe WhatsApp</a>
+              <p className="mt-2">{SITE.address}</p>
+              <p>Luni–Vineri 09:00–18:00 · Sâmbătă 09:00–14:00</p>
+            </div>
+            <div className="flex flex-col items-start gap-2 text-sm text-white/70">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[.22em] text-[#C8A252]">Explorează</p>
+              <Link href="/proprietati" className="hover:text-[#E9CF8E]">Proprietăți</Link>
+              <Link href="/localitati/fagaras" className="hover:text-[#E9CF8E]">Imobiliare Făgăraș</Link>
+              <Link href="/localitati/brasov" className="hover:text-[#E9CF8E]">Imobiliare Brașov</Link>
+              <Link href="/servicii" className="hover:text-[#E9CF8E]">Servicii imobiliare</Link>
+              <Link href="/agenti" className="hover:text-[#E9CF8E]">Echipa Kira</Link>
+              <Link href="/blog" className="hover:text-[#E9CF8E]">Ghiduri</Link>
+            </div>
+            <div className="flex flex-col items-start gap-2 text-sm text-white/70">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[.22em] text-[#C8A252]">Urmărește-ne</p>
+              <a href="https://www.facebook.com/kiraimobiliare" target="_blank" rel="noreferrer" className="hover:text-[#E9CF8E]">Facebook</a>
+              <a href="https://www.instagram.com/kiraimobiliare/" target="_blank" rel="noreferrer" className="hover:text-[#E9CF8E]">Instagram</a>
+              <a href="https://www.tiktok.com/@kiraimobiliare.ro" target="_blank" rel="noreferrer" className="hover:text-[#E9CF8E]">TikTok</a>
+            </div>
           </div>
-          <div className="text-sm leading-7 text-white/80">
-            <p className="font-semibold text-white">Contact</p>
-            <a href={phoneLink} className="block hover:text-[#e4bd70]">{phone}</a>
-            <a href="mailto:contact@kiraimobiliare.ro" className="block hover:text-[#e4bd70]">contact@kiraimobiliare.ro</a>
-            <p>Str. Ion Creangă 35, Făgăraș, jud. Brașov</p>
+          <div className="relative border-t border-white/10">
+            <div className="mx-auto flex max-w-[92rem] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5 py-6 text-xs text-white/45 sm:px-8 lg:px-10">
+              <p>FORTIS RRA S.R.L. · CUI 54616680 · Reg. Com. J2026029337008 · © {new Date().getFullYear()} Kira Imobiliare</p>
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                <Link href="/politica-confidentialitate" className="hover:text-[#E9CF8E]">Confidențialitate</Link>
+                <Link href="/politica-cookies" className="hover:text-[#E9CF8E]">Cookies</Link>
+                <Link href="/termeni" className="hover:text-[#E9CF8E]">Termeni</Link>
+                <Link href="/anpc-sal" className="hover:text-[#E9CF8E]">ANPC/SAL</Link>
+                <Link href="/accesibilitate" className="hover:text-[#E9CF8E]">Accesibilitate</Link>
+              </div>
+            </div>
           </div>
-          <div className="flex flex-col items-start gap-3 text-sm">
-            <Link href="/localitati/brasov">Imobiliare Brașov</Link>
-            <Link href="/servicii">Servicii imobiliare</Link>
-            <Link href="/agenti">Echipa Kira</Link>
-            <a href={whatsappLink}>Scrie-ne pe WhatsApp</a>
-            <div className="flex gap-4 text-white/80"><a href="https://www.facebook.com/kiraimobiliare" target="_blank" rel="noreferrer">Facebook</a><a href="https://www.instagram.com/kiraimobiliare/" target="_blank" rel="noreferrer">Instagram</a><a href="https://www.tiktok.com/@kiraimobiliare.ro" target="_blank" rel="noreferrer">TikTok</a></div>
-            <p className="pt-4 text-xs text-white/55">FORTIS RRA S.R.L. · CUI 54616680 · Reg. Com. J2026029337008</p>
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-white/60"><Link href="/politica-confidentialitate">Confidențialitate</Link><Link href="/politica-cookies">Cookies</Link><Link href="/termeni">Termeni</Link><Link href="/anpc-sal">ANPC/SAL</Link></div>
-            <p className="pt-2 text-xs text-white/55">© {new Date().getFullYear()} Kira Imobiliare. Toate drepturile rezervate.</p>
-          </div>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </SiteUiProvider>
   );
 }
