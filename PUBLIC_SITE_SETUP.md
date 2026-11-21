@@ -1,6 +1,7 @@
 # Public Kira site setup
 
-The public site and the old CRM code share this repository. Vercel serves the public pages on `kiraimobiliare.ro` / `www.kiraimobiliare.ro`.
+This repository is the public site only (the old Next.js CRM that used to live here was removed in November 2026).
+Vercel serves it on `kiraimobiliare.ro` / `www.kiraimobiliare.ro`, and the agents' app on `app.kiraimobiliare.ro` (below).
 
 ## Where the listings come from
 
@@ -32,13 +33,15 @@ Without these variables the pages still render, instantly, with no listings.
 
 `/stare-site` says what is wrong when no listings show (missing or malformed variable, script not run, key refused, nothing ticked) without echoing the values. A pasted dashboard address or bare project code also works for `KIRA_CRM_URL`.
 
-The old variables (`SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `KIRA_PUBLIC_AGENCY_ID`) belonged to the old CRM database,
-which was deleted. The public pages no longer use them; they are still referenced by the old CRM code and the XML feed (`/api/feed/properties.xml`).
+The old variables (`SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+`KIRA_PUBLIC_AGENCY_ID`, and any `ANTHROPIC_*` / `STORIA_*` ones) belonged to the old CRM and its database, which was deleted.
+Nothing reads them any more: delete them from the Vercel project.
 
 ## Domains
 
-Keep the public domain assigned to this Vercel project. The app selects the public layout from the incoming host.
-Public website hosts return 404 for `/api/*` except the feed, and redirect old CRM paths to `crm.kiraimobiliare.ro`.
+Keep `kiraimobiliare.ro` and `www.kiraimobiliare.ro` assigned to this Vercel project. Only they are indexed; Vercel previews
+and local copies get `noindex` (`lib/site-host.ts`). The only API is `/api/site/preluare` ("Adaugă anunț"); anything else is a 404.
+`crm.kiraimobiliare.ro` belonged to the old CRM and is no longer used.
 
 ## The agents' app (app.kiraimobiliare.ro)
 

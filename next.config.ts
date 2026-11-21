@@ -11,10 +11,10 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "style-src 'self' 'unsafe-inline' https://unpkg.com",
-      "img-src 'self' data: blob: https://*.supabase.co https://*.tile.openstreetmap.org https://unpkg.com https://images.unsplash.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https://*.supabase.co https://*.tile.openstreetmap.org https://images.unsplash.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://*.tile.openstreetmap.org https://nominatim.openstreetmap.org",
+      "connect-src 'self' https://*.supabase.co https://*.tile.openstreetmap.org",
       "frame-ancestors 'none'",
     ].join('; '),
   },
@@ -69,12 +69,6 @@ const nextConfig: NextConfig = {
       afterFiles: [],
       fallback: [],
     };
-  },
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: '*.supabase.co' },
-      { protocol: 'https', hostname: 'idpjifivdaqhsysvjmye.supabase.co' },
-    ],
   },
   turbopack: {},
 };
