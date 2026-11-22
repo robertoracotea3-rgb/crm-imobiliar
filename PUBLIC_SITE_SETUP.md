@@ -63,7 +63,18 @@ key, so one is never handed out. Change the database or the key only in Vercel (
 Properties ticked "Storia" in the CRM and active are published on Storia through the OLX Group Real Estate Partner API,
 and buyers' messages come back into the CRM as clients with a "Cerere nouă". Properties also ticked "OLX" go on to OLX.ro
 from their Storia advert: once it is live, the site asks the same Storia account for the OLX export (a VAS of the advert,
-`POST /vas/v1/advert/{uuid}`), which some Storia packages charge for. The old tick "Storia/OLX" counts as both.
+`POST /vas/v1/advert/{uuid}`), included in the Storia Premium and Optimum packages and paid per advert with Basic. On
+OLX.ro the advert is listed and opens on Storia, so buyers write through Storia and their messages come in like any
+other Storia message. The old tick "Storia/OLX" counts as both.
+
+A property unticked (or no longer Activă) is stopped on Storia (`POST /advert/v1/{uuid}/deactivate`), not deleted:
+ticked again, the same advert is started again (`POST /advert/v1/{uuid}/activate`, state `se_activeaza` until Storia
+confirms; if Storia refuses, a new advert is published). Only a property deleted from the CRM is deleted on Storia
+(`DELETE`). An expired advert is started again the same way when the agent presses "Prelungește pe Storia" (another 30
+days, one posting from the package), or by itself when the Administrator turns on "Prelungește singur"
+(`crm_portal_cfg.prelungire`, `crm_admin_portal_setari`, version 9); the ended OLX export is then asked for again too.
+For OLX the advert follows OLX.ro's rules: title 5-70 characters (else the automatic title), description cut within 9000
+characters, no links or e-mails, areas rounded.
 Everything stays off until these variables are set (Production; Preview only if you want to try it there):
 
 - `STORIA_CLIENT_ID`, `STORIA_CLIENT_SECRET`, `STORIA_API_KEY`, `STORIA_WEBHOOK_SECRET` — the OLX app's Client ID, Client
@@ -95,9 +106,9 @@ Routes:
   (members only). `GET` is the daily Vercel Cron (`vercel.json`, 05:15 UTC). A round publishes, updates and removes
   at most 8 adverts per pass for about 45 seconds; a database lease keeps two rounds from running at once. Then it asks
   for the OLX exports due and checks the ones not confirmed yet (`GET /vas/v1/advert/{uuid}`, every 5 minutes; after 24
-  hours without a confirmation the export shows an error). An export that ends is not renewed by itself (no surprise
-  charges): the agent presses "Trimite din nou pe OLX". It cannot be ended early through the API; it ends with the
-  Storia advert.
+  hours without a confirmation the export shows an error). An export that ends is renewed by itself only with
+  "Prelungește singur" (no surprise charges); otherwise the agent presses "Trimite din nou pe OLX". It cannot be ended
+  early through the API; it ends with the Storia advert.
 
 `/stare-site` includes `storia`: which variables are missing, or whether the account is connected (never a value); once
 connected, `export_olx` says how the OLX export works.
@@ -108,6 +119,6 @@ removed in the OLX account.
 
 ## Before launch
 
-- In Supabase › SQL Editor, run `crm-online.sql` version 8 (it adds the site functions, the map position, the "Adaugă anunț" requests, Storia and the OLX.ro export; it deletes no CRM data).
+- In Supabase › SQL Editor, run `crm-online.sql` version 9 (it adds the site functions, the map position, the "Adaugă anunț" requests, Storia with stopping and extending adverts, and the OLX.ro export; it deletes no CRM data).
 - Set the two variables above, redeploy, and check a Preview deployment: `/proprietati`, a property page, a photo, `/sitemap.xml`.
 - Confirm privacy/cookie wording against the data flows and third-party scripts actually enabled.

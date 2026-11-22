@@ -9,10 +9,15 @@ import { canonicalHost } from '@/lib/site-host';
  * - The agency's Storia account is connected once, from Administrator CRM Kira (/api/portaluri/storia/conectare).
  * - Properties ticked "Storia" and active are published, updated and removed by runStoria(), started by the CRM apps
  *   after a change (/api/portaluri/storia/lucreaza), by the notifications and once a day by Vercel Cron.
+ * - One that leaves Storia while it is still in the CRM (unticked, no longer Activă) is stopped (deactivate), not deleted:
+ *   ticked again, or extended once expired, the same advert starts again (activate), with its link and history; Storia
+ *   would take a deleted advert posted again within 24 hours as unpaid. Only one deleted from the CRM is deleted there.
  * - Those also ticked "OLX" go on to OLX.ro: the export is a promotion (VAS) of the Storia advert, asked for with the
- *   same Storia account (the app needs the read:vas and write:vas scopes; with some Storia packages it is paid).
+ *   same Storia account (the app needs the read:vas and write:vas scopes; free with Storia's Premium and Optimum
+ *   packages, paid with Basic). On OLX.ro the advert shows in the lists and opens on Storia, so buyers write through
+ *   Storia: their messages come in like any other Storia message.
  * - OLX notifications (advert and export states, messages from buyers) arrive at /api/portaluri/storia/notificari; a
- *   message becomes a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 8).
+ *   message becomes a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 9).
  *
  * The site reaches the CRM's database only through the crm_portal_* functions, with KIRA_PORTAL_KEY; the OLX app's keys
  * (STORIA_*) stay in Vercel. Docs: https://developer.olxgroup.com/docs
@@ -191,6 +196,14 @@ function cut(s: string, n: number): string {
   return (i > n * 0.6 ? c.slice(0, i) : s.slice(0, n)).replace(/[\s,.;:–-]+$/, '');
 }
 const html = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '').replace(/\n/g, '<br/>');
+/** The text as HTML in at most n characters: cut in the text (at a space when it can), never inside "&amp;" or "<br/>". */
+function htmlUpTo(s: string, n: number): string {
+  if (html(s).length <= n) return html(s);
+  let lo = 0, hi = s.length;
+  while (lo < hi) { const m = Math.ceil((lo + hi) / 2); if (html(s.slice(0, m)).length <= n - 1) lo = m; else hi = m - 1; }
+  const c = s.slice(0, lo), i = c.lastIndexOf(' ');
+  return html((i > lo * 0.9 ? c.slice(0, i) : c).replace(/[\s,.;:–-]+$/, '') + '…');
+}
 
 /**
  * OLX.ro's rules for the text of an advert exported from Storia: no links or e-mail addresses, no runs of more than
@@ -215,7 +228,7 @@ export function olxText(s: string): string {
 export function advertTitle(l: Listing, forOlx = false): string {
   let t = (l.titlu || '').trim();
   if (forOlx) t = olxText(t);
-  if (!t) {
+  if (!t || (forOlx && t.length < 5)) {
     t = autoTitle({
       tip: l.tip || null, camere: l.camere ?? null, suprafata: l.suprafata ?? null, tranzactie: l.tranzactie || null,
       zona: l.zona || null, localitate: l.localitate || null,
@@ -247,7 +260,7 @@ export function buildAdvert(propId: string, l: Listing, forOlx = false): Record<
   const advert: Record<string, unknown> = {
     site_urn: SITE_URN,
     title: advertTitle(l, forOlx),
-    description: html(forOlx ? olxText(text) : text).slice(0, 9000),
+    description: htmlUpTo(forOlx ? olxText(text) : text, 9000),
     category_urn: `urn:concept:${cat}-for-${sale ? 'sale' : 'rent'}`,
     price: { value: Math.round(l.pret || 0), currency: 'EUR' },
     attributes,
@@ -273,7 +286,8 @@ export function validSignature(signature: string | null, objectId: string, trans
 /* ---------- the worker: publish, update and remove ---------- */
 
 type Job = { prop_id: string; rev: number; date: Listing; uuid: string | null; stare: string | null; hash: string | null; olx?: boolean };
-type Removal = { prop_id: string; uuid: string; stare: string };
+// mod (version 9): 'opreste' = stop it (deactivate; the property is still in the CRM), 'sterge' = delete it.
+type Removal = { prop_id: string; uuid: string; stare: string; mod?: 'opreste' | 'sterge' };
 type OlxJob = { prop_id: string; uuid: string };
 type OlxCheck = { prop_id: string; uuid: string; vas: string | null; cerut: number | null };
 type Answer = { status: number; json: Record<string, unknown>; text: string };
@@ -312,7 +326,9 @@ function reason(a: Answer): string {
 }
 
 const expired = (a: Answer) => a.status === 401 || (a.status === 403 && /expired/i.test(a.text));
-const NOT_LIVE = new Set(['scos', 'se_scoate', 'refuzat', 'expirat']);
+const NOT_LIVE = new Set(['scos', 'se_scoate', 'refuzat', 'expirat', 'oprit', 'se_opreste']);
+// Started again (activate) rather than posted anew: stopped by the site, expired, or taken off by hand in the Storia account.
+const REVIVE = new Set(['oprit', 'se_opreste', 'expirat', 'scos']);
 
 export type RunResult = { ok: boolean; mesaj: string; trimise: number; scoase: number; olx: number };
 type Work = {
@@ -381,13 +397,26 @@ const olxResult = (prop: string, p: Record<string, unknown>) => portalDb('crm_po
 async function publishOne(job: Job, call: Call): Promise<boolean> {
   const l = job.date || {};
   const live = !!job.uuid && !NOT_LIVE.has(job.stare || '');
+  const revive = !!job.uuid && REVIVE.has(job.stare || '');
   const missing = listingProblems(l);
   if (missing.length) {
     const what = 'Lipsește: ' + missing.join(', ') + '.';
     await result(job.prop_id, live
       ? { rev: job.rev, detalii: 'Modificarea nu a plecat pe Storia. ' + what }
+      : revive ? { rev: job.rev, detalii: 'Anunțul nu a pornit din nou pe Storia. ' + what }
       : { stare: 'incomplet', rev: job.rev, detalii: what });
     return false;
+  }
+  if (revive) {
+    // The same advert starts again (its link and history stay). Storia confirms with advert_activated_success; what
+    // changed meanwhile is sent after that (rev stays unset until then).
+    const r = await call('POST', `/advert/v1/${encodeURIComponent(job.uuid!)}/activate`);
+    if (r.status >= 200 && r.status < 300) {
+      await result(job.prop_id, { stare: 'se_activeaza', rev: null, detalii: null });
+      return false;
+    }
+    if (r.status === 0 || r.status >= 500) return false;
+    // Deleted on Storia meanwhile, or Storia will not start it again: it is published as a new advert.
   }
   const advert = buildAdvert(job.prop_id, l, !!job.olx);
   const hash = advertHash(advert);
@@ -423,6 +452,13 @@ async function publishOne(job: Job, call: Call): Promise<boolean> {
 }
 
 async function removeOne(job: Removal, call: Call): Promise<void> {
+  if (job.mod === 'opreste') {
+    const d = await call('POST', `/advert/v1/${encodeURIComponent(job.uuid)}/deactivate`);
+    if (d.status >= 200 && d.status < 300) { await result(job.prop_id, { stare: 'se_opreste', detalii: null }); return; }
+    if (d.status === 404 || d.status === 410) { await result(job.prop_id, { stare: 'scos', detalii: null }); return; }
+    if (d.status === 0 || d.status >= 500) return;
+    // Not live on Storia (not published yet, in moderation, waiting for payment...): nothing to stop, so it is deleted.
+  }
   const a = await call('DELETE', `/advert/v1/${encodeURIComponent(job.uuid)}`);
   if (a.status >= 200 && a.status < 300) await result(job.prop_id, { stare: 'se_scoate', detalii: null });
   else if (a.status === 404 || a.status === 410) await result(job.prop_id, { stare: 'scos', detalii: null });
@@ -541,7 +577,7 @@ async function checkOlx(job: OlxCheck, call: Call, promo: Promo | null | undefin
 /** What a database error means for the person setting things up (never repeats a key). */
 export function dbMessage(code: string): string {
   if (code === 'bad_key') return 'KIRA_PORTAL_KEY din Vercel nu se potrivește cu baza: copiaz-o din nou din Administrator CRM Kira › Setări › Storia / OLX, apoi Redeploy.';
-  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: rulează crm-online.sql (versiunea 8) în Supabase › SQL Editor.';
+  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: rulează crm-online.sql (versiunea 9) în Supabase › SQL Editor.';
   if (code === 'no_db') return 'Lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY din Vercel.';
   return 'Baza de date nu răspunde acum. Încearcă din nou peste un minut.';
 }
@@ -553,7 +589,7 @@ export async function storiaStatus(): Promise<Record<string, string>> {
   try {
     const c = await portalDb<{ expira: number } | null>('crm_portal_cont_get');
     return c
-      ? { setari_vercel: 'corecte', cont_storia: 'conectat', export_olx: 'prin contul Storia, la proprietățile bifate „OLX” (aplicația are nevoie de read:vas și write:vas)' }
+      ? { setari_vercel: 'corecte', cont_storia: 'conectat', export_olx: 'prin contul Storia, la proprietățile bifate „OLX” (aplicația are nevoie de read:vas și write:vas); pe OLX.ro anunțul se deschide pe Storia' }
       : { setari_vercel: 'corecte', cont_storia: 'neconectat: îl conectezi din Administrator CRM Kira › Setări › Storia / OLX' };
   } catch (e) {
     return { setari_vercel: 'corecte', cont_storia: dbMessage(e instanceof DbError ? e.code : '') };

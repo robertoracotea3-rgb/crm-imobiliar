@@ -962,7 +962,7 @@
    Copia de siguranță are aceeași structură ca folderul de date din Kira Imobiliare pentru Windows. */
 (function(){
   'use strict';
-  var VERSION = '1.10.0';
+  var VERSION = '1.11.0';
   var DB_NAME = 'crm-imobiliar', DB_VER = 1;
   var COLS = {properties: 'proprietati', clients: 'clienti', activities: 'activitati', contracts: 'contracte', meta: 'setari'};
   var EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'};
@@ -1749,18 +1749,19 @@
 
   <section class="kl-panel" id="kl-p-windows" role="tabpanel" aria-labelledby="kl-t-windows" hidden>
     <h2>Pe calculator (Windows 10 și 11)</h2>
-    <p class="kl-note">Versiunea 1.10.0 · arhivă .zip de 299 KB</p>
+    <p class="kl-note">Versiunea 1.11.0 · arhivă .zip de 305 KB</p>
     <a class="kl-btn" href="descarca/Kira-Imobiliare-Windows.zip" download>Descarcă pentru Windows</a>
     <ol>
       <li>Click dreapta pe arhiva descărcată › <b>Extrage tot</b>.</li>
       <li>Dublu-clic pe <b>Instalare Kira Imobiliare.cmd</b>. Dacă apare „Windows a protejat PC-ul”: <b>Mai multe informații</b> › <b>Rulează oricum</b>.</li>
-      <li>Alege folderul pentru date și apasă <b>Instalează</b>. O versiune nouă se instalează la fel, peste cea veche; datele rămân.</li>
+      <li>Alege folderul pentru date și apasă <b>Instalează</b>. O versiune nouă se instalează la fel, peste cea veche (butonul <b>Actualizează</b>); datele rămân. Aplicația îți spune singură când apare una.</li>
     </ol>
   </section>
 
   <div class="kl-foot">
     <p>Actualizări: pe telefon, aplicația îți arată singură „Versiune nouă” și butonul <b>Actualizează</b>. Datele rămân pe telefon.</p>
-    <p>Aplicația de telefon: versiunea 1.10.0 · <a href="?browser=1">deschide în browser</a></p>
+    <p>Dezinstalare pe calculator: Setări › Aplicații › Kira Imobiliare (sau meniul Start › Kira Imobiliare › Dezinstalare). Datele rămân în folderul lor.</p>
+    <p>Aplicația de telefon: versiunea 1.11.0 · <a href="?browser=1">deschide în browser</a></p>
   </div>
 </div>
 </div></template>
@@ -4487,10 +4488,10 @@ const siteState = () => { try { return (window.CRMSync && window.CRMSync.site &&
 const siteVer = () => { try { return (window.CRMSync && window.CRMSync.site && window.CRMSync.site.version && window.CRMSync.site.version()) || 0; } catch(e){ return 0; } };
 let siteChecking = false;
 // Asks the database again while it is not on the newest version (5: the map pin and "Adaugă anunț"; 6: Storia;
-// 8: the ticks "Storia" and "OLX", OLX.ro through Storia).
+// 8: the ticks "Storia" and "OLX", OLX.ro through Storia; 9: Storia adverts stopped and started again, extended).
 function siteCheck(){
   const before = siteState(), v0 = siteVer();
-  if (siteChecking || before === 'off' || (before === 'ok' && v0 >= 8)) return;
+  if (siteChecking || before === 'off' || (before === 'ok' && v0 >= 9)) return;
   siteChecking = true;
   window.CRMSync.site.check().then(s => { siteChecking = false; if (s !== before || siteVer() !== v0) siteNoteRefresh(); }, () => { siteChecking = false; });
 }
@@ -4522,12 +4523,13 @@ function siteNote(p){
 /* ---------- Storia (and from there OLX.ro) ----------
    The site (kiraimobiliare.ro) publishes by itself on Storia the active properties ticked "Storia": the same fields the
    site shows, plus the land area. Those also ticked "OLX" are exported from Storia to OLX.ro (olxNote). Buyers' messages
-   come back as clients with a "Cerere nouă". The online database (script version 8) keeps each advert's state; nothing
-   of it is kept on the device. */
+   come back as clients with a "Cerere nouă". The online database (script version 9) keeps each advert's state; nothing
+   of it is kept on the device. One taken off Storia while it is still in the CRM is stopped there, not deleted: ticked
+   again (or extended once expired, "Prelungește pe Storia"), the same advert starts again. */
 const PORTAL = 'Storia';
 const PORTAL_FAM = {'Apartament':'ap', 'Garsonieră':'ap', 'Casă / Vilă':'casa', 'Teren':'teren', 'Spațiu comercial':'sp', 'Birou':'sp', 'Spațiu industrial':'sp'};
 // States in which an advert is (or is about to be) on Storia.
-const PORTAL_ON = ['activ', 'in_moderare', 'se_publica', 'se_actualizeaza', 'neplatit', 'expirat', 'blocat', 'se_scoate'];
+const PORTAL_ON = ['activ', 'in_moderare', 'se_publica', 'se_actualizeaza', 'se_activeaza', 'neplatit', 'expirat', 'blocat', 'se_scoate', 'se_opreste'];
 // What Storia needs that the property lacks: the same list the site checks (lib/storia.ts). Empty when ready; null
 // for a type that is not published automatically.
 function portalMissing(p, minDesc){
@@ -4545,12 +4547,13 @@ function portalMissing(p, minDesc){
   return m;
 }
 const portalApi = () => { try { return (window.CRMSync && window.CRMSync.portal) || null; } catch(e){ return null; } };
-// Last answer from the online database, per property: {at, conectat, a: the Storia advert or null (a.olx: its export
-// to OLX.ro, or null), err}.
+// Last answer from the online database, per property: {at, conectat, prel (expired adverts are extended by themselves),
+// a: the Storia advert or null (a.olx: its export to OLX.ro, or null; a.la_zi: what Storia has is this version), err}.
 const portalSt = {};
 let portalBusy = false, portalTimer = null, portalPoll = {id: '', n: 0};
 // Is the site still working on this advert (not sent yet, or the portal has not answered)?
-const portalWorking = a => !a || !a.trimis || ['nou', 'incomplet', 'se_publica', 'se_actualizeaza', 'se_scoate', 'scos'].indexOf(a.stare) >= 0;
+const portalWorking = a => !a || !a.trimis || ['nou', 'incomplet', 'se_publica', 'se_actualizeaza', 'se_activeaza', 'se_scoate', 'se_opreste'].indexOf(a.stare) >= 0 ||
+  (['scos', 'oprit'].indexOf(a.stare) >= 0 && a.la_zi === false);
 function portalLoad(id){
   const api = portalApi();
   if (!api || portalBusy) return;
@@ -4558,7 +4561,7 @@ function portalLoad(id){
   api.status([id]).then(r => {
     portalBusy = false;
     const mine = list => (list || []).find(x => x && x.id === id) || null;
-    portalSt[id] = {at: Date.now(), conectat: !!(r && r.conectat), a: mine(r && r.anunturi)};
+    portalSt[id] = {at: Date.now(), conectat: !!(r && r.conectat), prel: !!(r && r.prelungire), a: mine(r && r.anunturi)};
     portalNoteRefresh();
   }, () => { portalBusy = false; portalSt[id] = {at: Date.now(), err: true}; portalNoteRefresh(); });
 }
@@ -4576,7 +4579,7 @@ function portalNote(p){
   const st = siteState(), sv = siteVer();
   if (st === 'off' || !portalApi()) return ticked ? box('warn', 'pe Storia ajung proprietățile din <b>Date online</b>. Conectează CRM-ul (butonul Online) ca anunțul să plece singur.') : none;
   if (!sv){ siteCheck(); return none; }
-  if (sv < 8){ siteCheck(); return ticked ? box('warn', 'pentru publicarea automată pe Storia (și de acolo pe OLX) rulează scriptul nou <b>crm-online.sql</b> (versiunea 8) în Supabase › SQL Editor.') : none; }
+  if (sv < 9){ siteCheck(); return ticked ? box('warn', 'pentru publicarea automată pe Storia (și de acolo pe OLX) rulează scriptul nou <b>crm-online.sql</b> (versiunea 9) în Supabase › SQL Editor.') : none; }
   const c = portalSt[p.id], a = c && c.a, on = !!(a && PORTAL_ON.indexOf(a.stare) >= 0);
   const busy = portalWorking(a) || olxWorking(p);
   if (!c || Date.now() - c.at > (busy ? 15000 : 60000)) portalLoad(p.id);
@@ -4584,7 +4587,7 @@ function portalNote(p){
   clearTimeout(portalTimer); portalTimer = null;
   if (portalPoll.id !== p.id) portalPoll = {id: p.id, n: 0};
   if (c && ((portalWorking(a) && (ticked || on)) || olxWorking(p)) && portalPoll.n < 40) portalTimer = setTimeout(() => { portalPoll.n++; portalNoteRefresh(); }, 16000);
-  const leaving = 'anunțul se scoate de pe Storia în câteva minute.';
+  const leaving = 'anunțul se oprește pe Storia în câteva minute (nu se șterge: când e iar bifată și Activă, pornește același anunț).';
   if (!ticked) return on ? box('warn', 'ai debifat-o, așa că ' + leaving) : none;
   if (p.exemplu) return box('warn', 'exemplele nu se publică pe Storia.');
   if (p.status && p.status !== 'Activă') return box('warn', 'e bifată, dar se publică doar cât timp e Activă' + (on ? '; ' + leaving : '.'));
@@ -4596,14 +4599,21 @@ function portalNote(p){
   if (!c.conectat) return box('warn', 'contul Storia al agenției nu e conectat încă. Administratorul îl conectează din <b>Administrator CRM Kira › Setări › Storia / OLX</b>; apoi anunțul pleacă singur.');
   const det = a && a.detalii ? '<br>' + esc(a.detalii) : '';
   const retry = '<button type="button" class="btn sm" data-act="portal-retry">Trimite din nou</button>';
+  const extend = '<button type="button" class="btn sm" data-act="portal-retry" data-ext="1">Prelungește pe Storia</button>';
   const open = a && a.url ? '<button type="button" class="btn sm" data-act="open-storia">Deschide pe Storia</button><button type="button" class="btn sm ghost" data-copy="' + esc(a.url) + '" data-copy-msg="Linkul de pe Storia a fost copiat">Copiază linkul</button>' : '';
   const msgs = ' Mesajele cumpărătorilor intră în CRM ca clienți noi, cu o „Cerere nouă”.';
   switch (a && a.trimis ? a.stare : ''){
     case 'activ': return box('good', 'publicată pe <b>Storia</b>. Ce schimbi aici ajunge singur și pe Storia.' + msgs, open);
     case 'se_publica': case 'se_actualizeaza': return box('good', 'Storia a primit anunțul și îl verifică (de obicei câteva minute).' + msgs, open);
+    case 'se_activeaza': return box('good', 'Storia pornește din nou același anunț (de obicei câteva minute).' + msgs, open);
+    case 'oprit': case 'se_opreste': case 'scos':
+      if (a.la_zi === false) return box('good', 'anunțul pornește din nou pe Storia în câteva minute.' + msgs, open);
+      return box('warn', (a.stare === 'scos' ? 'anunțul a fost scos de pe Storia (din contul Storia).' : 'anunțul e oprit pe Storia.') +
+        ' Apasă „Trimite din nou” ca să apară iar.' + det, retry + open);
     case 'in_moderare': return box('warn', 'Storia verifică anunțul (moderare). Apare după ce e aprobat.' + det, open);
     case 'neplatit': return box('warn', 'anunțul așteaptă plata pe Storia: pachetul contului nu mai are anunțuri libere. După ce rezolvi pe Storia, apasă „Trimite din nou”.' + det, retry + open);
-    case 'expirat': return box('warn', 'anunțul a expirat pe Storia.' + det, retry + open);
+    case 'expirat': return box('warn', 'anunțul a expirat pe Storia (i s-a terminat perioada de afișare).' + (c.prel
+      ? ' Se prelungește singur în câteva minute, din pachetul Storia.' + det : ' Apasă „Prelungește pe Storia” ca să mai stea 30 de zile: folosește un anunț din pachetul Storia.' + det), (c.prel ? '' : extend) + open);
     case 'blocat': return box('bad', 'Storia a blocat anunțul.' + det, retry + open);
     case 'refuzat': return box('bad', 'Storia a scos anunțul la verificare (moderare). Corectează proprietatea; după salvare pleacă din nou.' + det, retry);
     case 'eroare': return box('bad', 'Storia nu a primit anunțul.' + det, retry);
@@ -4614,7 +4624,8 @@ function portalNote(p){
    Properties ticked "OLX" (and "Storia") go on to OLX.ro from their Storia advert: once it is live on Storia, the site
    asks the agency's Storia account for the export to OLX (a promotion of the advert; with some Storia packages it is
    paid). It lasts a set time (usually 30 days) and cannot be stopped earlier, except by taking the advert off Storia.
-   Messages written on OLX come back as clients, like the ones from Storia (script version 8). */
+   On OLX.ro the advert shows in the lists and opens on Storia, so buyers write through Storia: their messages come back
+   as clients like any other Storia message (script version 9). */
 const OLX = 'OLX';
 // Is the export on its way (to be asked for now that the advert is live, or asked for and not confirmed yet)?
 const olxWorking = p => {
@@ -4632,34 +4643,36 @@ function olxNote(p){
   const det = x && x.detalii ? '<br>' + esc(x.detalii) : '';
   const retry = '<button type="button" class="btn sm" data-act="olx-retry">Trimite din nou pe OLX</button>';
   const open = x && x.url ? '<button type="button" class="btn sm" data-act="open-olx">Deschide pe OLX</button><button type="button" class="btn sm ghost" data-copy="' + esc(x.url) + '" data-copy-msg="Linkul de pe OLX a fost copiat">Copiază linkul</button>' : '';
-  const cost = ' Cu unele pachete Storia exportul pe OLX se plătește: vezi pachetul în contul Storia.';
+  const cost = ' Exportul pe OLX e inclus în pachetele Storia Premium și Optimum; cu Basic se plătește separat.';
+  const how = ' Pe OLX apare în căutări; cine îl deschide ajunge pe Storia, iar mesajul lui intră în CRM ca orice mesaj de pe Storia.';
   // Taken off Storia (unticked there, or no longer Activă): the copy on OLX.ro goes with it.
   const leaving = !!(x && x.stare === 'activ' && (!storia || (p.status && p.status !== 'Activă')));
-  if (leaving) return box('warn', 'anunțul se scoate de pe Storia, iar odată cu el iese și de pe OLX.ro.', open);
+  if (leaving) return box('warn', 'anunțul se oprește pe Storia, iar odată cu el iese și de pe OLX.ro.', open);
   if (!ticked){
-    return x && x.stare === 'activ' ? box('warn', 'ai debifat „OLX”, dar exportul nu se poate opri înainte de termen: anunțul rămâne pe OLX.ro' + (until || ' până expiră') + ' (sau până îl scoți de pe Storia).', open) : none;
+    return x && x.stare === 'activ' ? box('warn', 'ai debifat „OLX”, dar exportul nu se poate opri înainte de termen: anunțul rămâne pe OLX.ro' + (until || ' până expiră') + ' (sau până îl oprești pe Storia) și nu se mai reînnoiește.', open) : none;
   }
   if (!storia) return box('warn', 'pe OLX.ro anunțul ajunge prin Storia: bifează și „' + PORTAL + '”.');
   const st = siteState(), sv = siteVer();
   // Online data, the database version, the status, what is missing and the account: the Storia box says it already.
   if (st === 'off' || !portalApi() || !sv) return none;
-  if (sv < 8){ siteCheck(); return none; }
+  if (sv < 9){ siteCheck(); return none; }
   const miss = portalMissing(p);
   if (p.exemplu || (p.status && p.status !== 'Activă') || !miss || miss.length) return none;
   if (!c) return '<p id="olx-note" class="hint-line" style="margin:0">OLX.ro: se verifică…</p>';
   if (c.err || !c.conectat) return none;
   const storiaLive = !!(a && a.trimis && ['activ', 'se_actualizeaza'].indexOf(a.stare) >= 0);
   switch (x ? x.stare : ''){
-    case 'activ': return box('good', 'anunțul de pe Storia e și pe <b>OLX.ro</b>' + until + '. Ce schimbi aici ajunge singur pe Storia și de acolo pe OLX.', open);
+    case 'activ': return box('good', 'anunțul de pe Storia e și pe <b>OLX.ro</b>' + until + '.' + how + ' Ce schimbi aici ajunge singur pe Storia și de acolo pe OLX.', open);
     case 'cerut': return box('good', 'exportul pe OLX a fost cerut din contul Storia; OLX îl pune de obicei în câteva minute.', open);
     case 'se_cere': return box('good', 'exportul pe OLX se cere din contul Storia în câteva minute.' + det);
-    case 'expirat': return box('warn', 'exportul pe OLX s-a terminat' + (x.expira ? ' pe ' + fmtTs(x.expira) : '') + '. Apasă „Trimite din nou pe OLX” ca anunțul să apară din nou acolo.' + cost, retry);
+    case 'expirat': return c.prel && storiaLive ? box('good', 'exportul pe OLX s-a terminat' + (x.expira ? ' pe ' + fmtTs(x.expira) : '') + ' și se cere singur din nou în câteva minute.')
+      : box('warn', 'exportul pe OLX s-a terminat' + (x.expira ? ' pe ' + fmtTs(x.expira) : '') + '. Apasă „Trimite din nou pe OLX” ca anunțul să apară din nou acolo.' + cost, retry);
     case 'scos': return storiaLive ? box('warn', 'anunțul nu mai e pe OLX.ro.' + det, retry)
-      : box('warn', 'anunțul a ieșit de pe OLX.ro odată cu cel de pe Storia; se trimite din nou când anunțul e iar pe Storia.');
+      : box('warn', 'anunțul a ieșit de pe OLX.ro odată cu cel de pe Storia; se cere singur din nou când anunțul pornește iar pe Storia.');
     case 'eroare': return box('bad', 'OLX nu a primit exportul.' + det, retry);
   }
   return box('good', (storiaLive ? 'exportul pe OLX se cere din contul Storia în câteva minute.'
-    : 'după ce anunțul e publicat pe Storia, se cere singur și exportul pe OLX (din contul Storia).') + cost);
+    : 'după ce anunțul e publicat pe Storia, se cere singur și exportul pe OLX (din contul Storia).') + how + cost);
 }
 function copyBlock(p){
   const num = v => (v == null || v === '') ? '' : String(v).replace('.', ',');
@@ -6841,7 +6854,7 @@ function act(name, el){
       if (!id || !api) break;
       el.disabled = true;
       api.retry(id).then(() => {
-        toast('Anunțul se trimite din nou pe Storia.');
+        toast(el.dataset.ext ? 'Anunțul se prelungește pe Storia (încă 30 de zile).' : 'Anunțul se trimite din nou pe Storia.');
         delete portalSt[id]; portalPoll = {id: id, n: 0}; portalNoteRefresh();
       }, e => { el.disabled = false; toast((e && e.message) || 'Nu s-a putut trimite din nou. Încearcă mai târziu.'); });
       break;
