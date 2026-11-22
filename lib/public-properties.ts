@@ -120,7 +120,7 @@ const camereTxt = (n: number) => fmtN(n) + (n === 1 ? ' cameră' : ' camere');
 const etajLabel = (v: number) => (v === -1 ? 'Demisol' : v === 0 ? 'Parter' : v === 100 ? 'Mansardă' : `Etaj ${v}`);
 
 /** The same title the CRM makes when the agent leaves "Titlu anunț" empty. */
-function autoTitle(p: { tip: string | null; camere: number | null; suprafata: number | null; tranzactie: string | null; zona: string | null; localitate: string | null }): string {
+export function autoTitle(p: { tip: string | null; camere: number | null; suprafata: number | null; tranzactie: string | null; zona: string | null; localitate: string | null }): string {
   let s = p.tip === 'Casă / Vilă' ? 'Casă' : p.tip || 'Proprietate';
   if (p.camere != null && !/Garsonier|Teren|Cameră/.test(p.tip || '')) s += ' ' + camereTxt(p.camere);
   if (/Teren|Spațiu|Birou/.test(p.tip || '') && p.suprafata != null) s += ' ' + fmtN(p.suprafata) + ' mp';

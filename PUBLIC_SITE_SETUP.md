@@ -34,13 +34,14 @@ Without these variables the pages still render, instantly, with no listings.
 `/stare-site` says what is wrong when no listings show (missing or malformed variable, script not run, key refused, nothing ticked) without echoing the values. A pasted dashboard address or bare project code also works for `KIRA_CRM_URL`.
 
 The old variables (`SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
-`KIRA_PUBLIC_AGENCY_ID`, and any `ANTHROPIC_*` / `STORIA_*` ones) belonged to the old CRM and its database, which was deleted.
-Nothing reads them any more: delete them from the Vercel project.
+`KIRA_PUBLIC_AGENCY_ID`, and any `ANTHROPIC_*` ones) belonged to the old CRM and its database, which was deleted.
+Nothing reads them any more: delete them from the Vercel project. (`STORIA_*` are read again, by the Storia integration below.)
 
 ## Domains
 
 Keep `kiraimobiliare.ro` and `www.kiraimobiliare.ro` assigned to this Vercel project. Only they are indexed; Vercel previews
-and local copies get `noindex` (`lib/site-host.ts`). The only API is `/api/site/preluare` ("Adaugă anunț"); anything else is a 404.
+and local copies get `noindex` (`lib/site-host.ts`). The APIs are `/api/site/preluare` ("Adaugă anunț") and `/api/portaluri/storia/*`
+(below); anything else is a 404.
 `crm.kiraimobiliare.ro` belonged to the old CRM and is no longer used.
 
 ## The agents' app (app.kiraimobiliare.ro)
@@ -57,8 +58,37 @@ and push. Phones pick the new version up by themselves and show "Versiune nouă 
 design: the data needs an account the administrator added (`crm_is_member`). `crmConfig()` refuses a secret or service_role
 key, so one is never handed out. Change the database or the key only in Vercel (then Redeploy); the apps follow.
 
+## Storia / OLX (lib/storia.ts, app/api/portaluri/storia/)
+
+Properties ticked "Storia/OLX" in the CRM and active are published on Storia (exported by Storia to OLX.ro) through the
+OLX Group Real Estate Partner API, and buyers' messages come back into the CRM as clients with a "Cerere nouă".
+Everything stays off until these variables are set (Production; Preview only if you want to try it there):
+
+- `STORIA_CLIENT_ID`, `STORIA_CLIENT_SECRET`, `STORIA_API_KEY`, `STORIA_WEBHOOK_SECRET` — the OLX app's Client ID, Client
+  Secret, API Key and Notification secret (developer.olxgroup.com › Application Manager).
+- `KIRA_PORTAL_KEY` — `kp_` + 64 hex, made by `crm-online.sql` version 6 (last row of its result; also Administrator CRM Kira
+  › Setări › Storia / OLX › Copiază cheia). The site reaches the CRM's database only through the `crm_portal_*` functions,
+  which check this key; it never gets a service_role key.
+- `CRON_SECRET` — optional. With it, the daily round must carry `Authorization: Bearer <CRON_SECRET>` (Vercel Cron sends it).
+
+In Application Manager: authentication callback `https://www.kiraimobiliare.ro/api/portaluri/storia/callback`, notification
+callback `https://www.kiraimobiliare.ro/api/portaluri/storia/notificari`.
+
+Routes:
+- `GET /api/portaluri/storia/conectare?stare=<code>` — opened from Administrator CRM Kira with a one-time code
+  (`crm_admin_portal_stare`, 15 minutes); redirects to Storia's authorization page.
+- `GET /api/portaluri/storia/callback` — exchanges the code (valid 60 s) for the account's tokens, kept in the CRM's database
+  (`crm_portal_cont`), then starts a first round.
+- `POST /api/portaluri/storia/notificari` — OLX notifications, checked with `x-signature` (HMAC-SHA1 of
+  `<object_id>,<transaction_id>` with the Notification secret); unsigned or wrongly signed ones get 401. Taken once each.
+- `POST /api/portaluri/storia/lucreaza` — the CRM apps call it after uploading a property, with the agent's Supabase session
+  (members only). `GET` is the daily Vercel Cron (`vercel.json`, 05:15 UTC). A round publishes, updates and removes
+  at most 8 adverts per pass for about 45 seconds; a database lease keeps two rounds from running at once.
+
+`/stare-site` includes `storia`: which variables are missing, or whether the account is connected (never a value).
+
 ## Before launch
 
-- In Supabase › SQL Editor, run `crm-online.sql` version 5 (it adds the site functions, the map position and the "Adaugă anunț" requests; it deletes nothing).
+- In Supabase › SQL Editor, run `crm-online.sql` version 6 (it adds the site functions, the map position, the "Adaugă anunț" requests and Storia/OLX; it deletes nothing).
 - Set the two variables above, redeploy, and check a Preview deployment: `/proprietati`, a property page, a photo, `/sitemap.xml`.
 - Confirm privacy/cookie wording against the data flows and third-party scripts actually enabled.

@@ -1,0 +1,393 @@
+import 'server-only';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { autoTitle, crmConfig, crmHeaders } from '@/lib/public-properties';
+import { canonicalHost } from '@/lib/site-host';
+
+/*
+ * Storia (and, through Storia's export, OLX.ro) for the Kira Imobiliare CRM, over the OLX Group Real Estate Partner API.
+ *
+ * - The agency's Storia account is connected once, from Administrator CRM Kira (/api/portaluri/storia/conectare).
+ * - Properties ticked "Storia/OLX" and active are published, updated and removed by runStoria(), started by the CRM apps
+ *   after a change (/api/portaluri/storia/lucreaza) and once a day by Vercel Cron.
+ * - OLX notifications (advert states, messages from buyers) arrive at /api/portaluri/storia/notificari; a message becomes
+ *   a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 6).
+ *
+ * The site reaches the CRM's database only through the crm_portal_* functions, with KIRA_PORTAL_KEY; the OLX app's keys
+ * (STORIA_*) stay in Vercel. Docs: https://developer.olxgroup.com/docs
+ */
+
+export const OLX_API = 'https://api.olxgroup.com';
+const TOKEN_URL = `${OLX_API}/oauth/v1/token`;
+export const STORIA_AUTH_URL = 'https://www.storia.ro/ro/crm/authorization/';
+const SITE_URN = 'urn:site:storiaro';
+const USER_AGENT = 'KiraImobiliare/1.0';
+
+const env = (k: string) => (process.env[k] || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
+export const storiaClientId = () => env('STORIA_CLIENT_ID');
+const VARS = ['STORIA_CLIENT_ID', 'STORIA_CLIENT_SECRET', 'STORIA_API_KEY', 'STORIA_WEBHOOK_SECRET', 'KIRA_PORTAL_KEY'];
+
+/** What is missing in Vercel for Storia, or null. Never repeats a value. */
+export function storiaConfigProblem(): string | null {
+  const missing = VARS.filter((k) => !env(k));
+  if (missing.length) return 'lipsesc din Vercel: ' + missing.join(', ');
+  if (!/^kp_[0-9a-f]{64}$/.test(env('KIRA_PORTAL_KEY'))) return 'KIRA_PORTAL_KEY nu are forma kp_… (o copiezi din Administrator CRM Kira)';
+  if (!crmConfig()) return 'lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY';
+  return null;
+}
+
+/* ---------- the CRM's database (crm_portal_* functions, with KIRA_PORTAL_KEY) ---------- */
+
+export class DbError extends Error {
+  constructor(public code: string) { super(code); }
+}
+
+export async function portalDb<T = unknown>(fn: string, args: Record<string, unknown> = {}, timeoutMs = 8000): Promise<T> {
+  const cfg = crmConfig();
+  if (!cfg) throw new DbError('no_db');
+  let res: Response;
+  try {
+    res = await fetch(`${cfg.url}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { ...crmHeaders(cfg.key), 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ p_key: env('KIRA_PORTAL_KEY'), ...args }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch {
+    throw new DbError('db_unreachable');
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    let code = `HTTP ${res.status}`;
+    try {
+      const j = JSON.parse(text) as { code?: string; message?: string };
+      if (/bad_key/.test(j.message || '')) code = 'bad_key';
+      else if (j.code === 'PGRST202' || j.code === '42883') code = 'old_sql';
+      else if (j.code) code = String(j.code).slice(0, 20);
+    } catch { /* not JSON */ }
+    throw new DbError(code);
+  }
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+/** Is this Supabase session (from the CRM app) an account the administrator gave access to? */
+export async function isCrmMember(jwt: string): Promise<boolean> {
+  const cfg = crmConfig();
+  if (!cfg || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(jwt) || jwt.length > 8000) return false;
+  try {
+    const res = await fetch(`${cfg.url}/rest/v1/rpc/crm_info`, {
+      method: 'POST',
+      headers: { apikey: cfg.key, Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      body: '{}',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return false;
+    const j = (await res.json()) as { member?: boolean };
+    return j?.member === true;
+  } catch {
+    return false;
+  }
+}
+
+/* ---------- OLX: keys and tokens ---------- */
+
+function olxHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'X-API-KEY': env('STORIA_API_KEY'), 'User-Agent': USER_AGENT, Accept: 'application/json', ...extra };
+}
+
+type Tokens = { access_token: string; refresh_token: string; expires_in?: number };
+type TokenResult = { ok: true; t: Tokens } | { ok: false; status: number; error: string };
+
+async function tokenCall(body: Record<string, string>): Promise<TokenResult> {
+  let res: Response;
+  try {
+    res = await fetch(TOKEN_URL, {
+      method: 'POST',
+      headers: olxHeaders({
+        Authorization: 'Basic ' + Buffer.from(`${env('STORIA_CLIENT_ID')}:${env('STORIA_CLIENT_SECRET')}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }),
+      body: new URLSearchParams(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    return { ok: false, status: 0, error: 'OLX nu răspunde' };
+  }
+  const text = await res.text();
+  let j: Record<string, unknown> = {};
+  try { j = JSON.parse(text); } catch { /* not JSON */ }
+  if (res.ok && typeof j.access_token === 'string' && typeof j.refresh_token === 'string') return { ok: true, t: j as unknown as Tokens };
+  return { ok: false, status: res.status, error: String(j.error_description || j.error || j.message || text || `HTTP ${res.status}`).slice(0, 300) };
+}
+
+/** The code from Storia's authorization page (valid 60 seconds) for the account's tokens. */
+export const exchangeCode = (code: string) => tokenCall({ grant_type: 'authorization_code', code });
+
+/** A valid access token, refreshed when it expires in under 5 minutes (only one worker runs at a time). */
+async function accessToken(force = false): Promise<string | null> {
+  for (let i = 0; i < 3; i++) {
+    const c = await portalDb<{ access_token: string; refresh_token: string; expira: number } | null>('crm_portal_cont_get');
+    if (!c) return null;
+    if (!force && c.expira - Date.now() > 5 * 60_000) return c.access_token;
+    const r = await tokenCall({ grant_type: 'refresh_token', refresh_token: c.refresh_token });
+    if (!r.ok) {
+      if (r.status === 400 || r.status === 401) {
+        // Refused for good (password changed, access withdrawn), unless someone refreshed it meanwhile.
+        const now = await portalDb<{ refresh_token: string } | null>('crm_portal_cont_get');
+        if (now && now.refresh_token !== c.refresh_token) { force = false; continue; }
+        await portalDb('crm_portal_cont_sterge');
+        return null;
+      }
+      throw new Error('OLX token: ' + r.error);
+    }
+    const saved = await portalDb<{ ok: boolean }>('crm_portal_cont_set', { p: { ...r.t, vechi: c.refresh_token } });
+    if (saved?.ok) return r.t.access_token;
+    force = false;
+  }
+  return null;
+}
+
+/* ---------- a CRM property as a Storia advert ---------- */
+
+export type Listing = {
+  id?: string; cod?: string; titlu?: string; descriere?: string; tranzactie?: string; tip?: string;
+  pret?: number; suprafata?: number; suprafataTeren?: number; camere?: number;
+  judet?: string; localitate?: string; zona?: string;
+  geo?: { lat: number; lng: number; aprox?: boolean } | null; poze?: string[];
+};
+
+// CRM type → Storia category family (URNs checked against GET /taxonomy/v1/categories/partner/urn:site:storiaro).
+const FAMILY: Record<string, 'apartments' | 'houses' | 'lots' | 'stores' | 'warehouses'> = {
+  'Apartament': 'apartments', 'Garsonieră': 'apartments', 'Casă / Vilă': 'houses', 'Teren': 'lots',
+  'Spațiu comercial': 'stores', 'Birou': 'stores', 'Spațiu industrial': 'warehouses',
+};
+const pos = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+const roomsOf = (l: Listing) => pos(l.camere) ?? (l.tip === 'Garsonieră' ? 1 : null);
+
+/** What the CRM must fill before the advert can go to Storia (the CRM shows the same list). Empty when ready. */
+export function listingProblems(l: Listing): string[] {
+  const fam = FAMILY[l.tip || ''];
+  if (!fam) return [`tipul „${l.tip || 'fără tip'}” nu se publică automat pe Storia`];
+  const p: string[] = [];
+  if ((l.descriere || '').trim().length < 50) p.push('descrierea anunțului (cel puțin 50 de caractere)');
+  if (!pos(l.pret)) p.push('prețul');
+  if (!l.geo || typeof l.geo.lat !== 'number' || typeof l.geo.lng !== 'number') p.push('pinul pe hartă (la Locație)');
+  if (!(l.poze || []).length) p.push('cel puțin o poză');
+  if ((fam === 'apartments' || fam === 'houses') && !roomsOf(l)) p.push('numărul de camere');
+  if (fam !== 'lots' && !pos(l.suprafata)) p.push('suprafața utilă');
+  if (fam === 'houses' && !pos(l.suprafataTeren)) p.push('suprafața terenului');
+  if (fam === 'lots' && !pos(l.suprafataTeren) && !pos(l.suprafata)) p.push('suprafața terenului');
+  return p;
+}
+
+function cut(s: string, n: number): string {
+  s = s.replace(/\s+/g, ' ').trim();
+  if (s.length <= n) return s;
+  const c = s.slice(0, n + 1), i = c.lastIndexOf(' ');
+  return (i > n * 0.6 ? c.slice(0, i) : s.slice(0, n)).replace(/[\s,.;:–-]+$/, '');
+}
+const html = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '').replace(/\n/g, '<br/>');
+
+export function advertTitle(l: Listing): string {
+  const t = (l.titlu || '').trim() || autoTitle({
+    tip: l.tip || null, camere: l.camere ?? null, suprafata: l.suprafata ?? null, tranzactie: l.tranzactie || null,
+    zona: l.zona || null, localitate: l.localitate || null,
+  });
+  return cut(t, 70);
+}
+
+/** The advert for POST/PUT /advert/v1. Only the listing: never the street, the number, the owner or the notes. */
+export function buildAdvert(propId: string, l: Listing): Record<string, unknown> {
+  const fam = FAMILY[l.tip || ''];
+  const sale = l.tranzactie !== 'inchiriere';
+  const cat = { apartments: 'apartments', houses: 'houses', lots: 'lots', stores: 'stores', warehouses: 'warehouses' }[fam];
+  const attributes: { urn: string; value: string }[] = [];
+  const add = (urn: string, v: string | number | null) => { if (v != null && v !== '') attributes.push({ urn: `urn:concept:${urn}`, value: String(v) }); };
+  const rooms = roomsOf(l);
+  const roomsUrn = rooms ? (rooms > 10 ? 'urn:concept:more' : `urn:concept:${Math.round(rooms)}`) : null;
+  if (fam === 'apartments' || fam === 'houses') add('number-of-rooms', roomsUrn);
+  if (fam === 'lots') add('net-area-m2', pos(l.suprafataTeren) ?? pos(l.suprafata));
+  else add('net-area-m2', pos(l.suprafata));
+  if (fam === 'houses') add('terrain-area-m2', pos(l.suprafataTeren));
+  if (sale && fam !== 'lots') add('market', 'urn:concept:secondary');
+  const advert: Record<string, unknown> = {
+    site_urn: SITE_URN,
+    title: advertTitle(l),
+    description: html((l.descriere || '').trim()).slice(0, 9000),
+    category_urn: `urn:concept:${cat}-for-${sale ? 'sale' : 'rent'}`,
+    price: { value: Math.round(l.pret || 0), currency: 'EUR' },
+    attributes,
+    images: (l.poze || []).slice(0, 24).map((id) => ({ url: `${canonicalHost()}/poze/${id}` })),
+    custom_fields: { id: propId },
+  };
+  if (l.geo) advert.location = { lat: l.geo.lat, lon: l.geo.lng, exact: !l.geo.aprox };
+  return advert;
+}
+
+export const advertHash = (a: Record<string, unknown>) => createHash('sha256').update(JSON.stringify(a)).digest('hex').slice(0, 40);
+
+/* ---------- OLX notifications ---------- */
+
+/** x-signature = HMAC-SHA1 (key: the app's Notification secret) of "<object_id>,<transaction_id>", hex. */
+export function validSignature(signature: string | null, objectId: string, transactionId: string): boolean {
+  const secret = env('STORIA_WEBHOOK_SECRET');
+  if (!secret || !signature || !/^[0-9a-f]{40}$/i.test(signature.trim())) return false;
+  const expected = createHmac('sha1', secret).update(`${objectId},${transactionId}`).digest();
+  return timingSafeEqual(expected, Buffer.from(signature.trim(), 'hex'));
+}
+
+/* ---------- the worker: publish, update and remove ---------- */
+
+type Job = { prop_id: string; rev: number; date: Listing; uuid: string | null; stare: string | null; hash: string | null };
+type Removal = { prop_id: string; uuid: string; stare: string };
+type Answer = { status: number; json: Record<string, unknown>; text: string };
+
+async function olx(method: string, path: string, token: string, body?: unknown): Promise<Answer> {
+  try {
+    const res = await fetch(`${OLX_API}${path}`, {
+      method,
+      headers: olxHeaders({ Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }),
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20000),
+    });
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try { json = text ? JSON.parse(text) : {}; } catch { /* not JSON */ }
+    return { status: res.status, json, text: text.slice(0, 2000) };
+  } catch {
+    return { status: 0, json: {}, text: 'OLX nu răspunde' };
+  }
+}
+
+type Obj = Record<string, unknown>;
+const obj = (v: unknown): Obj => (v && typeof v === 'object' ? v as Obj : {});
+
+function reason(a: Answer): string {
+  const j = obj(a.json);
+  const err = obj(j.error);
+  const dataErr = obj(obj(j.data).error);
+  const v = err.validation || dataErr.validation || j.validation || j.errors;
+  if (Array.isArray(v) && v.length) {
+    return v.map((x: unknown) => { const o = obj(x); return o.detail || o.message || o.field || JSON.stringify(x); }).join('; ').slice(0, 1500);
+  }
+  return String(err.detail || dataErr.detail || j.message || j.error_description || (typeof j.error === 'string' ? j.error : '') || a.text || `HTTP ${a.status}`).slice(0, 1500);
+}
+
+const expired = (a: Answer) => a.status === 401 || (a.status === 403 && /expired/i.test(a.text));
+const NOT_LIVE = new Set(['scos', 'se_scoate', 'refuzat', 'expirat']);
+
+export type RunResult = { ok: boolean; mesaj: string; trimise: number; scoase: number };
+
+/** Does what the CRM asks of Storia (at most ~45 seconds; the rest at the next call). */
+export async function runStoria(): Promise<RunResult> {
+  const out: RunResult = { ok: true, mesaj: '', trimise: 0, scoase: 0 };
+  const problem = storiaConfigProblem();
+  if (problem) return { ...out, ok: false, mesaj: problem };
+  const deadline = Date.now() + 45_000;
+  for (let round = 0; round < 6 && Date.now() < deadline; round++) {
+    const w = await portalDb<{ ocupat?: boolean; conectat?: boolean; pune?: Job[]; scoate?: Removal[] }>('crm_portal_lucru');
+    if (w?.ocupat) return { ...out, mesaj: out.mesaj || 'altă trecere e în lucru' };
+    if (!w?.conectat) return { ...out, mesaj: 'contul Storia nu e conectat' };
+    const pune = w.pune || [], scoate = w.scoate || [];
+    try {
+      if (!pune.length && !scoate.length) return { ...out, mesaj: out.mesaj || 'nimic de făcut' };
+      let token = await accessToken();
+      if (!token) return { ...out, ok: false, mesaj: 'contul Storia trebuie conectat din nou (din Administrator CRM Kira)' };
+      const call = async (method: string, path: string, body?: unknown) => {
+        let a = await olx(method, path, token!, body);
+        if (expired(a)) { token = await accessToken(true); if (token) a = await olx(method, path, token, body); }
+        return a;
+      };
+      for (const job of pune) {
+        if (Date.now() > deadline) break;
+        await publishOne(job, call);
+        out.trimise++;
+      }
+      for (const job of scoate) {
+        if (Date.now() > deadline) break;
+        await removeOne(job, call);
+        out.scoase++;
+      }
+    } finally {
+      await portalDb('crm_portal_gata').catch(() => undefined);
+    }
+    if (pune.length < 8 && scoate.length < 8) break;
+  }
+  out.mesaj = out.mesaj || 'gata';
+  return out;
+}
+
+type Call = (method: string, path: string, body?: unknown) => Promise<Answer>;
+const result = (prop: string, p: Record<string, unknown>) => portalDb('crm_portal_rezultat', { p_prop: prop, p });
+
+async function publishOne(job: Job, call: Call): Promise<void> {
+  const l = job.date || {};
+  const live = !!job.uuid && !NOT_LIVE.has(job.stare || '');
+  const missing = listingProblems(l);
+  if (missing.length) {
+    const what = 'Lipsește: ' + missing.join(', ') + '.';
+    await result(job.prop_id, live
+      ? { rev: job.rev, detalii: 'Modificarea nu a plecat pe Storia. ' + what }
+      : { stare: 'incomplet', rev: job.rev, detalii: what });
+    return;
+  }
+  const advert = buildAdvert(job.prop_id, l);
+  const hash = advertHash(advert);
+  if (live && job.hash === hash) { await result(job.prop_id, { rev: job.rev }); return; }
+
+  let a = live ? await call('PUT', `/advert/v1/${encodeURIComponent(job.uuid!)}`, advert) : await call('POST', '/advert/v1', advert);
+  let created = !live;
+  if (live && a.status === 404) {
+    // Gone from Storia (deleted there by hand): publish it again.
+    a = await call('POST', '/advert/v1', advert);
+    created = true;
+  }
+  const data = (a.json.data && typeof a.json.data === 'object' ? a.json.data : {}) as Record<string, unknown>;
+  const refused = String(data.last_action_status || '').toUpperCase() === 'NOT_POSTED';
+  if (a.status >= 200 && a.status < 300 && !refused) {
+    if (created) {
+      const uuid = typeof data.uuid === 'string' ? data.uuid : null;
+      await result(job.prop_id, { uuid, url: null, stare: 'se_publica', hash, rev: job.rev, detalii: null });
+    } else {
+      await result(job.prop_id, { stare: 'se_actualizeaza', hash, rev: job.rev, detalii: null });
+    }
+  } else if ((a.status >= 400 && a.status < 500) || refused) {
+    const why = reason(a);
+    await result(job.prop_id, created
+      ? { stare: 'eroare', rev: job.rev, hash: null, detalii: 'Storia a refuzat anunțul: ' + why }
+      : { rev: job.rev, hash: null, detalii: 'Storia a refuzat modificarea: ' + why });
+  }
+  // 5xx or no answer: nothing is written, so the next call tries again.
+}
+
+async function removeOne(job: Removal, call: Call): Promise<void> {
+  const a = await call('DELETE', `/advert/v1/${encodeURIComponent(job.uuid)}`);
+  if (a.status >= 200 && a.status < 300) await result(job.prop_id, { stare: 'se_scoate', detalii: null });
+  else if (a.status === 404 || a.status === 410) await result(job.prop_id, { stare: 'scos', detalii: null });
+  else if (a.status >= 400 && a.status < 500) await result(job.prop_id, { stare: 'eroare', detalii: 'Nu s-a putut scoate de pe Storia: ' + reason(a) });
+}
+
+/* ---------- messages for the pages and /stare-site ---------- */
+
+/** What a database error means for the person setting things up (never repeats a key). */
+export function dbMessage(code: string): string {
+  if (code === 'bad_key') return 'KIRA_PORTAL_KEY din Vercel nu se potrivește cu baza: copiaz-o din nou din Administrator CRM Kira › Setări › Storia / OLX, apoi Redeploy.';
+  if (code === 'old_sql') return 'Baza nu are încă partea de Storia: rulează crm-online.sql (versiunea 6) în Supabase › SQL Editor.';
+  if (code === 'no_db') return 'Lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY din Vercel.';
+  return 'Baza de date nu răspunde acum. Încearcă din nou peste un minut.';
+}
+
+/** For /stare-site: are the Vercel settings and the Storia account in order? Never shows a value. */
+export async function storiaStatus(): Promise<Record<string, string>> {
+  const problem = storiaConfigProblem();
+  if (problem) return { setari_vercel: problem };
+  try {
+    const c = await portalDb<{ expira: number } | null>('crm_portal_cont_get');
+    return { setari_vercel: 'corecte', cont_storia: c ? 'conectat' : 'neconectat: îl conectezi din Administrator CRM Kira › Setări › Storia / OLX' };
+  } catch (e) {
+    return { setari_vercel: 'corecte', cont_storia: dbMessage(e instanceof DbError ? e.code : '') };
+  }
+}

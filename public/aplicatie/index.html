@@ -398,6 +398,8 @@
       status.pending = Math.max(0, items.length - i - chunk.length);
       await save();
     }
+    // A property changed online: the site sends it to Storia now (or takes it off).
+    if (items.some(function(it){ return it.col === 'properties'; })) poke();
   }
   // Once a day: photos missing online are sent again, photos no record uses any more are removed.
   async function checkPhotos(ctx, firstTime){
@@ -543,15 +545,59 @@
       if (!A || !st || !st.session || !st.started) return 'off';
       return +st.sv >= 4 ? 'ok' : +st.sv ? 'old' : '';
     },
-    // The database version once known (0 before): 5 adds the map pin on the site and the "Adaugă anunț" requests.
+    // The database version once known (0 before): 5 adds the map pin on the site and the "Adaugă anunț" requests,
+    // 6 the adverts on Storia/OLX.
     version: function(){ return A && st && st.session && st.started ? +st.sv || 0 : 0; },
-    // Asks the database again (at most once a minute) while it is not on version 5 (the map pin, "Adaugă anunț").
+    // Asks the database again (at most once a minute) while it is not on version 6.
     check: async function(){
       var s = site.state();
-      if (s === 'off' || (s === 'ok' && +st.sv >= 5) || (+st.sv && Date.now() - (+st.svAt || 0) < 60000)) return s;
+      if (s === 'off' || (s === 'ok' && +st.sv >= 6) || (+st.sv && Date.now() - (+st.svAt || 0) < 60000)) return s;
       try { await serverVersion(true); } catch(e){}
       return site.state();
     }
+  };
+
+  /* Storia (and from there OLX.ro): the site publishes the active properties ticked "Storia/OLX" and keeps each
+     advert's state in the online database (version 6). After a property goes up, the site is told to send it now;
+     without that it would wait for its daily round. Buyers' messages arrive as clients through the sync. */
+  var PORTAL_WORK = (location.hostname === 'app.localhost' ? location.protocol + '//localhost' + (location.port ? ':' + location.port : '') : 'https://www.kiraimobiliare.ro') + '/api/portaluri/storia/lucreaza';
+  var pokeAt = 0, pokeT = null;
+  function portalReady(){ return !!(A && st && st.session && st.started && +st.sv >= 6); }
+  // Only the agency's own database has its adverts on kiraimobiliare.ro (a database typed by hand never is told).
+  function agencyDb(){ var d = baked() || remote; return !d || !d.url || d.url === st.url; }
+  function poke(){
+    if (!A || !st || !st.session || !st.started || !agencyDb() || navigator.onLine === false) return;
+    // A database on an older version: look again every ten minutes (the new script may have been run since).
+    if (+st.sv < 6){
+      if (Date.now() - (+st.svAt || 0) > 600000) serverVersion(true).then(function(v){ if (v >= 6) poke(); }, function(){});
+      return;
+    }
+    var wait = 20000 - (Date.now() - pokeAt);
+    if (wait > 0){ if (!pokeT) pokeT = setTimeout(function(){ pokeT = null; poke(); }, wait); return; }
+    pokeAt = Date.now();
+    (async function(){
+      try {
+        await ensureToken();
+        await fetch(PORTAL_WORK, {method: 'POST', headers: {Authorization: 'Bearer ' + st.session.at}, cache: 'no-store', credentials: 'omit'});
+      } catch(e){}
+    })();
+  }
+  var portal = {
+    // {conectat, anunturi: [{id, stare, detalii, url, trimis, actualizat}]} for these properties (empty when not ready).
+    status: async function(ids){
+      ids = (ids || []).filter(function(x){ return typeof x === 'string' && x; }).slice(0, 500);
+      if (!ids.length || !portalReady()) return {conectat: false, anunturi: []};
+      var r = await (await request('POST', '/rest/v1/rpc/crm_portal_status', {json: {p_ids: ids}})).json();
+      return {conectat: !!(r && r.conectat), anunturi: r && Array.isArray(r.anunturi) ? r.anunturi : []};
+    },
+    // "Trimite din nou": the advert leaves again on the next round, which starts now.
+    retry: async function(id){
+      if (!portalReady()) throw new Error('Conectează CRM-ul la Date online.');
+      try { await request('POST', '/rest/v1/rpc/crm_portal_reincearca', {json: {p_id: String(id || '')}}); }
+      catch(e){ throw new Error(explain(e)); }
+      pokeAt = 0; poke();
+    },
+    poke: poke
   };
 
   // Tells the online database that this device is in use (the administrator sees the last access).
@@ -893,6 +939,7 @@
     who: function(){ return (st && st.started && st.email) || ''; },
     sign: sign,
     site: site,
+    portal: portal,
     _test: {cycle: cycle, state: function(){ return st; }, status: function(){ return status; }, hash: hash, canon: canon,
       patch: function(o){ return withLock(async function(){ await load(); Object.assign(st, o); await save(); }); }}
   };
@@ -904,7 +951,7 @@
    Copia de siguranță are aceeași structură ca folderul de date din Kira Imobiliare pentru Windows. */
 (function(){
   'use strict';
-  var VERSION = '1.7.0';
+  var VERSION = '1.8.0';
   var DB_NAME = 'crm-imobiliar', DB_VER = 1;
   var COLS = {properties: 'proprietati', clients: 'clienti', activities: 'activitati', contracts: 'contracte', meta: 'setari'};
   var EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'};
@@ -1691,7 +1738,7 @@
 
   <section class="kl-panel" id="kl-p-windows" role="tabpanel" aria-labelledby="kl-t-windows" hidden>
     <h2>Pe calculator (Windows 10 și 11)</h2>
-    <p class="kl-note">Versiunea 1.7.0 · arhivă .zip de 290 KB</p>
+    <p class="kl-note">Versiunea 1.8.0 · arhivă .zip de 295 KB</p>
     <a class="kl-btn" href="descarca/Kira-Imobiliare-Windows.zip" download>Descarcă pentru Windows</a>
     <ol>
       <li>Click dreapta pe arhiva descărcată › <b>Extrage tot</b>.</li>
@@ -1702,7 +1749,7 @@
 
   <div class="kl-foot">
     <p>Actualizări: pe telefon, aplicația îți arată singură „Versiune nouă” și butonul <b>Actualizează</b>. Datele rămân pe telefon.</p>
-    <p>Aplicația de telefon: versiunea 1.7.0 · <a href="?browser=1">deschide în browser</a></p>
+    <p>Aplicația de telefon: versiunea 1.8.0 · <a href="?browser=1">deschide în browser</a></p>
   </div>
 </div>
 </div></template>
@@ -3719,6 +3766,7 @@ const P_SCHEMA = [
     {k:'tip', t:'chip1', label:'Tip proprietate', opts:TIPURI, req:true, full:true},
     {k:'pret', t:'money', label:'Preț', ph:'ex. 125000'},
     {k:'suprafata', t:'num', label:'Suprafață utilă', unit:'mp'},
+    {k:'suprafataTeren', t:'num', label:'Suprafață teren', unit:'mp'},
     {k:'camere', t:'num', label:'Număr camere'},
     {k:'status', t:'sel', label:'Status', opts:STATUS_P, noEmpty:true}
   ]},
@@ -4396,7 +4444,7 @@ function promoBlock(p){
     '<label class="check"><input type="checkbox" id="pr-main" data-promo="main"' + (p.promovare ? ' checked' : '') + dis + '><span>Proprietate promovată</span></label>' +
     '<div class="lbl">Publicată pe</div><div class="chips">' +
     PLATFORME.map((x, i) => '<label class="chip"><input type="checkbox" id="pr-' + i + '" data-promo="plat" value="' + esc(x) + '"' + (pl.indexOf(x) >= 0 ? ' checked' : '') + dis + '><span>' + esc(x) + '</span></label>').join('') +
-    '</div>' + siteNote(p) + '</div></section>';
+    '</div>' + siteNote(p) + portalNote(p) + '</div></section>';
 }
 /* ---------- the agency's site (kiraimobiliare.ro) ----------
    The site reads from the online data the active properties ticked "Site Kira": title, description, price, details,
@@ -4411,10 +4459,10 @@ function siteLink(p){
 const siteState = () => { try { return (window.CRMSync && window.CRMSync.site && window.CRMSync.site.state()) || 'off'; } catch(e){ return 'off'; } };
 const siteVer = () => { try { return (window.CRMSync && window.CRMSync.site && window.CRMSync.site.version && window.CRMSync.site.version()) || 0; } catch(e){ return 0; } };
 let siteChecking = false;
-// Asks the database again while it is not on the newest version (5: the map pin and the "Adaugă anunț" requests).
+// Asks the database again while it is not on the newest version (5: the map pin and "Adaugă anunț"; 6: Storia).
 function siteCheck(){
   const before = siteState(), v0 = siteVer();
-  if (siteChecking || before === 'off' || (before === 'ok' && v0 >= 5)) return;
+  if (siteChecking || before === 'off' || (before === 'ok' && v0 >= 6)) return;
   siteChecking = true;
   window.CRMSync.site.check().then(s => { siteChecking = false; if (s !== before || siteVer() !== v0) siteNoteRefresh(); }, () => { siteChecking = false; });
 }
@@ -4422,6 +4470,7 @@ function siteNoteRefresh(){
   const d = S.drawer, el = $('#site-note', drawer);
   const r = d && d.mode === 'view' && d.kind === 'prop' ? findRec('prop', d.id) : null;
   if (el && r) el.outerHTML = siteNote(r);
+  portalNoteRefresh();
 }
 function siteNote(p){
   const box = (cls, html) => '<div id="site-note" class="note-box ' + cls + '">' + html + '</div>';
@@ -4442,6 +4491,90 @@ function siteNote(p){
     '<div class="d-actions" style="margin-top:8px"><button type="button" class="btn sm" data-act="open-site">Deschide pe site</button>' +
     '<button type="button" class="btn sm ghost" data-copy="' + esc(u) + '" data-copy-msg="Linkul de pe site a fost copiat">Copiază linkul</button></div>');
 }
+/* ---------- Storia (and from there OLX.ro) ----------
+   The site (kiraimobiliare.ro) publishes by itself on Storia the active properties ticked "Storia/OLX": the same fields
+   the site shows, plus the land area; Storia passes them on to OLX.ro. Buyers' messages come back as clients with a
+   "Cerere nouă". The online database (script version 6) keeps each advert's state; nothing of it is kept on the device. */
+const PORTAL = 'Storia/OLX';
+const PORTAL_FAM = {'Apartament':'ap', 'Garsonieră':'ap', 'Casă / Vilă':'casa', 'Teren':'teren', 'Spațiu comercial':'sp', 'Birou':'sp', 'Spațiu industrial':'sp'};
+// States in which an advert is (or is about to be) on Storia.
+const PORTAL_ON = ['activ', 'in_moderare', 'se_publica', 'se_actualizeaza', 'neplatit', 'expirat', 'blocat', 'se_scoate'];
+// What Storia needs that the property lacks: the same list the site checks (lib/storia.ts). Empty when ready.
+function portalMissing(p){
+  const fam = PORTAL_FAM[p.tip || ''];
+  if (!fam) return null;
+  const pos = v => typeof v === 'number' && isFinite(v) && v > 0, m = [];
+  if (String(p.descriere || '').trim().length < 50) m.push('descrierea anunțului (cel puțin 50 de caractere)');
+  if (!pos(p.pret)) m.push('prețul');
+  if (typeof p.lat !== 'number' || typeof p.lng !== 'number') m.push('pinul pe hartă (la Locație)');
+  if (!(Array.isArray(p.poze) && p.poze.length)) m.push('cel puțin o poză');
+  if ((fam === 'ap' || fam === 'casa') && !pos(p.camere) && p.tip !== 'Garsonieră') m.push('numărul de camere');
+  if (fam !== 'teren' && !pos(p.suprafata)) m.push('suprafața utilă');
+  if (fam === 'casa' && !pos(p.suprafataTeren)) m.push('suprafața terenului');
+  if (fam === 'teren' && !pos(p.suprafataTeren) && !pos(p.suprafata)) m.push('suprafața terenului');
+  return m;
+}
+const portalApi = () => { try { return (window.CRMSync && window.CRMSync.portal) || null; } catch(e){ return null; } };
+// Last answer from the online database, per property: {at, conectat, a: the advert or null, err}.
+const portalSt = {};
+let portalBusy = false, portalTimer = null, portalPoll = {id: '', n: 0};
+function portalLoad(id){
+  const api = portalApi();
+  if (!api || portalBusy) return;
+  portalBusy = true;
+  api.status([id]).then(r => {
+    portalBusy = false;
+    portalSt[id] = {at: Date.now(), conectat: !!(r && r.conectat), a: ((r && r.anunturi) || []).find(x => x && x.id === id) || null};
+    portalNoteRefresh();
+  }, () => { portalBusy = false; portalSt[id] = {at: Date.now(), err: true}; portalNoteRefresh(); });
+}
+function portalNoteRefresh(){
+  const d = S.drawer, el = $('#portal-note', drawer);
+  const r = d && d.mode === 'view' && d.kind === 'prop' ? findRec('prop', d.id) : null;
+  if (el && r) el.outerHTML = portalNote(r);
+}
+function portalNote(p){
+  const none = '<div id="portal-note" hidden></div>';
+  const box = (cls, html, btns) => '<div id="portal-note" class="note-box ' + cls + '"><b>Storia/OLX:</b> ' + html +
+    (btns ? '<div class="d-actions" style="margin-top:8px">' + btns + '</div>' : '') + '</div>';
+  const ticked = platformsOf(p).indexOf(PORTAL) >= 0;
+  const st = siteState(), sv = siteVer();
+  if (st === 'off' || !portalApi()) return ticked ? box('warn', 'pe Storia ajung proprietățile din <b>Date online</b>. Conectează CRM-ul (butonul Online) ca anunțul să plece singur.') : none;
+  if (!sv){ siteCheck(); return none; }
+  if (sv < 6){ siteCheck(); return ticked ? box('warn', 'pentru publicarea automată rulează scriptul <b>crm-online.sql</b> (versiunea 6) în Supabase › SQL Editor.') : none; }
+  const c = portalSt[p.id], a = c && c.a, on = !!(a && PORTAL_ON.indexOf(a.stare) >= 0);
+  const busy = !a || !a.trimis || ['nou', 'incomplet', 'se_publica', 'se_actualizeaza', 'se_scoate', 'scos'].indexOf(a.stare) >= 0;
+  if (!c || Date.now() - c.at > (busy ? 15000 : 60000)) portalLoad(p.id);
+  // While Storia is still working on it, look again every few seconds (for about ten minutes).
+  clearTimeout(portalTimer);
+  if (portalPoll.id !== p.id) portalPoll = {id: p.id, n: 0};
+  if (c && busy && (ticked || on) && portalPoll.n < 40) portalTimer = setTimeout(() => { portalPoll.n++; portalNoteRefresh(); }, 16000);
+  const leaving = 'anunțul se scoate de pe Storia în câteva minute.';
+  if (!ticked) return on ? box('warn', 'ai debifat-o, așa că ' + leaving) : none;
+  if (p.exemplu) return box('warn', 'exemplele nu se publică pe Storia.');
+  if (p.status && p.status !== 'Activă') return box('warn', 'e bifată, dar se publică doar cât timp e Activă' + (on ? '; ' + leaving : '.'));
+  const miss = portalMissing(p);
+  if (!miss) return box('warn', 'tipul „' + esc(p.tip || 'fără tip') + '” nu se publică automat pe Storia.');
+  if (miss.length) return box('warn', 'ca anunțul să plece pe Storia, mai completează: ' + miss.map(esc).join(', ') + '.' + (on ? ' Până atunci, pe Storia rămâne anunțul de acum.' : ''));
+  if (!c) return '<p id="portal-note" class="hint-line" style="margin:0">Storia/OLX: se verifică starea anunțului…</p>';
+  if (c.err) return box('warn', 'nu am putut afla acum starea anunțului. Se încearcă din nou când redeschizi proprietatea.');
+  if (!c.conectat) return box('warn', 'contul Storia al agenției nu e conectat încă. Administratorul îl conectează din <b>Administrator CRM Kira › Setări › Storia / OLX</b>; apoi anunțul pleacă singur.');
+  const det = a && a.detalii ? '<br>' + esc(a.detalii) : '';
+  const retry = '<button type="button" class="btn sm" data-act="portal-retry">Trimite din nou</button>';
+  const open = a && a.url ? '<button type="button" class="btn sm" data-act="open-storia">Deschide pe Storia</button><button type="button" class="btn sm ghost" data-copy="' + esc(a.url) + '" data-copy-msg="Linkul de pe Storia a fost copiat">Copiază linkul</button>' : '';
+  const msgs = ' Mesajele cumpărătorilor intră în CRM ca clienți noi, cu o „Cerere nouă”.';
+  switch (a && a.trimis ? a.stare : ''){
+    case 'activ': return box('good', 'publicată pe <b>Storia</b> și de acolo pe <b>OLX.ro</b>. Ce schimbi aici ajunge singur și pe Storia.' + msgs, open);
+    case 'se_publica': case 'se_actualizeaza': return box('good', 'Storia a primit anunțul și îl verifică (de obicei câteva minute).' + msgs, open);
+    case 'in_moderare': return box('warn', 'Storia verifică anunțul (moderare). Apare după ce e aprobat.' + det, open);
+    case 'neplatit': return box('warn', 'anunțul așteaptă plata pe Storia: pachetul contului nu mai are anunțuri libere. După ce rezolvi pe Storia, apasă „Trimite din nou”.' + det, retry + open);
+    case 'expirat': return box('warn', 'anunțul a expirat pe Storia.' + det, retry + open);
+    case 'blocat': return box('bad', 'Storia a blocat anunțul.' + det, retry + open);
+    case 'refuzat': return box('bad', 'Storia a scos anunțul la verificare (moderare). Corectează proprietatea; după salvare pleacă din nou.' + det, retry);
+    case 'eroare': return box('bad', 'Storia nu a primit anunțul.' + det, retry);
+  }
+  return box('good', 'anunțul pleacă pe Storia în câteva minute (după ce proprietatea ajunge online).' + msgs);
+}
 function copyBlock(p){
   const num = v => (v == null || v === '') ? '' : String(v).replace('.', ',');
   const rows = [
@@ -4451,6 +4584,7 @@ function copyBlock(p){
     [p.tranzactie === 'inchiriere' ? 'Chirie lunară (€)' : 'Preț (€)', p.pret != null ? String(Math.round(p.pret)) : '', '', fmtMoney(p.pret)],
     ['Tip proprietate', p.tip],
     ['Suprafață utilă (mp)', num(p.suprafata)],
+    ['Suprafață teren (mp)', num(p.suprafataTeren)],
     ['Număr camere', num(p.camere)],
     ['Etaj', p.etaj == null ? '' : (p.etaj > 0 && p.etaj < 100 ? String(p.etaj) : etajLabel(p.etaj))],
     ['Număr total de etaje', num(p.etajeTotal)],
@@ -4510,7 +4644,7 @@ function propDetail(p){
   let sub = '';
   if (p.tranzactie === 'vanzare' && p.pret && p.suprafata) sub = nf0.format(p.pret / p.suprafata) + ' €/mp';
   else if (p.tranzactie === 'inchiriere' && p.pret) sub = 'chirie lunară';
-  const meta = [(p.camere != null && !/Garsonier|Teren/.test(p.tip || '')) ? camereTxt(p.camere) : '', p.suprafata != null ? fmtN(p.suprafata) + ' mp' : '', isHouse(p.tip) ? '' : etajTxt(p), p.an ? 'an ' + p.an : ''].filter(Boolean).join(' · ');
+  const meta = [(p.camere != null && !/Garsonier|Teren/.test(p.tip || '')) ? camereTxt(p.camere) : '', p.suprafata != null ? fmtN(p.suprafata) + ' mp' : '', p.suprafataTeren != null ? 'teren ' + fmtN(p.suprafataTeren) + ' mp' : '', isHouse(p.tip) ? '' : etajTxt(p), p.an ? 'an ' + p.an : ''].filter(Boolean).join(' · ');
   return dhead((p.cod ? p.cod + ' · ' : '') + (p.tip ? p.tip + (p.tranzactie ? ' · ' + trLabel(p.tranzactie) : '') : 'Proprietate')) +
     '<div class="dbody">' +
     '<div class="d-actions"><button type="button" class="btn sm" data-act="copy-listing">' + ICON.copy + ' Copiază tot anunțul</button>' + w + del + '</div>' +
@@ -6466,7 +6600,7 @@ function listingText(p){
 }
 const P_COLS = [
   ['ID', p => p.cod], ['Tranzacție', p => trLabel(p.tranzactie)], ['Tip', p => p.tip], ['Status', p => stOf('prop', p)], ['Status din', p => fmtTs(p.statusAt)], ['Titlu anunț', p => p.titlu],
-  ['Preț (EUR)', p => p.pret], ['Suprafață (mp)', p => p.suprafata], ['Camere', p => p.camere],
+  ['Preț (EUR)', p => p.pret], ['Suprafață (mp)', p => p.suprafata], ['Suprafață teren (mp)', p => p.suprafataTeren], ['Camere', p => p.camere],
   ['Județ', p => p.judet], ['Localitate', p => p.localitate], ['Zonă', p => p.zona], ['Stradă', p => p.strada], ['Număr', p => p.numar],
   ['Etaj', p => etajLabel(p.etaj)], ['Total etaje', p => p.etajeTotal], ['An construcție', p => p.an], ['Tip construcție', p => p.tipConstructie],
   ['Material', p => p.material], ['Stare', p => p.stare], ['Încălzire', p => p.incalzire], ['Geamuri', p => p.geamuri], ['Disponibil de la', p => fmtDate(p.disponibilDe)],
@@ -6607,6 +6741,21 @@ function act(name, el){
     case 'open-site': {
       const p = S.drawer && S.drawer.kind === 'prop' ? findRec('prop', S.drawer.id) : null;
       if (p && !ctOpenUrl(siteLink(p))) toast('Nu s-a putut deschide. Copiază linkul și deschide-l în browser.');
+      break;
+    }
+    case 'open-storia': {
+      const c = S.drawer && S.drawer.kind === 'prop' ? portalSt[S.drawer.id] : null, u = c && c.a && c.a.url;
+      if (u && /^https:\/\//.test(u) && !ctOpenUrl(u)) toast('Nu s-a putut deschide. Copiază linkul și deschide-l în browser.');
+      break;
+    }
+    case 'portal-retry': {
+      const id = S.drawer && S.drawer.kind === 'prop' ? S.drawer.id : '', api = portalApi();
+      if (!id || !api) break;
+      el.disabled = true;
+      api.retry(id).then(() => {
+        toast('Anunțul se trimite din nou pe Storia.');
+        delete portalSt[id]; portalPoll = {id: id, n: 0}; portalNoteRefresh();
+      }, e => { el.disabled = false; toast((e && e.message) || 'Nu s-a putut trimite din nou. Încearcă mai târziu.'); });
       break;
     }
     case 'unclamp': { const v = el.parentElement && el.parentElement.querySelector('.v'); if (v) v.classList.remove('clamp'); el.remove(); break; }
