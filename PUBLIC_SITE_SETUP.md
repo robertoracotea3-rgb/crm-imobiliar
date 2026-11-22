@@ -17,7 +17,11 @@ locality, area, county, the ticked features and the photo ids. It never returns 
 clients, activities or contracts. A storage policy lets visitors read only the photos of published properties.
 
 - `lib/public-properties.ts` reads and maps the listings (cached for 60 s, never waits more than 3.5 s).
-- `app/poze/[id]/route.ts` serves a published photo at `/poze/<id>` from the private `crm-poze` bucket.
+- `app/poze/[id]/route.ts` serves a published photo at `/poze/<id>` from the private `crm-poze` bucket, with the Kira logo,
+  transparent, in the middle (`lib/watermark.ts`, from `public/images/kira-logo-gold.png`; at most 2560 px, JPEG, without
+  EXIF/GPS). The CRM keeps the originals. The site and Storia link `/poze/<id>?v=<PHOTO_VERSION>` (`lib/public-properties.ts`):
+  change `PHOTO_VERSION` when the look changes, so browsers and Storia take the photos again. If the logo cannot be added,
+  the photo is served as it is.
 - Property pages live at `/proprietati/<title>-<code>` (e.g. `/proprietati/apartament-3-camere-de-vanzare-galaxiei-p101`).
   The code decides: an older link (a changed title) redirects permanently to the current one. The CRM builds the same link.
 

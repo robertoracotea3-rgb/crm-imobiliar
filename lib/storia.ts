@@ -1,6 +1,6 @@
 import 'server-only';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { autoTitle, crmConfig, crmHeaders } from '@/lib/public-properties';
+import { autoTitle, crmConfig, crmHeaders, photoPath } from '@/lib/public-properties';
 import { canonicalHost } from '@/lib/site-host';
 
 /*
@@ -320,7 +320,8 @@ export function buildAdvert(propId: string, l: Listing, forOlx = false): Record<
     category_urn: `urn:concept:${cat}-for-${sale ? 'sale' : 'rent'}`,
     price: { value: Math.round(l.pret || 0), currency: 'EUR' },
     attributes,
-    images: (l.poze || []).slice(0, 24).map((id) => ({ url: `${canonicalHost()}/poze/${id}` })),
+    // With the Kira logo in the middle (lib/watermark.ts); a new PHOTO_VERSION makes Storia take them again.
+    images: (l.poze || []).slice(0, 24).map((id) => ({ url: `${canonicalHost()}${photoPath(id)}` })),
     custom_fields: { id: propId },
   };
   if (l.geo) advert.location = { lat: l.geo.lat, lon: l.geo.lng, exact: !l.geo.aprox };

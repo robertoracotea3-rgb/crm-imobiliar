@@ -6,7 +6,8 @@ import type { CardProperty, GeoPoint } from '@/components/public/site';
  * Proprietățile de pe site vin din Kira Imobiliare (CRM-ul): apar cele bifate „Site Kira” la Promovare,
  * cât timp au statusul Activă. Site-ul le citește din baza online a CRM-ului (Supabase) cu cheia publică
  * (publishable), prin funcția crm_site_properties(), care dă doar textul anunțului: niciodată strada,
- * numărul, proprietarul, notele, clienții sau contractele. Pozele trec prin /poze/<id> (app/poze/[id]/route.ts).
+ * numărul, proprietarul, notele, clienții sau contractele. Pozele trec prin /poze/<id> (app/poze/[id]/route.ts),
+ * care pune sigla Kira, transparentă, în mijlocul lor (lib/watermark.ts); în CRM rămân originalele.
  * Poziția pe hartă (geo) e pinul pus în CRM; la „Locație aproximativă” baza trimite doar un punct mutat față de adresă.
  *
  * Variabile în Vercel (Settings > Environment Variables):
@@ -35,6 +36,13 @@ export type PublicProperty = {
 };
 
 type CrmSiteRow = Record<string, unknown> & { id: string };
+
+/**
+ * Where the site and Storia take a published photo from. PHOTO_VERSION changes when the look of the public copy
+ * changes (the logo, lib/watermark.ts): browsers and Storia then take the photos again (for Storia the advert changes).
+ */
+export const PHOTO_VERSION = 'k1';
+export const photoPath = (id: string) => `/poze/${id}?v=${PHOTO_VERSION}`;
 
 const CATEGORY: Record<string, string> = {
   'Apartament': 'apartament', 'Garsonieră': 'garsoniera', 'Casă / Vilă': 'casa_vila', 'Teren': 'teren',
@@ -151,7 +159,7 @@ function toPublic(r: CrmSiteRow): PublicProperty {
   const localitate = str(r.localitate, 80), zona = str(r.zona, 80), judet = str(r.judet, 40);
   const isLand = tip === 'Teren', isHouse = tip === 'Casă / Vilă' || isLand;
   const showRooms = camere != null && !/Garsonier|Teren|Cameră/.test(tip || '');
-  const photos = list(r.poze).filter((id) => /^[A-Za-z0-9_-]{6,128}$/.test(id)).map((id) => `/poze/${id}`);
+  const photos = list(r.poze).filter((id) => /^[A-Za-z0-9_-]{6,128}$/.test(id)).map((id) => photoPath(id));
   const facts: PublicFact[] = [];
   const add = (label: string, value: string | null) => { if (value) facts.push({ label, value }); };
   add('Tip proprietate', tip);
