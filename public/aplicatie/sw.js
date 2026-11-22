@@ -1,5 +1,5 @@
 /* Kira Imobiliare pe telefon: pornește și fără internet, iar pozele (/_blob/<id>) vin din baza de date a telefonului. */
-var VERSION = '1.9.0-b4dbee0c';
+var VERSION = '1.10.0-d04f3e99';
 var CACHE = 'crm-' + VERSION;
 var SHELL = ['./', './manifest.webmanifest', './apple-touch-icon.png', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 

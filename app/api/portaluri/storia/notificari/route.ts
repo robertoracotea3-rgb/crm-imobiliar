@@ -1,11 +1,14 @@
-import { DbError, portalDb, storiaConfigProblem, validSignature } from '@/lib/storia';
+import { after } from 'next/server';
+import { DbError, portalDb, runStoria, storiaConfigProblem, validSignature } from '@/lib/storia';
 
 /*
- * OLX's notifications (the "notification callback URL" in Application Manager): advert states and buyers' messages.
- * Each one is checked (x-signature) and handed to crm_portal_eveniment, which takes it once. OLX wants a 2xx within
- * 2 seconds; any other answer makes it send again (every 5 minutes, about 2 hours), so a busy database loses nothing.
+ * OLX's notifications (the "notification callback URL" in Application Manager): advert states, the OLX.ro export's
+ * states and buyers' messages. Each one is checked (x-signature) and handed to crm_portal_eveniment, which takes it
+ * once. OLX wants a 2xx within 2 seconds; any other answer makes it send again (every 5 minutes, about 2 hours), so a
+ * busy database loses nothing. When an advert ticked "OLX" is now live on Storia, the export is asked for right after.
  */
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 // The "Test callback" button in Application Manager, and availability checks.
 export function GET() {
@@ -23,10 +26,12 @@ export async function POST(request: Request) {
   if (!objectId && !transactionId) return Response.json({ ok: true });
   if (storiaConfigProblem()) return Response.json({ ok: false }, { status: 503 });
   if (!validSignature(request.headers.get('x-signature'), objectId, transactionId)) return Response.json({ ok: false }, { status: 401 });
+  let r: { olx_de_cerut?: boolean } | null = null;
   try {
-    await portalDb('crm_portal_eveniment', { e: ev }, 1700);
+    r = await portalDb<{ olx_de_cerut?: boolean } | null>('crm_portal_eveniment', { e: ev }, 1700);
   } catch (err) {
     return Response.json({ ok: false, cod: err instanceof DbError ? err.code : 'eroare' }, { status: 503 });
   }
+  if (r?.olx_de_cerut) after(() => runStoria().then(() => undefined, () => undefined));
   return Response.json({ ok: true });
 }

@@ -58,10 +58,12 @@ and push. Phones pick the new version up by themselves and show "Versiune nouă 
 design: the data needs an account the administrator added (`crm_is_member`). `crmConfig()` refuses a secret or service_role
 key, so one is never handed out. Change the database or the key only in Vercel (then Redeploy); the apps follow.
 
-## Storia / OLX (lib/storia.ts, app/api/portaluri/storia/)
+## Storia and OLX.ro (lib/storia.ts, app/api/portaluri/storia/)
 
-Properties ticked "Storia/OLX" in the CRM and active are published on Storia (exported by Storia to OLX.ro) through the
-OLX Group Real Estate Partner API, and buyers' messages come back into the CRM as clients with a "Cerere nouă".
+Properties ticked "Storia" in the CRM and active are published on Storia through the OLX Group Real Estate Partner API,
+and buyers' messages come back into the CRM as clients with a "Cerere nouă". Properties also ticked "OLX" go on to OLX.ro
+from their Storia advert: once it is live, the site asks the same Storia account for the OLX export (a VAS of the advert,
+`POST /vas/v1/advert/{uuid}`), which some Storia packages charge for. The old tick "Storia/OLX" counts as both.
 Everything stays off until these variables are set (Production; Preview only if you want to try it there):
 
 - `STORIA_CLIENT_ID`, `STORIA_CLIENT_SECRET`, `STORIA_API_KEY`, `STORIA_WEBHOOK_SECRET` — the OLX app's Client ID, Client
@@ -70,9 +72,14 @@ Everything stays off until these variables are set (Production; Preview only if 
   › Setări › Storia / OLX › Copiază cheia). The site reaches the CRM's database only through the `crm_portal_*` functions,
   which check this key; it never gets a service_role key.
 - `CRON_SECRET` — optional. With it, the daily round must carry `Authorization: Bearer <CRON_SECRET>` (Vercel Cron sends it).
+- `STORIA_OLX_PROMOTION` — optional: the OLX export's promotion code (`code` or `code:days`) when OLX Group names one.
+  Without it the site picks the export from `GET /taxonomy/v1/promotions/urn:site:storiaro` (cached 6 hours), 30 days
+  when offered.
 
 In Application Manager: authentication callback `https://www.kiraimobiliare.ro/api/portaluri/storia/callback`, notification
-callback `https://www.kiraimobiliare.ro/api/portaluri/storia/notificari`.
+callback `https://www.kiraimobiliare.ro/api/portaluri/storia/notificari`. For the OLX export the app also needs the scopes
+`read:vas` and `write:vas` and the notification flows `vas_lifecycle` and `publish_vas`; after adding them, connect the
+account again (Administrator CRM Kira › Setări › Storia / OLX › Conectează din nou).
 
 Routes:
 - `GET /api/portaluri/storia/conectare?stare=<code>` — opened from Administrator CRM Kira with a one-time code
@@ -81,42 +88,26 @@ Routes:
   (`crm_portal_cont`), then starts a first round.
 - `POST /api/portaluri/storia/notificari` — OLX notifications, checked with `x-signature` (HMAC-SHA1 of
   `<object_id>,<transaction_id>` with the Notification secret); unsigned or wrongly signed ones get 401. Taken once each.
+  The export's events (`advert_vas_applied_success`, `advert_vas_applied_error`, `advert_vas_expired`,
+  `advert_vas_removed`) update its state; when an advert ticked "OLX" goes live, the export is asked for right after
+  the answer (`after()`).
 - `POST /api/portaluri/storia/lucreaza` — the CRM apps call it after uploading a property, with the agent's Supabase session
   (members only). `GET` is the daily Vercel Cron (`vercel.json`, 05:15 UTC). A round publishes, updates and removes
-  at most 8 adverts per pass for about 45 seconds; a database lease keeps two rounds from running at once.
+  at most 8 adverts per pass for about 45 seconds; a database lease keeps two rounds from running at once. Then it asks
+  for the OLX exports due and checks the ones not confirmed yet (`GET /vas/v1/advert/{uuid}`, every 5 minutes; after 24
+  hours without a confirmation the export shows an error). An export that ends is not renewed by itself (no surprise
+  charges): the agent presses "Trimite din nou pe OLX". It cannot be ended early through the API; it ends with the
+  Storia advert.
 
-`/stare-site` includes `storia`: which variables are missing, or whether the account is connected (never a value).
+`/stare-site` includes `storia`: which variables are missing, or whether the account is connected (never a value); once
+connected, `export_olx` says how the OLX export works.
 
-## OLX.ro directly (lib/olx.ts, app/api/portaluri/olx/)
-
-Properties ticked "OLX" in the CRM and active are published on OLX.ro from the agency's own OLX account through the OLX
-Partner API (developer.olx.ro), and the messages buyers send there come back into the CRM as clients with a "Cerere nouă".
-It is separate from "Storia/OLX" (Storia exports to OLX.ro by itself): ticking both can show the same property twice on OLX.ro.
-It needs `crm-online.sql` version 7 and these variables (Production):
-
-- `OLX_CLIENT_ID`, `OLX_CLIENT_SECRET` — the app's Client ID and Client Secret (developer.olx.ro › My apps).
-- `KIRA_PORTAL_KEY` — the same key as for Storia.
-
-On developer.olx.ro the app's Redirect URI is `https://www.kiraimobiliare.ro/api/portaluri/olx/callback`.
-
-Routes:
-- `GET /api/portaluri/olx/conectare?stare=<code>` — opened from Administrator CRM Kira › Setări › OLX.ro with a one-time
-  code; checks the database is version 7, then redirects to OLX's authorization page.
-- `GET /api/portaluri/olx/callback` — exchanges the code for the account's tokens (`crm_portal_cont`, portal `olx`), then
-  starts a first round. Without a code it only shows an information page.
-- The rounds run inside `/api/portaluri/storia/lucreaza` (apps and daily cron), next to Storia: `runOlx()` publishes,
-  updates and takes off adverts, asks OLX about adverts still in moderation (OLX has no notifications for this API) and,
-  at most every 2 minutes, reads new messages (`/threads`). Threads that existed before the account was connected are
-  not imported. The answer carries the OLX part in `olx`.
-
-OLX's real estate categories and their required fields are read from the API (cached 6 hours). A required field the CRM
-cannot fill, or an advert OLX refuses, shows in the CRM with OLX's reason. Real estate adverts may need a paid package on
-OLX.ro: such an advert shows as "neplătit" until it is paid in the OLX account.
-
-`/stare-site` includes `olx`: which variables are missing, or whether the account is connected (never a value).
+The direct OLX.ro integration of version 7 (developer.olx.ro, `OLX_CLIENT_ID`, `OLX_CLIENT_SECRET`, `/api/portaluri/olx/*`)
+is gone: `crm-online.sql` version 8 drops its tables and functions. Adverts it placed on OLX.ro stay there until they are
+removed in the OLX account.
 
 ## Before launch
 
-- In Supabase › SQL Editor, run `crm-online.sql` version 7 (it adds the site functions, the map position, the "Adaugă anunț" requests, Storia/OLX and OLX.ro; it deletes nothing).
+- In Supabase › SQL Editor, run `crm-online.sql` version 8 (it adds the site functions, the map position, the "Adaugă anunț" requests, Storia and the OLX.ro export; it deletes no CRM data).
 - Set the two variables above, redeploy, and check a Preview deployment: `/proprietati`, a property page, a photo, `/sitemap.xml`.
 - Confirm privacy/cookie wording against the data flows and third-party scripts actually enabled.

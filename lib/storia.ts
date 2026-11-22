@@ -4,13 +4,15 @@ import { autoTitle, crmConfig, crmHeaders } from '@/lib/public-properties';
 import { canonicalHost } from '@/lib/site-host';
 
 /*
- * Storia (and, through Storia's export, OLX.ro) for the Kira Imobiliare CRM, over the OLX Group Real Estate Partner API.
+ * Storia (and OLX.ro, through Storia's export) for the Kira Imobiliare CRM, over the OLX Group Real Estate Partner API.
  *
  * - The agency's Storia account is connected once, from Administrator CRM Kira (/api/portaluri/storia/conectare).
- * - Properties ticked "Storia/OLX" and active are published, updated and removed by runStoria(), started by the CRM apps
- *   after a change (/api/portaluri/storia/lucreaza) and once a day by Vercel Cron.
- * - OLX notifications (advert states, messages from buyers) arrive at /api/portaluri/storia/notificari; a message becomes
- *   a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 6).
+ * - Properties ticked "Storia" and active are published, updated and removed by runStoria(), started by the CRM apps
+ *   after a change (/api/portaluri/storia/lucreaza), by the notifications and once a day by Vercel Cron.
+ * - Those also ticked "OLX" go on to OLX.ro: the export is a promotion (VAS) of the Storia advert, asked for with the
+ *   same Storia account (the app needs the read:vas and write:vas scopes; with some Storia packages it is paid).
+ * - OLX notifications (advert and export states, messages from buyers) arrive at /api/portaluri/storia/notificari; a
+ *   message becomes a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 8).
  *
  * The site reaches the CRM's database only through the crm_portal_* functions, with KIRA_PORTAL_KEY; the OLX app's keys
  * (STORIA_*) stay in Vercel. Docs: https://developer.olxgroup.com/docs
@@ -190,32 +192,62 @@ function cut(s: string, n: number): string {
 }
 const html = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\r/g, '').replace(/\n/g, '<br/>');
 
-export function advertTitle(l: Listing): string {
-  const t = (l.titlu || '').trim() || autoTitle({
-    tip: l.tip || null, camere: l.camere ?? null, suprafata: l.suprafata ?? null, tranzactie: l.tranzactie || null,
-    zona: l.zona || null, localitate: l.localitate || null,
-  });
+/**
+ * OLX.ro's rules for the text of an advert exported from Storia: no links or e-mail addresses, no runs of more than
+ * three of the same sign (!!!!, ----), and not all in capitals (then it is written in sentence case).
+ */
+export function olxText(s: string): string {
+  let t = s
+    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, ' ')
+    .replace(/(?:https?:\/\/|www\.)\S+/gi, ' ')
+    .replace(/\b[\w-]+(?:\.[\w-]+)*\.(?:ro|com|net|org|eu|info|biz|io)\b(?:\/\S*)?/g, ' ')
+    .replace(/([!?.,\-=+#%&@*_><:()|])\1{3,}/g, (_m, c: string) => c.repeat(3))
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/ +([,.;:!?])/g, (_m, c: string) => c);
+  const letters = t.match(/\p{L}/gu) || [];
+  const capitals = t.match(/\p{Lu}/gu) || [];
+  if (letters.length >= 10 && capitals.length / letters.length > 0.7) {
+    t = t.toLowerCase().replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
+  }
+  return t.trim();
+}
+
+export function advertTitle(l: Listing, forOlx = false): string {
+  let t = (l.titlu || '').trim();
+  if (forOlx) t = olxText(t);
+  if (!t) {
+    t = autoTitle({
+      tip: l.tip || null, camere: l.camere ?? null, suprafata: l.suprafata ?? null, tranzactie: l.tranzactie || null,
+      zona: l.zona || null, localitate: l.localitate || null,
+    });
+  }
   return cut(t, 70);
 }
 
-/** The advert for POST/PUT /advert/v1. Only the listing: never the street, the number, the owner or the notes. */
-export function buildAdvert(propId: string, l: Listing): Record<string, unknown> {
+/**
+ * The advert for POST/PUT /advert/v1. Only the listing: never the street, the number, the owner or the notes.
+ * forOlx: the property is also ticked "OLX", so the text and the areas follow OLX.ro's rules for the export too.
+ */
+export function buildAdvert(propId: string, l: Listing, forOlx = false): Record<string, unknown> {
   const fam = FAMILY[l.tip || ''];
   const sale = l.tranzactie !== 'inchiriere';
   const cat = { apartments: 'apartments', houses: 'houses', lots: 'lots', stores: 'stores', warehouses: 'warehouses' }[fam];
   const attributes: { urn: string; value: string }[] = [];
   const add = (urn: string, v: string | number | null) => { if (v != null && v !== '') attributes.push({ urn: `urn:concept:${urn}`, value: String(v) }); };
+  // OLX.ro takes whole square metres only.
+  const area = (v: number | null) => (v != null && forOlx ? Math.max(1, Math.round(v)) : v);
   const rooms = roomsOf(l);
   const roomsUrn = rooms ? (rooms > 10 ? 'urn:concept:more' : `urn:concept:${Math.round(rooms)}`) : null;
   if (fam === 'apartments' || fam === 'houses') add('number-of-rooms', roomsUrn);
-  if (fam === 'lots') add('net-area-m2', pos(l.suprafataTeren) ?? pos(l.suprafata));
-  else add('net-area-m2', pos(l.suprafata));
-  if (fam === 'houses') add('terrain-area-m2', pos(l.suprafataTeren));
+  if (fam === 'lots') add('net-area-m2', area(pos(l.suprafataTeren) ?? pos(l.suprafata)));
+  else add('net-area-m2', area(pos(l.suprafata)));
+  if (fam === 'houses') add('terrain-area-m2', area(pos(l.suprafataTeren)));
   if (sale && fam !== 'lots') add('market', 'urn:concept:secondary');
+  const text = (l.descriere || '').trim();
   const advert: Record<string, unknown> = {
     site_urn: SITE_URN,
-    title: advertTitle(l),
-    description: html((l.descriere || '').trim()).slice(0, 9000),
+    title: advertTitle(l, forOlx),
+    description: html(forOlx ? olxText(text) : text).slice(0, 9000),
     category_urn: `urn:concept:${cat}-for-${sale ? 'sale' : 'rent'}`,
     price: { value: Math.round(l.pret || 0), currency: 'EUR' },
     attributes,
@@ -240,15 +272,18 @@ export function validSignature(signature: string | null, objectId: string, trans
 
 /* ---------- the worker: publish, update and remove ---------- */
 
-type Job = { prop_id: string; rev: number; date: Listing; uuid: string | null; stare: string | null; hash: string | null };
+type Job = { prop_id: string; rev: number; date: Listing; uuid: string | null; stare: string | null; hash: string | null; olx?: boolean };
 type Removal = { prop_id: string; uuid: string; stare: string };
+type OlxJob = { prop_id: string; uuid: string };
+type OlxCheck = { prop_id: string; uuid: string; vas: string | null; cerut: number | null };
 type Answer = { status: number; json: Record<string, unknown>; text: string };
 
-async function olx(method: string, path: string, token: string, body?: unknown): Promise<Answer> {
+/** One call to the OLX Group API; without a token for the public lists (taxonomy). */
+async function olx(method: string, path: string, token: string | null, body?: unknown): Promise<Answer> {
   try {
     const res = await fetch(`${OLX_API}${path}`, {
       method,
-      headers: olxHeaders({ Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }),
+      headers: olxHeaders({ ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }),
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
       signal: AbortSignal.timeout(20000),
@@ -279,21 +314,26 @@ function reason(a: Answer): string {
 const expired = (a: Answer) => a.status === 401 || (a.status === 403 && /expired/i.test(a.text));
 const NOT_LIVE = new Set(['scos', 'se_scoate', 'refuzat', 'expirat']);
 
-export type RunResult = { ok: boolean; mesaj: string; trimise: number; scoase: number };
+export type RunResult = { ok: boolean; mesaj: string; trimise: number; scoase: number; olx: number };
+type Work = {
+  ocupat?: boolean; conectat?: boolean; pune?: Job[]; scoate?: Removal[]; olx?: OlxJob[]; olx_verifica?: OlxCheck[];
+};
 
-/** Does what the CRM asks of Storia (at most ~45 seconds; the rest at the next call). */
+/** Does what the CRM asks of Storia and of the OLX.ro export (at most ~45 seconds; the rest at the next call). */
 export async function runStoria(): Promise<RunResult> {
-  const out: RunResult = { ok: true, mesaj: '', trimise: 0, scoase: 0 };
+  const out: RunResult = { ok: true, mesaj: '', trimise: 0, scoase: 0, olx: 0 };
   const problem = storiaConfigProblem();
   if (problem) return { ...out, ok: false, mesaj: problem };
   const deadline = Date.now() + 45_000;
   for (let round = 0; round < 6 && Date.now() < deadline; round++) {
-    const w = await portalDb<{ ocupat?: boolean; conectat?: boolean; pune?: Job[]; scoate?: Removal[] }>('crm_portal_lucru');
+    const w = await portalDb<Work>('crm_portal_lucru');
     if (w?.ocupat) return { ...out, mesaj: out.mesaj || 'altă trecere e în lucru' };
     if (!w?.conectat) return { ...out, mesaj: 'contul Storia nu e conectat' };
-    const pune = w.pune || [], scoate = w.scoate || [];
+    const pune = w.pune || [], scoate = w.scoate || [], cere = w.olx || [], verifica = w.olx_verifica || [];
+    // A live advert just ticked "OLX" (nothing else changed): its export is asked for in the next round, right away.
+    let more = false;
     try {
-      if (!pune.length && !scoate.length) return { ...out, mesaj: out.mesaj || 'nimic de făcut' };
+      if (!pune.length && !scoate.length && !cere.length && !verifica.length) return { ...out, mesaj: out.mesaj || (round ? 'gata' : 'nimic de făcut') };
       let token = await accessToken();
       if (!token) return { ...out, ok: false, mesaj: 'contul Storia trebuie conectat din nou (din Administrator CRM Kira)' };
       const call = async (method: string, path: string, body?: unknown) => {
@@ -303,7 +343,7 @@ export async function runStoria(): Promise<RunResult> {
       };
       for (const job of pune) {
         if (Date.now() > deadline) break;
-        await publishOne(job, call);
+        if (await publishOne(job, call)) more = true;
         out.trimise++;
       }
       for (const job of scoate) {
@@ -311,10 +351,23 @@ export async function runStoria(): Promise<RunResult> {
         await removeOne(job, call);
         out.scoase++;
       }
+      if (cere.length || verifica.length) {
+        const promo = await olxPromotion(call);
+        for (const job of cere) {
+          if (Date.now() > deadline) break;
+          await requestOlx(job, call, promo);
+          out.olx++;
+        }
+        for (const job of verifica) {
+          if (Date.now() > deadline) break;
+          await checkOlx(job, call, promo);
+          out.olx++;
+        }
+      }
     } finally {
       await portalDb('crm_portal_gata').catch(() => undefined);
     }
-    if (pune.length < 8 && scoate.length < 8) break;
+    if (!more && pune.length < 8 && scoate.length < 8 && cere.length < 8 && verifica.length < 8) break;
   }
   out.mesaj = out.mesaj || 'gata';
   return out;
@@ -322,8 +375,10 @@ export async function runStoria(): Promise<RunResult> {
 
 type Call = (method: string, path: string, body?: unknown) => Promise<Answer>;
 const result = (prop: string, p: Record<string, unknown>) => portalDb('crm_portal_rezultat', { p_prop: prop, p });
+const olxResult = (prop: string, p: Record<string, unknown>) => portalDb('crm_portal_olx', { p_prop: prop, p });
 
-async function publishOne(job: Job, call: Call): Promise<void> {
+/** Publishes or updates one advert. True when it is live, unchanged and ticked "OLX" (its export can be asked for now). */
+async function publishOne(job: Job, call: Call): Promise<boolean> {
   const l = job.date || {};
   const live = !!job.uuid && !NOT_LIVE.has(job.stare || '');
   const missing = listingProblems(l);
@@ -332,11 +387,14 @@ async function publishOne(job: Job, call: Call): Promise<void> {
     await result(job.prop_id, live
       ? { rev: job.rev, detalii: 'Modificarea nu a plecat pe Storia. ' + what }
       : { stare: 'incomplet', rev: job.rev, detalii: what });
-    return;
+    return false;
   }
-  const advert = buildAdvert(job.prop_id, l);
+  const advert = buildAdvert(job.prop_id, l, !!job.olx);
   const hash = advertHash(advert);
-  if (live && job.hash === hash) { await result(job.prop_id, { rev: job.rev }); return; }
+  if (live && job.hash === hash) {
+    await result(job.prop_id, { rev: job.rev });
+    return !!job.olx && job.stare === 'activ';
+  }
 
   let a = live ? await call('PUT', `/advert/v1/${encodeURIComponent(job.uuid!)}`, advert) : await call('POST', '/advert/v1', advert);
   let created = !live;
@@ -361,6 +419,7 @@ async function publishOne(job: Job, call: Call): Promise<void> {
       : { rev: job.rev, hash: null, detalii: 'Storia a refuzat modificarea: ' + why });
   }
   // 5xx or no answer: nothing is written, so the next call tries again.
+  return false;
 }
 
 async function removeOne(job: Removal, call: Call): Promise<void> {
@@ -370,12 +429,119 @@ async function removeOne(job: Removal, call: Call): Promise<void> {
   else if (a.status >= 400 && a.status < 500) await result(job.prop_id, { stare: 'eroare', detalii: 'Nu s-a putut scoate de pe Storia: ' + reason(a) });
 }
 
+/* ---------- OLX.ro: the export of a Storia advert (a promotion, "VAS", of the advert) ---------- */
+
+type Promo = { code: string; days: number | null };
+let promoCache: { at: number; promo: Promo | null } | null = null;
+
+/**
+ * The OLX.ro export among Storia's promotions (GET /taxonomy/v1/promotions), kept 6 hours. null: Storia has none;
+ * undefined: unknown now (OLX does not answer). STORIA_OLX_PROMOTION in Vercel ("code" or "code:days") overrides it.
+ */
+async function olxPromotion(call: Call): Promise<Promo | null | undefined> {
+  const forced = env('STORIA_OLX_PROMOTION').match(/^([\w.-]{2,80})(?::(\d{1,3}))?$/);
+  if (forced) return { code: forced[1], days: forced[2] ? Number(forced[2]) : null };
+  if (promoCache && Date.now() - promoCache.at < 6 * 3600_000) return promoCache.promo;
+  const path = `/taxonomy/v1/promotions/${SITE_URN}`;
+  let a = await olx('GET', path, null);
+  if (a.status === 401 || a.status === 403) a = await call('GET', path);
+  if (a.status !== 200) return undefined;
+  const j = obj(a.json);
+  const list = (Array.isArray(j.promotions) ? j.promotions : Array.isArray(obj(j.data).promotions) ? obj(j.data).promotions as unknown[] : []).map(obj);
+  const what = (p: Obj) => `${p.promotion_code} ${p.promotion_description || ''}`;
+  const types = (p: Obj) => (Array.isArray(p.account_type) ? p.account_type.map(String) : []);
+  const score = (p: Obj) => (/export/i.test(what(p)) ? 2 : 0)
+    + (!types(p).length || types(p).some((t) => /agen|busin|profes|compan|pro$/i.test(t)) ? 1 : 0);
+  const olxOnes = list.filter((p) => typeof p.promotion_code === 'string' && /olx/i.test(what(p))).sort((x, y) => score(y) - score(x));
+  const best = olxOnes[0];
+  let promo: Promo | null = null;
+  if (best) {
+    const days = (Array.isArray(best.duration_days) ? best.duration_days : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+    promo = { code: String(best.promotion_code), days: days.length ? (days.includes(30) ? 30 : Math.max(...days)) : null };
+  }
+  promoCache = { at: Date.now(), promo };
+  return promo;
+}
+
+const NO_SCOPE = 'Aplicația de pe OLX Group nu are încă voie să ceară exportul pe OLX (drepturile read:vas și write:vas). '
+  + 'Cere-le în Application Manager (sau de la echipa OLX Group), apoi conectează din nou contul Storia din Administrator CRM Kira.';
+
+/** Asks Storia to export the advert to OLX.ro (POST /vas/v1/advert/{uuid}). */
+async function requestOlx(job: OlxJob, call: Call, promo: Promo | null | undefined): Promise<void> {
+  const again = { uuid: job.uuid, stare: 'se_cere', cerut: true };
+  if (promo === undefined) { await olxResult(job.prop_id, again); return; }
+  if (!promo) {
+    await olxResult(job.prop_id, { uuid: job.uuid, stare: 'eroare', cerut: true,
+      detalii: 'Contul Storia nu are exportul pe OLX printre promovări (verifică pachetul Storia sau întreabă echipa OLX Group).' });
+    return;
+  }
+  const body: Record<string, unknown> = { promotion_code: promo.code };
+  if (promo.days) body.duration_days = promo.days;
+  const a = await call('POST', `/vas/v1/advert/${encodeURIComponent(job.uuid)}`, body);
+  const data = obj(a.json.data);
+  if (a.status >= 200 && a.status < 300) {
+    await olxResult(job.prop_id, { uuid: job.uuid, stare: 'cerut', cerut: true, detalii: null, zile: promo.days,
+      vas: typeof data.vas_uuid === 'string' ? data.vas_uuid : null });
+  } else if (/not ready/i.test(a.text)) {
+    // Storia has not finished the advert yet: asked again in 10 minutes.
+    await olxResult(job.prop_id, again);
+  } else if (/already/i.test(a.text)) {
+    await olxResult(job.prop_id, { uuid: job.uuid, stare: 'cerut', cerut: true, detalii: null, zile: promo.days });
+  } else if (a.status === 401 || a.status === 403) {
+    await olxResult(job.prop_id, { uuid: job.uuid, stare: 'eroare', cerut: true, detalii: NO_SCOPE });
+  } else if (a.status >= 400 && a.status < 500) {
+    await olxResult(job.prop_id, { uuid: job.uuid, stare: 'eroare', cerut: true, detalii: 'OLX nu a primit exportul: ' + reason(a) });
+  } else {
+    // 5xx or no answer: asked again in 10 minutes.
+    await olxResult(job.prop_id, again);
+  }
+}
+
+const VAS_STATE: Record<string, string> = { applied: 'activ', applied_failed: 'eroare', expired: 'expirat', removed: 'scos' };
+function vasError(e: unknown): string {
+  if (typeof e === 'string') return e.slice(0, 1500);
+  const o = obj(e);
+  return String(o.detail || o.message || o.title || (Object.keys(o).length ? JSON.stringify(o) : '')).slice(0, 1500);
+}
+
+/** An export asked for but not confirmed (the notification may not come): GET /vas/v1/advert/{uuid}. */
+async function checkOlx(job: OlxCheck, call: Call, promo: Promo | null | undefined): Promise<void> {
+  const a = await call('GET', `/vas/v1/advert/${encodeURIComponent(job.uuid)}`);
+  if (a.status >= 200 && a.status < 300) {
+    const j = obj(a.json), d = obj(j.data);
+    const list = (Array.isArray(d.vas) ? d.vas : Array.isArray(j.data) ? j.data as unknown[] : Array.isArray(j.vas) ? j.vas : []).map(obj);
+    const code = (v: Obj) => (typeof v.promotion_code === 'string' ? v.promotion_code : '');
+    const mine = list
+      .filter((v) => (job.vas ? v.uuid === job.vas : !!code(v) && (promo ? code(v) === promo.code : /olx/i.test(code(v)))))
+      .sort((x, y) => String(y.created_at || '').localeCompare(String(x.created_at || '')));
+    const v = mine[0];
+    const st = v ? VAS_STATE[String(v.status || '').toLowerCase()] : undefined;
+    if (v && st) {
+      const cf = obj(v.custom_fields);
+      const why = st === 'eroare' ? vasError(v.error) : '';
+      await olxResult(job.prop_id, {
+        uuid: job.uuid, stare: st, verificat: true, vas: typeof v.uuid === 'string' ? v.uuid : job.vas,
+        detalii: st === 'eroare' ? 'OLX nu a primit exportul' + (why ? ': ' + why : '.') : null,
+        ...(typeof cf.olx_url === 'string' && cf.olx_url ? { url: cf.olx_url } : {}),
+        ...(typeof v.expires_at === 'string' && v.expires_at ? { expira: v.expires_at } : {}),
+      });
+      return;
+    }
+  }
+  if (job.cerut && Date.now() - job.cerut > 24 * 3600_000) {
+    await olxResult(job.prop_id, { uuid: job.uuid, stare: 'eroare', verificat: true,
+      detalii: 'OLX nu a confirmat exportul în 24 de ore. Verifică anunțul în contul Storia, apoi „Trimite din nou pe OLX”.' });
+  } else {
+    await olxResult(job.prop_id, { uuid: job.uuid, verificat: true });
+  }
+}
+
 /* ---------- messages for the pages and /stare-site ---------- */
 
 /** What a database error means for the person setting things up (never repeats a key). */
 export function dbMessage(code: string): string {
   if (code === 'bad_key') return 'KIRA_PORTAL_KEY din Vercel nu se potrivește cu baza: copiaz-o din nou din Administrator CRM Kira › Setări › Storia / OLX, apoi Redeploy.';
-  if (code === 'old_sql') return 'Baza nu are încă partea de Storia: rulează crm-online.sql (versiunea 6) în Supabase › SQL Editor.';
+  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: rulează crm-online.sql (versiunea 8) în Supabase › SQL Editor.';
   if (code === 'no_db') return 'Lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY din Vercel.';
   return 'Baza de date nu răspunde acum. Încearcă din nou peste un minut.';
 }
@@ -386,7 +552,9 @@ export async function storiaStatus(): Promise<Record<string, string>> {
   if (problem) return { setari_vercel: problem };
   try {
     const c = await portalDb<{ expira: number } | null>('crm_portal_cont_get');
-    return { setari_vercel: 'corecte', cont_storia: c ? 'conectat' : 'neconectat: îl conectezi din Administrator CRM Kira › Setări › Storia / OLX' };
+    return c
+      ? { setari_vercel: 'corecte', cont_storia: 'conectat', export_olx: 'prin contul Storia, la proprietățile bifate „OLX” (aplicația are nevoie de read:vas și write:vas)' }
+      : { setari_vercel: 'corecte', cont_storia: 'neconectat: îl conectezi din Administrator CRM Kira › Setări › Storia / OLX' };
   } catch (e) {
     return { setari_vercel: 'corecte', cont_storia: dbMessage(e instanceof DbError ? e.code : '') };
   }
