@@ -19,8 +19,10 @@ import { canonicalHost } from '@/lib/site-host';
  * - OLX notifications (advert and export states, messages from buyers) arrive at /api/portaluri/storia/notificari; a
  *   message becomes a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 9).
  *
- * The site reaches the CRM's database only through the crm_portal_* functions, with KIRA_PORTAL_KEY; the OLX app's keys
- * (STORIA_*) stay in Vercel. Docs: https://developer.olxgroup.com/docs
+ * The site reaches the CRM's database only through the crm_portal_* functions, with KIRA_PORTAL_KEY, its only Storia
+ * setting in Vercel. The OLX Group app's keys (Client ID, Client secret, API key, Notification secret) are put in from
+ * Administrator CRM Kira and kept in the database (crm_portal_app_get, crm-online.sql version 10); the STORIA_* variables
+ * in Vercel are used only while the database has none. Docs: https://developer.olxgroup.com/docs
  */
 
 export const OLX_API = 'https://api.olxgroup.com';
@@ -30,16 +32,65 @@ const SITE_URN = 'urn:site:storiaro';
 const USER_AGENT = 'KiraImobiliare/1.0';
 
 const env = (k: string) => (process.env[k] || '').trim().replace(/^(["'])(.*)\1$/, '$2').trim();
-export const storiaClientId = () => env('STORIA_CLIENT_ID');
-const VARS = ['STORIA_CLIENT_ID', 'STORIA_CLIENT_SECRET', 'STORIA_API_KEY', 'STORIA_WEBHOOK_SECRET', 'KIRA_PORTAL_KEY'];
+const PORTAL_KEY = /^kp_[0-9a-f]{64}$/;
 
-/** What is missing in Vercel for Storia, or null. Never repeats a value. */
-export function storiaConfigProblem(): string | null {
-  const missing = VARS.filter((k) => !env(k));
-  if (missing.length) return 'lipsesc din Vercel: ' + missing.join(', ');
-  if (!/^kp_[0-9a-f]{64}$/.test(env('KIRA_PORTAL_KEY'))) return 'KIRA_PORTAL_KEY nu are forma kp_… (o copiezi din Administrator CRM Kira)';
+/** What is missing in Vercel itself for Storia (KIRA_PORTAL_KEY, the database's address), or null. Never repeats a value. */
+export function portalKeyProblem(): string | null {
+  const k = env('KIRA_PORTAL_KEY');
+  if (!k) return 'lipsește KIRA_PORTAL_KEY din Vercel: o copiezi din Administrator CRM Kira › Setări › Storia / OLX, apoi Redeploy';
+  if (!PORTAL_KEY.test(k)) return 'KIRA_PORTAL_KEY nu are forma kp_… (o copiezi din Administrator CRM Kira)';
   if (!crmConfig()) return 'lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY';
   return null;
+}
+
+/** Is this the KIRA_PORTAL_KEY from Vercel? (Administrator CRM Kira's "Trimite acum pe Storia"; constant-time compare.) */
+export function isPortalKey(s: string): boolean {
+  const k = env('KIRA_PORTAL_KEY');
+  return PORTAL_KEY.test(k) && PORTAL_KEY.test(s) && timingSafeEqual(Buffer.from(k), Buffer.from(s));
+}
+
+/* ---------- the OLX Group app's keys: from Administrator CRM Kira (the database), else from Vercel ---------- */
+
+export type AppKeys = { clientId: string; clientSecret: string; apiKey: string; webhookSecret: string; from: 'administrator' | 'vercel' };
+type DbKeys = { client_id?: string; client_secret?: string; api_key?: string; webhook_secret?: string } | null;
+type KeysAnswer = { keys: AppKeys | null; oldSql: boolean };
+let keysCache: (KeysAnswer & { at: number }) | null = null;
+
+function vercelKeys(): AppKeys | null {
+  const k = { clientId: env('STORIA_CLIENT_ID'), clientSecret: env('STORIA_CLIENT_SECRET'), apiKey: env('STORIA_API_KEY'), webhookSecret: env('STORIA_WEBHOOK_SECRET') };
+  return k.clientId && k.clientSecret && k.apiKey && k.webhookSecret ? { ...k, from: 'vercel' } : null;
+}
+
+/**
+ * The app's keys: put in from Administrator CRM Kira (the database, version 10), else STORIA_* from Vercel; null when
+ * neither has all four. Kept a minute (5 seconds when there are none). oldSql: the database is older than version 10.
+ * Throws DbError (KIRA_PORTAL_KEY not the database's, database down).
+ */
+export async function loadKeys(fresh = false): Promise<KeysAnswer> {
+  if (!fresh && keysCache && Date.now() - keysCache.at < (keysCache.keys ? 60_000 : 5_000)) return keysCache;
+  let keys: AppKeys | null = null, oldSql = false;
+  try {
+    const k = await portalDb<DbKeys>('crm_portal_app_get');
+    if (k && k.client_id && k.client_secret && k.api_key && k.webhook_secret) {
+      keys = { clientId: k.client_id, clientSecret: k.client_secret, apiKey: k.api_key, webhookSecret: k.webhook_secret, from: 'administrator' };
+    }
+  } catch (e) {
+    if (!(e instanceof DbError && e.code === 'old_sql')) throw e;
+    oldSql = true;
+  }
+  keysCache = { keys: keys || vercelKeys(), oldSql, at: Date.now() };
+  return keysCache;
+}
+
+/** What is missing for Storia, or null (then loadKeys() has the keys). Never repeats a value. Throws DbError. */
+export async function storiaConfigProblem(fresh = false): Promise<string | null> {
+  const p = portalKeyProblem();
+  if (p) return p;
+  const { keys, oldSql } = await loadKeys(fresh);
+  if (keys) return null;
+  return oldSql
+    ? 'baza nu are încă locul pentru cheile aplicației OLX Group: rulează crm-online.sql (versiunea 10), apoi pune cheile în Administrator CRM Kira › Setări › Storia / OLX'
+    : 'lipsesc cheile aplicației OLX Group: le pui în Administrator CRM Kira › Setări › Storia / OLX';
 }
 
 /* ---------- the CRM's database (crm_portal_* functions, with KIRA_PORTAL_KEY) ---------- */
@@ -99,20 +150,23 @@ export async function isCrmMember(jwt: string): Promise<boolean> {
 
 /* ---------- OLX: keys and tokens ---------- */
 
-function olxHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return { 'X-API-KEY': env('STORIA_API_KEY'), 'User-Agent': USER_AGENT, Accept: 'application/json', ...extra };
+function olxHeaders(k: AppKeys, extra: Record<string, string> = {}): Record<string, string> {
+  return { 'X-API-KEY': k.apiKey, 'User-Agent': USER_AGENT, Accept: 'application/json', ...extra };
 }
 
 type Tokens = { access_token: string; refresh_token: string; expires_in?: number };
-type TokenResult = { ok: true; t: Tokens } | { ok: false; status: number; error: string };
+type TokenResult = { ok: true; t: Tokens } | { ok: false; status: number; code: string; error: string };
 
-async function tokenCall(body: Record<string, string>): Promise<TokenResult> {
+/** OLX refused the app's own keys (Client ID, Client secret or API key) while refreshing: the account is kept. */
+class KeysRefused extends Error {}
+
+async function tokenCall(k: AppKeys, body: Record<string, string>): Promise<TokenResult> {
   let res: Response;
   try {
     res = await fetch(TOKEN_URL, {
       method: 'POST',
-      headers: olxHeaders({
-        Authorization: 'Basic ' + Buffer.from(`${env('STORIA_CLIENT_ID')}:${env('STORIA_CLIENT_SECRET')}`).toString('base64'),
+      headers: olxHeaders(k, {
+        Authorization: 'Basic ' + Buffer.from(`${k.clientId}:${k.clientSecret}`).toString('base64'),
         'Content-Type': 'application/x-www-form-urlencoded',
       }),
       body: new URLSearchParams(body),
@@ -120,33 +174,35 @@ async function tokenCall(body: Record<string, string>): Promise<TokenResult> {
       signal: AbortSignal.timeout(15000),
     });
   } catch {
-    return { ok: false, status: 0, error: 'OLX nu răspunde' };
+    return { ok: false, status: 0, code: '', error: 'OLX nu răspunde' };
   }
   const text = await res.text();
   let j: Record<string, unknown> = {};
   try { j = JSON.parse(text); } catch { /* not JSON */ }
   if (res.ok && typeof j.access_token === 'string' && typeof j.refresh_token === 'string') return { ok: true, t: j as unknown as Tokens };
-  return { ok: false, status: res.status, error: String(j.error_description || j.error || j.message || text || `HTTP ${res.status}`).slice(0, 300) };
+  return { ok: false, status: res.status, code: typeof j.error === 'string' ? j.error : '', error: String(j.error_description || j.error || j.message || text || `HTTP ${res.status}`).slice(0, 300) };
 }
 
 /** The code from Storia's authorization page (valid 60 seconds) for the account's tokens. */
-export const exchangeCode = (code: string) => tokenCall({ grant_type: 'authorization_code', code });
+export const exchangeCode = (k: AppKeys, code: string) => tokenCall(k, { grant_type: 'authorization_code', code });
 
 /** A valid access token, refreshed when it expires in under 5 minutes (only one worker runs at a time). */
-async function accessToken(force = false): Promise<string | null> {
+async function accessToken(k: AppKeys, force = false): Promise<string | null> {
   for (let i = 0; i < 3; i++) {
     const c = await portalDb<{ access_token: string; refresh_token: string; expira: number } | null>('crm_portal_cont_get');
     if (!c) return null;
     if (!force && c.expira - Date.now() > 5 * 60_000) return c.access_token;
-    const r = await tokenCall({ grant_type: 'refresh_token', refresh_token: c.refresh_token });
+    const r = await tokenCall(k, { grant_type: 'refresh_token', refresh_token: c.refresh_token });
     if (!r.ok) {
-      if (r.status === 400 || r.status === 401) {
-        // Refused for good (password changed, access withdrawn), unless someone refreshed it meanwhile.
+      if (r.code === 'invalid_grant' || (r.status === 400 && r.code !== 'invalid_client')) {
+        // The account's access refused for good (password changed, access withdrawn), unless someone refreshed it meanwhile.
         const now = await portalDb<{ refresh_token: string } | null>('crm_portal_cont_get');
         if (now && now.refresh_token !== c.refresh_token) { force = false; continue; }
         await portalDb('crm_portal_cont_sterge');
         return null;
       }
+      // The app's keys refused (invalid_client, a wrong API key): fixed in the Administrator, the account stays connected.
+      if (r.status === 401 || r.status === 403) throw new KeysRefused(r.error);
       throw new Error('OLX token: ' + r.error);
     }
     const saved = await portalDb<{ ok: boolean }>('crm_portal_cont_set', { p: { ...r.t, vechi: c.refresh_token } });
@@ -276,8 +332,7 @@ export const advertHash = (a: Record<string, unknown>) => createHash('sha256').u
 /* ---------- OLX notifications ---------- */
 
 /** x-signature = HMAC-SHA1 (key: the app's Notification secret) of "<object_id>,<transaction_id>", hex. */
-export function validSignature(signature: string | null, objectId: string, transactionId: string): boolean {
-  const secret = env('STORIA_WEBHOOK_SECRET');
+export function validSignature(secret: string, signature: string | null, objectId: string, transactionId: string): boolean {
   if (!secret || !signature || !/^[0-9a-f]{40}$/i.test(signature.trim())) return false;
   const expected = createHmac('sha1', secret).update(`${objectId},${transactionId}`).digest();
   return timingSafeEqual(expected, Buffer.from(signature.trim(), 'hex'));
@@ -293,11 +348,11 @@ type OlxCheck = { prop_id: string; uuid: string; vas: string | null; cerut: numb
 type Answer = { status: number; json: Record<string, unknown>; text: string };
 
 /** One call to the OLX Group API; without a token for the public lists (taxonomy). */
-async function olx(method: string, path: string, token: string | null, body?: unknown): Promise<Answer> {
+async function olx(k: AppKeys, method: string, path: string, token: string | null, body?: unknown): Promise<Answer> {
   try {
     const res = await fetch(`${OLX_API}${path}`, {
       method,
-      headers: olxHeaders({ ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }),
+      headers: olxHeaders(k, { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }),
       body: body ? JSON.stringify(body) : undefined,
       cache: 'no-store',
       signal: AbortSignal.timeout(20000),
@@ -338,8 +393,10 @@ type Work = {
 /** Does what the CRM asks of Storia and of the OLX.ro export (at most ~45 seconds; the rest at the next call). */
 export async function runStoria(): Promise<RunResult> {
   const out: RunResult = { ok: true, mesaj: '', trimise: 0, scoase: 0, olx: 0 };
-  const problem = storiaConfigProblem();
+  // The keys as they are now (the Administrator may have just changed them); notifications use the minute-old copy.
+  const problem = await storiaConfigProblem(true);
   if (problem) return { ...out, ok: false, mesaj: problem };
+  const k = (await loadKeys()).keys as AppKeys;
   const deadline = Date.now() + 45_000;
   for (let round = 0; round < 6 && Date.now() < deadline; round++) {
     const w = await portalDb<Work>('crm_portal_lucru');
@@ -350,11 +407,11 @@ export async function runStoria(): Promise<RunResult> {
     let more = false;
     try {
       if (!pune.length && !scoate.length && !cere.length && !verifica.length) return { ...out, mesaj: out.mesaj || (round ? 'gata' : 'nimic de făcut') };
-      let token = await accessToken();
+      let token = await accessToken(k);
       if (!token) return { ...out, ok: false, mesaj: 'contul Storia trebuie conectat din nou (din Administrator CRM Kira)' };
       const call = async (method: string, path: string, body?: unknown) => {
-        let a = await olx(method, path, token!, body);
-        if (expired(a)) { token = await accessToken(true); if (token) a = await olx(method, path, token, body); }
+        let a = await olx(k, method, path, token!, body);
+        if (expired(a)) { token = await accessToken(k, true); if (token) a = await olx(k, method, path, token, body); }
         return a;
       };
       for (const job of pune) {
@@ -368,7 +425,7 @@ export async function runStoria(): Promise<RunResult> {
         out.scoase++;
       }
       if (cere.length || verifica.length) {
-        const promo = await olxPromotion(call);
+        const promo = await olxPromotion(k, call);
         for (const job of cere) {
           if (Date.now() > deadline) break;
           await requestOlx(job, call, promo);
@@ -380,6 +437,9 @@ export async function runStoria(): Promise<RunResult> {
           out.olx++;
         }
       }
+    } catch (e) {
+      if (!(e instanceof KeysRefused)) throw e;
+      return { ...out, ok: false, mesaj: `OLX nu acceptă cheile aplicației (${e.message}): verifică Client ID, Client secret și API key în Administrator CRM Kira › Setări › Storia / OLX; dacă sunt corecte, conectează din nou contul Storia` };
     } finally {
       await portalDb('crm_portal_gata').catch(() => undefined);
     }
@@ -474,12 +534,12 @@ let promoCache: { at: number; promo: Promo | null } | null = null;
  * The OLX.ro export among Storia's promotions (GET /taxonomy/v1/promotions), kept 6 hours. null: Storia has none;
  * undefined: unknown now (OLX does not answer). STORIA_OLX_PROMOTION in Vercel ("code" or "code:days") overrides it.
  */
-async function olxPromotion(call: Call): Promise<Promo | null | undefined> {
+async function olxPromotion(k: AppKeys, call: Call): Promise<Promo | null | undefined> {
   const forced = env('STORIA_OLX_PROMOTION').match(/^([\w.-]{2,80})(?::(\d{1,3}))?$/);
   if (forced) return { code: forced[1], days: forced[2] ? Number(forced[2]) : null };
   if (promoCache && Date.now() - promoCache.at < 6 * 3600_000) return promoCache.promo;
   const path = `/taxonomy/v1/promotions/${SITE_URN}`;
-  let a = await olx('GET', path, null);
+  let a = await olx(k, 'GET', path, null);
   if (a.status === 401 || a.status === 403) a = await call('GET', path);
   if (a.status !== 200) return undefined;
   const j = obj(a.json);
@@ -577,21 +637,35 @@ async function checkOlx(job: OlxCheck, call: Call, promo: Promo | null | undefin
 /** What a database error means for the person setting things up (never repeats a key). */
 export function dbMessage(code: string): string {
   if (code === 'bad_key') return 'KIRA_PORTAL_KEY din Vercel nu se potrivește cu baza: copiaz-o din nou din Administrator CRM Kira › Setări › Storia / OLX, apoi Redeploy.';
-  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: rulează crm-online.sql (versiunea 9) în Supabase › SQL Editor.';
+  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: actualizeaz-o la versiunea 10 (Administrator CRM Kira › Setări › Baza online, sau crm-online.sql în Supabase › SQL Editor).';
   if (code === 'no_db') return 'Lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY din Vercel.';
   return 'Baza de date nu răspunde acum. Încearcă din nou peste un minut.';
 }
 
-/** For /stare-site: are the Vercel settings and the Storia account in order? Never shows a value. */
-export async function storiaStatus(): Promise<Record<string, string>> {
-  const problem = storiaConfigProblem();
-  if (problem) return { setari_vercel: problem };
+/**
+ * For /stare-site (and Administrator CRM Kira's "Verifică site-ul"): is Storia ready? Never shows a value. Besides the
+ * sentences, "stare" says it in codes: cheie_site ok · lipseste · gresita · nu_se_potriveste; chei_aplicatie
+ * administrator · vercel · lipsesc · sql_vechi; cont conectat · neconectat.
+ */
+export async function storiaStatus(): Promise<Record<string, unknown>> {
+  const problem = portalKeyProblem();
+  if (problem) return { setari_vercel: problem, stare: { cheie_site: env('KIRA_PORTAL_KEY') ? 'gresita' : 'lipseste' } };
   try {
+    const { keys, oldSql } = await loadKeys(true);
     const c = await portalDb<{ expira: number } | null>('crm_portal_cont_get');
-    return c
-      ? { setari_vercel: 'corecte', cont_storia: 'conectat', export_olx: 'prin contul Storia, la proprietățile bifate „OLX” (aplicația are nevoie de read:vas și write:vas); pe OLX.ro anunțul se deschide pe Storia' }
-      : { setari_vercel: 'corecte', cont_storia: 'neconectat: îl conectezi din Administrator CRM Kira › Setări › Storia / OLX' };
+    const chei = keys
+      ? (keys.from === 'administrator' ? 'puse din Administrator CRM Kira' : 'din Vercel (STORIA_*)')
+      : oldSql ? 'rulează crm-online.sql (versiunea 10), apoi pune-le în Administrator CRM Kira › Setări › Storia / OLX'
+      : 'lipsesc: le pui în Administrator CRM Kira › Setări › Storia / OLX';
+    return {
+      setari_vercel: 'corecte',
+      chei_aplicatie: chei,
+      cont_storia: c ? 'conectat' : 'neconectat: îl conectezi din Administrator CRM Kira › Setări › Storia / OLX',
+      ...(c ? { export_olx: 'prin contul Storia, la proprietățile bifate „OLX” (aplicația are nevoie de read:vas și write:vas); pe OLX.ro anunțul se deschide pe Storia' } : {}),
+      stare: { cheie_site: 'ok', chei_aplicatie: keys ? keys.from : oldSql ? 'sql_vechi' : 'lipsesc', cont: c ? 'conectat' : 'neconectat' },
+    };
   } catch (e) {
-    return { setari_vercel: 'corecte', cont_storia: dbMessage(e instanceof DbError ? e.code : '') };
+    const code = e instanceof DbError ? e.code : '';
+    return { setari_vercel: 'corecte', cont_storia: dbMessage(code), stare: { cheie_site: code === 'bad_key' ? 'nu_se_potriveste' : 'ok', baza: code || 'eroare' } };
   }
 }

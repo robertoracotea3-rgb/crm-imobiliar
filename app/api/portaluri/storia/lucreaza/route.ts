@@ -1,8 +1,9 @@
-import { DbError, dbMessage, isCrmMember, runStoria } from '@/lib/storia';
+import { DbError, dbMessage, isCrmMember, isPortalKey, runStoria } from '@/lib/storia';
 
 /*
  * Sends to Storia what the CRM changed. Called by Kira Imobiliare (phone and PC) after it uploads a property, with the
- * agent's session (only accounts the administrator added), and by Vercel Cron once a day (vercel.json).
+ * agent's session (only accounts the administrator added), by Administrator CRM Kira's "Trimite acum pe Storia" (with
+ * KIRA_PORTAL_KEY) and by Vercel Cron once a day (vercel.json).
  */
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -28,8 +29,8 @@ async function run(headers: Record<string, string>) {
 }
 
 export async function POST(request: Request) {
-  const jwt = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
-  if (!(await isCrmMember(jwt))) return Response.json({ ok: false, mesaj: 'cont fără acces la CRM' }, { status: 401, headers: CORS });
+  const auth = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  if (!isPortalKey(auth) && !(await isCrmMember(auth))) return Response.json({ ok: false, mesaj: 'cont fără acces la CRM' }, { status: 401, headers: CORS });
   return run(CORS);
 }
 

@@ -36,9 +36,9 @@ export async function GET() {
 
   let ceFaci: string;
   if (proprietati === null && !baza.startsWith('răspunde')) ceFaci = 'Verifică în Supabase că proiectul e pornit și că KIRA_CRM_URL e adresa lui.';
-  else if (cod === 'PGRST202' || cod === '42883' || cod === 'HTTP 404') ceFaci = 'Rulează crm-online.sql (versiunea 4) în Supabase › SQL Editor.';
+  else if (cod === 'PGRST202' || cod === '42883' || cod === 'HTTP 404') ceFaci = 'Actualizează baza online: Administrator CRM Kira › Setări › Baza online (sau crm-online.sql în Supabase › SQL Editor).';
   else if (cod && /^(HTTP 40[13]|PGRST30\d|42501)$/.test(cod)) ceFaci = 'Cheia nu e acceptată: pune în KIRA_CRM_PUBLISHABLE_KEY cheia publică a ACELUIAȘI proiect, apoi Redeploy.';
-  else if (proprietati === null) ceFaci = 'Baza a răspuns neașteptat; rulează din nou crm-online.sql (versiunea 4).';
+  else if (proprietati === null) ceFaci = 'Baza a răspuns neașteptat; actualizeaz-o din nou: Administrator CRM Kira › Setări › Baza online (sau crm-online.sql în Supabase › SQL Editor).';
   else if (proprietati === 0) ceFaci = 'Totul e legat, dar în baza online nu e nicio proprietate bifată „Site Kira” cu statusul Activă. Verifică în Kira Imobiliare că norișorul e verde.';
   else ceFaci = 'Totul e în regulă. O schimbare din CRM apare pe pagini în 1-2 minute.';
 
