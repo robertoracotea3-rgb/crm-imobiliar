@@ -1,4 +1,5 @@
 import { crmConfig, crmConfigProblem, crmHeaders } from '@/lib/public-properties';
+import { olxStatus } from '@/lib/olx';
 import { storiaStatus } from '@/lib/storia';
 
 /*
@@ -42,5 +43,5 @@ export async function GET() {
   else if (proprietati === 0) ceFaci = 'Totul e legat, dar în baza online nu e nicio proprietate bifată „Site Kira” cu statusul Activă. Verifică în Kira Imobiliare că norișorul e verde.';
   else ceFaci = 'Totul e în regulă. O schimbare din CRM apare pe pagini în 1-2 minute.';
 
-  return Response.json({ ok: (proprietati ?? 0) > 0, setari_vercel: 'corecte', baza, cod_eroare: cod, proprietati_pe_site: proprietati, ce_faci: ceFaci, storia: await storiaStatus() }, { headers: HEADERS });
+  return Response.json({ ok: (proprietati ?? 0) > 0, setari_vercel: 'corecte', baza, cod_eroare: cod, proprietati_pe_site: proprietati, ce_faci: ceFaci, storia: await storiaStatus(), olx: await olxStatus() }, { headers: HEADERS });
 }

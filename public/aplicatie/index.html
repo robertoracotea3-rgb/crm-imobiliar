@@ -546,12 +546,12 @@
       return +st.sv >= 4 ? 'ok' : +st.sv ? 'old' : '';
     },
     // The database version once known (0 before): 5 adds the map pin on the site and the "Adaugă anunț" requests,
-    // 6 the adverts on Storia/OLX.
+    // 6 the adverts on Storia/OLX, 7 the adverts and messages on OLX.ro directly.
     version: function(){ return A && st && st.session && st.started ? +st.sv || 0 : 0; },
-    // Asks the database again (at most once a minute) while it is not on version 6.
+    // Asks the database again (at most once a minute) while it is not on version 7.
     check: async function(){
       var s = site.state();
-      if (s === 'off' || (s === 'ok' && +st.sv >= 6) || (+st.sv && Date.now() - (+st.svAt || 0) < 60000)) return s;
+      if (s === 'off' || (s === 'ok' && +st.sv >= 7) || (+st.sv && Date.now() - (+st.svAt || 0) < 60000)) return s;
       try { await serverVersion(true); } catch(e){}
       return site.state();
     }
@@ -559,9 +559,11 @@
 
   /* Storia (and from there OLX.ro): the site publishes the active properties ticked "Storia/OLX" and keeps each
      advert's state in the online database (version 6). After a property goes up, the site is told to send it now;
-     without that it would wait for its daily round. Buyers' messages arrive as clients through the sync. */
+     without that it would wait for its daily round. Buyers' messages arrive as clients through the sync.
+     OLX.ro directly (version 7, properties ticked "OLX"): the same call also publishes there and reads new OLX messages;
+     OLX has no notifications, so while its account is connected the site is asked every few minutes (portalTick). */
   var PORTAL_WORK = (location.hostname === 'app.localhost' ? location.protocol + '//localhost' + (location.port ? ':' + location.port : '') : 'https://www.kiraimobiliare.ro') + '/api/portaluri/storia/lucreaza';
-  var pokeAt = 0, pokeT = null;
+  var pokeAt = 0, pokeT = null, olxOn = false;
   function portalReady(){ return !!(A && st && st.session && st.started && +st.sv >= 6); }
   // Only the agency's own database has its adverts on kiraimobiliare.ro (a database typed by hand never is told).
   function agencyDb(){ var d = baked() || remote; return !d || !d.url || d.url === st.url; }
@@ -578,22 +580,36 @@
     (async function(){
       try {
         await ensureToken();
-        await fetch(PORTAL_WORK, {method: 'POST', headers: {Authorization: 'Bearer ' + st.session.at}, cache: 'no-store', credentials: 'omit'});
+        var res = await fetch(PORTAL_WORK, {method: 'POST', headers: {Authorization: 'Bearer ' + st.session.at}, cache: 'no-store', credentials: 'omit'});
+        var j = null;
+        try { j = await res.json(); } catch(e){}
+        olxOn = !!(j && j.olx && j.olx.activ);
       } catch(e){}
     })();
   }
+  // Every 3 minutes while the OLX.ro account is connected (new messages), otherwise every 30 (it may get connected).
+  function portalTick(){
+    if (document.visibilityState !== 'visible' || !portalReady() || +st.sv < 7) return;
+    if (Date.now() - pokeAt > (olxOn ? 180000 : 1800000)) poke();
+  }
   var portal = {
-    // {conectat, anunturi: [{id, stare, detalii, url, trimis, actualizat}]} for these properties (empty when not ready).
+    // {conectat, anunturi: [{id, stare, detalii, url, trimis, actualizat}], olx: {conectat, anunturi}} for these
+    // properties (empty when not ready; "olx" stays empty before version 7). Storia's part is at the top level.
     status: async function(ids){
       ids = (ids || []).filter(function(x){ return typeof x === 'string' && x; }).slice(0, 500);
-      if (!ids.length || !portalReady()) return {conectat: false, anunturi: []};
+      var none = {conectat: false, anunturi: [], olx: {conectat: false, anunturi: []}};
+      if (!ids.length || !portalReady()) return none;
       var r = await (await request('POST', '/rest/v1/rpc/crm_portal_status', {json: {p_ids: ids}})).json();
-      return {conectat: !!(r && r.conectat), anunturi: r && Array.isArray(r.anunturi) ? r.anunturi : []};
+      var o = r && r.olx;
+      return {conectat: !!(r && r.conectat), anunturi: r && Array.isArray(r.anunturi) ? r.anunturi : [],
+        olx: {conectat: !!(o && o.conectat), anunturi: o && Array.isArray(o.anunturi) ? o.anunturi : []}};
     },
-    // "Trimite din nou": the advert leaves again on the next round, which starts now.
-    retry: async function(id){
+    // "Trimite din nou": the advert leaves again on the next round, which starts now. which: 'olx' for OLX.ro.
+    retry: async function(id, which){
       if (!portalReady()) throw new Error('Conectează CRM-ul la Date online.');
-      try { await request('POST', '/rest/v1/rpc/crm_portal_reincearca', {json: {p_id: String(id || '')}}); }
+      var body = {p_id: String(id || '')};
+      if (which === 'olx') body.p_portal = 'olx';
+      try { await request('POST', '/rest/v1/rpc/crm_portal_reincearca', {json: body}); }
       catch(e){ throw new Error(explain(e)); }
       pokeAt = 0; poke();
     },
@@ -924,7 +940,7 @@
       mountUI();
       if (st.session && st.started) schedule(1200);
     });
-    setInterval(function(){ if (document.visibilityState === 'visible') cycle(); }, 45000);
+    setInterval(function(){ if (document.visibilityState === 'visible'){ cycle(); portalTick(); } }, 45000);
     window.addEventListener('online', function(){ schedule(800); });
     document.addEventListener('visibilitychange', function(){
       if (document.visibilityState === 'visible' && (!st || Date.now() - (st.last || 0) > 15000)) schedule(400);
@@ -951,7 +967,7 @@
    Copia de siguranță are aceeași structură ca folderul de date din Kira Imobiliare pentru Windows. */
 (function(){
   'use strict';
-  var VERSION = '1.8.0';
+  var VERSION = '1.9.0';
   var DB_NAME = 'crm-imobiliar', DB_VER = 1;
   var COLS = {properties: 'proprietati', clients: 'clienti', activities: 'activitati', contracts: 'contracte', meta: 'setari'};
   var EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'};
@@ -1738,7 +1754,7 @@
 
   <section class="kl-panel" id="kl-p-windows" role="tabpanel" aria-labelledby="kl-t-windows" hidden>
     <h2>Pe calculator (Windows 10 și 11)</h2>
-    <p class="kl-note">Versiunea 1.8.0 · arhivă .zip de 295 KB</p>
+    <p class="kl-note">Versiunea 1.9.0 · arhivă .zip de 299 KB</p>
     <a class="kl-btn" href="descarca/Kira-Imobiliare-Windows.zip" download>Descarcă pentru Windows</a>
     <ol>
       <li>Click dreapta pe arhiva descărcată › <b>Extrage tot</b>.</li>
@@ -1749,7 +1765,7 @@
 
   <div class="kl-foot">
     <p>Actualizări: pe telefon, aplicația îți arată singură „Versiune nouă” și butonul <b>Actualizează</b>. Datele rămân pe telefon.</p>
-    <p>Aplicația de telefon: versiunea 1.8.0 · <a href="?browser=1">deschide în browser</a></p>
+    <p>Aplicația de telefon: versiunea 1.9.0 · <a href="?browser=1">deschide în browser</a></p>
   </div>
 </div>
 </div></template>
@@ -3740,7 +3756,7 @@ const SIGUR = ['Interfon','Videointerfon','Ușă antiefracție','Sistem de alarm
 const STATUS_P = ['Activă','Rezervată','Retrasă','Tranzacționată'];
 // The agency's own site shows by itself the properties ticked "Site Kira" while they are active (from the online data).
 const SITE = 'Site Kira', SITE_URL = 'https://www.kiraimobiliare.ro';
-const PLATFORME = [SITE,'Storia/OLX','Publi24/Romimo','Facebook','TikTok','YouTube','Instagram','Imobiliare.ro'];
+const PLATFORME = [SITE,'Storia/OLX','OLX','Publi24/Romimo','Facebook','TikTok','YouTube','Instagram','Imobiliare.ro'];
 const STATUS_C = ['Activ','În negociere','Retras','Tranzacționat'];
 const STATUS_LEGACY = {'Inactivă':'Retrasă', 'Inactiv':'Retras', 'Finalizat':'Tranzacționat', 'Finalizată':'Tranzacționată'};
 // "NU UITA SĂ PUBLICI PROPRIETATEA" appears by itself when a Preluare is finished successfully; it is never added by hand.
@@ -4444,7 +4460,7 @@ function promoBlock(p){
     '<label class="check"><input type="checkbox" id="pr-main" data-promo="main"' + (p.promovare ? ' checked' : '') + dis + '><span>Proprietate promovată</span></label>' +
     '<div class="lbl">Publicată pe</div><div class="chips">' +
     PLATFORME.map((x, i) => '<label class="chip"><input type="checkbox" id="pr-' + i + '" data-promo="plat" value="' + esc(x) + '"' + (pl.indexOf(x) >= 0 ? ' checked' : '') + dis + '><span>' + esc(x) + '</span></label>').join('') +
-    '</div>' + siteNote(p) + portalNote(p) + '</div></section>';
+    '</div>' + siteNote(p) + portalNote(p) + olxNote(p) + '</div></section>';
 }
 /* ---------- the agency's site (kiraimobiliare.ro) ----------
    The site reads from the online data the active properties ticked "Site Kira": title, description, price, details,
@@ -4459,10 +4475,11 @@ function siteLink(p){
 const siteState = () => { try { return (window.CRMSync && window.CRMSync.site && window.CRMSync.site.state()) || 'off'; } catch(e){ return 'off'; } };
 const siteVer = () => { try { return (window.CRMSync && window.CRMSync.site && window.CRMSync.site.version && window.CRMSync.site.version()) || 0; } catch(e){ return 0; } };
 let siteChecking = false;
-// Asks the database again while it is not on the newest version (5: the map pin and "Adaugă anunț"; 6: Storia).
+// Asks the database again while it is not on the newest version (5: the map pin and "Adaugă anunț"; 6: Storia;
+// 7: OLX.ro directly).
 function siteCheck(){
   const before = siteState(), v0 = siteVer();
-  if (siteChecking || before === 'off' || (before === 'ok' && v0 >= 6)) return;
+  if (siteChecking || before === 'off' || (before === 'ok' && v0 >= 7)) return;
   siteChecking = true;
   window.CRMSync.site.check().then(s => { siteChecking = false; if (s !== before || siteVer() !== v0) siteNoteRefresh(); }, () => { siteChecking = false; });
 }
@@ -4499,12 +4516,13 @@ const PORTAL = 'Storia/OLX';
 const PORTAL_FAM = {'Apartament':'ap', 'Garsonieră':'ap', 'Casă / Vilă':'casa', 'Teren':'teren', 'Spațiu comercial':'sp', 'Birou':'sp', 'Spațiu industrial':'sp'};
 // States in which an advert is (or is about to be) on Storia.
 const PORTAL_ON = ['activ', 'in_moderare', 'se_publica', 'se_actualizeaza', 'neplatit', 'expirat', 'blocat', 'se_scoate'];
-// What Storia needs that the property lacks: the same list the site checks (lib/storia.ts). Empty when ready.
-function portalMissing(p){
-  const fam = PORTAL_FAM[p.tip || ''];
+// What Storia (minDesc 50) or OLX.ro (80) needs that the property lacks: the same list the site checks
+// (lib/storia.ts, lib/olx.ts). Empty when ready; null for a type that is not published automatically.
+function portalMissing(p, minDesc){
+  const fam = PORTAL_FAM[p.tip || ''], min = minDesc || 50;
   if (!fam) return null;
   const pos = v => typeof v === 'number' && isFinite(v) && v > 0, m = [];
-  if (String(p.descriere || '').trim().length < 50) m.push('descrierea anunțului (cel puțin 50 de caractere)');
+  if (String(p.descriere || '').trim().length < min) m.push('descrierea anunțului (cel puțin ' + min + ' de caractere)');
   if (!pos(p.pret)) m.push('prețul');
   if (typeof p.lat !== 'number' || typeof p.lng !== 'number') m.push('pinul pe hartă (la Locație)');
   if (!(Array.isArray(p.poze) && p.poze.length)) m.push('cel puțin o poză');
@@ -4515,23 +4533,28 @@ function portalMissing(p){
   return m;
 }
 const portalApi = () => { try { return (window.CRMSync && window.CRMSync.portal) || null; } catch(e){ return null; } };
-// Last answer from the online database, per property: {at, conectat, a: the advert or null, err}.
+// Last answer from the online database, per property: {at, conectat, a: the Storia advert or null, err,
+// o: {conectat, a} for OLX.ro directly}.
 const portalSt = {};
 let portalBusy = false, portalTimer = null, portalPoll = {id: '', n: 0};
+// Is the site still working on this advert (not sent yet, or the portal has not answered)?
+const portalWorking = a => !a || !a.trimis || ['nou', 'incomplet', 'se_publica', 'se_actualizeaza', 'se_scoate', 'scos'].indexOf(a.stare) >= 0;
 function portalLoad(id){
   const api = portalApi();
   if (!api || portalBusy) return;
   portalBusy = true;
   api.status([id]).then(r => {
     portalBusy = false;
-    portalSt[id] = {at: Date.now(), conectat: !!(r && r.conectat), a: ((r && r.anunturi) || []).find(x => x && x.id === id) || null};
+    const mine = list => (list || []).find(x => x && x.id === id) || null, o = (r && r.olx) || {};
+    portalSt[id] = {at: Date.now(), conectat: !!(r && r.conectat), a: mine(r && r.anunturi), o: {conectat: !!o.conectat, a: mine(o.anunturi)}};
     portalNoteRefresh();
   }, () => { portalBusy = false; portalSt[id] = {at: Date.now(), err: true}; portalNoteRefresh(); });
 }
 function portalNoteRefresh(){
-  const d = S.drawer, el = $('#portal-note', drawer);
+  const d = S.drawer, el = $('#portal-note', drawer), eo = $('#olx-note', drawer);
   const r = d && d.mode === 'view' && d.kind === 'prop' ? findRec('prop', d.id) : null;
   if (el && r) el.outerHTML = portalNote(r);
+  if (eo && r) eo.outerHTML = olxNote(r);
 }
 function portalNote(p){
   const none = '<div id="portal-note" hidden></div>';
@@ -4543,12 +4566,12 @@ function portalNote(p){
   if (!sv){ siteCheck(); return none; }
   if (sv < 6){ siteCheck(); return ticked ? box('warn', 'pentru publicarea automată rulează scriptul <b>crm-online.sql</b> (versiunea 6) în Supabase › SQL Editor.') : none; }
   const c = portalSt[p.id], a = c && c.a, on = !!(a && PORTAL_ON.indexOf(a.stare) >= 0);
-  const busy = !a || !a.trimis || ['nou', 'incomplet', 'se_publica', 'se_actualizeaza', 'se_scoate', 'scos'].indexOf(a.stare) >= 0;
+  const busy = portalWorking(a) || olxWorking(p);
   if (!c || Date.now() - c.at > (busy ? 15000 : 60000)) portalLoad(p.id);
-  // While Storia is still working on it, look again every few seconds (for about ten minutes).
-  clearTimeout(portalTimer);
+  // While Storia (or OLX.ro) is still working on it, look again every few seconds (for about ten minutes).
+  clearTimeout(portalTimer); portalTimer = null;
   if (portalPoll.id !== p.id) portalPoll = {id: p.id, n: 0};
-  if (c && busy && (ticked || on) && portalPoll.n < 40) portalTimer = setTimeout(() => { portalPoll.n++; portalNoteRefresh(); }, 16000);
+  if (c && portalWorking(a) && (ticked || on) && portalPoll.n < 40) portalTimer = setTimeout(() => { portalPoll.n++; portalNoteRefresh(); }, 16000);
   const leaving = 'anunțul se scoate de pe Storia în câteva minute.';
   if (!ticked) return on ? box('warn', 'ai debifat-o, așa că ' + leaving) : none;
   if (p.exemplu) return box('warn', 'exemplele nu se publică pe Storia.');
@@ -4574,6 +4597,56 @@ function portalNote(p){
     case 'eroare': return box('bad', 'Storia nu a primit anunțul.' + det, retry);
   }
   return box('good', 'anunțul pleacă pe Storia în câteva minute (după ce proprietatea ajunge online).' + msgs);
+}
+/* ---------- OLX.ro directly ----------
+   Properties ticked "OLX" and active are published by the site on OLX.ro from the agency's own OLX account (OLX Partner
+   API, script version 7). It is separate from "Storia/OLX", which reaches OLX.ro through Storia: with both ticked the
+   property can show twice on OLX.ro. Messages written on OLX come back as clients with a "Cerere nouă". */
+const OLX = 'OLX';
+const olxWorking = p => {
+  const c = portalSt[p.id], o = c && c.o;
+  return !!(o && o.a && portalWorking(o.a)) || (platformsOf(p).indexOf(OLX) >= 0 && !!o && !o.a);
+};
+function olxNote(p){
+  const none = '<div id="olx-note" hidden></div>';
+  const box = (cls, html, btns) => '<div id="olx-note" class="note-box ' + cls + '"><b>OLX.ro:</b> ' + html +
+    (btns ? '<div class="d-actions" style="margin-top:8px">' + btns + '</div>' : '') + '</div>';
+  const pl = platformsOf(p), ticked = pl.indexOf(OLX) >= 0;
+  const st = siteState(), sv = siteVer();
+  if (st === 'off' || !portalApi()) return ticked ? box('warn', 'pe OLX.ro ajung proprietățile din <b>Date online</b>. Conectează CRM-ul (butonul Online) ca anunțul să plece singur.') : none;
+  if (!sv){ siteCheck(); return none; }
+  if (sv < 7){ siteCheck(); return ticked ? box('warn', 'pentru publicarea directă pe OLX.ro rulează scriptul <b>crm-online.sql</b> (versiunea 7) în Supabase › SQL Editor.') : none; }
+  const c = portalSt[p.id], o = c && c.o, a = o && o.a, on = !!(a && PORTAL_ON.indexOf(a.stare) >= 0);
+  if (!portalTimer && c && o && portalWorking(a) && (ticked || on) && portalPoll.id === p.id && portalPoll.n < 40) {
+    portalTimer = setTimeout(() => { portalPoll.n++; portalNoteRefresh(); }, 16000);
+  }
+  const leaving = 'anunțul se scoate de pe OLX.ro în câteva minute.';
+  if (!ticked) return on ? box('warn', 'ai debifat-o, așa că ' + leaving) : none;
+  const dup = pl.indexOf(PORTAL) >= 0 ? '<br>E bifată și „Storia/OLX”: Storia trimite anunțul tot pe OLX.ro, deci poate apărea acolo de două ori. Păstrează o singură bifă.' : '';
+  if (p.exemplu) return box('warn', 'exemplele nu se publică pe OLX.ro.');
+  if (p.status && p.status !== 'Activă') return box('warn', 'e bifată, dar se publică doar cât timp e Activă' + (on ? '; ' + leaving : '.'));
+  const miss = portalMissing(p, 80);
+  if (!miss) return box('warn', 'tipul „' + esc(p.tip || 'fără tip') + '” nu se publică automat pe OLX.ro.');
+  if (miss.length) return box('warn', 'ca anunțul să plece pe OLX.ro, mai completează: ' + miss.map(esc).join(', ') + '.' + (on ? ' Până atunci, pe OLX rămâne anunțul de acum.' : '') + dup);
+  if (!c) return '<p id="olx-note" class="hint-line" style="margin:0">OLX.ro: se verifică starea anunțului…</p>';
+  if (c.err || !o) return box('warn', 'nu am putut afla acum starea anunțului. Se încearcă din nou când redeschizi proprietatea.');
+  if (!o.conectat) return box('warn', 'contul OLX al agenției nu e conectat încă. Administratorul îl conectează din <b>Administrator CRM Kira › Setări › OLX.ro</b>; apoi anunțul pleacă singur.' + dup);
+  const det = a && a.detalii ? '<br>' + esc(a.detalii) : '';
+  const retry = '<button type="button" class="btn sm" data-act="olx-retry">Trimite din nou</button>';
+  const open = a && a.url ? '<button type="button" class="btn sm" data-act="open-olx">Deschide pe OLX</button><button type="button" class="btn sm ghost" data-copy="' + esc(a.url) + '" data-copy-msg="Linkul de pe OLX a fost copiat">Copiază linkul</button>' : '';
+  const msgs = ' Mesajele primite pe OLX intră în CRM ca clienți, cu o „Cerere nouă”; răspunsul îl dai din contul OLX al agenției.';
+  switch (a && a.trimis ? a.stare : ''){
+    case 'activ': return box('good', 'publicată pe <b>OLX.ro</b> din contul agenției. Ce schimbi aici ajunge singur și pe OLX.' + msgs + dup, open);
+    case 'se_publica': case 'se_actualizeaza': return box('good', 'OLX a primit anunțul și îl verifică (de obicei câteva minute).' + msgs + dup, open);
+    case 'in_moderare': return box('warn', 'OLX așteaptă confirmarea anunțului.' + det + dup, open);
+    case 'neplatit': return box('warn', 'OLX cere plată pentru anunț.' + det + dup, retry + open);
+    case 'expirat': return box('warn', 'anunțul a expirat pe OLX.ro.' + det + dup, retry + open);
+    case 'blocat': return box('bad', 'OLX a oprit anunțul.' + det + dup, retry + open);
+    case 'refuzat': return box('bad', 'OLX a respins anunțul la verificare. Corectează proprietatea; după salvare pleacă din nou.' + det + dup, retry);
+    case 'eroare': return box('bad', 'OLX nu a primit anunțul.' + det + dup, retry);
+    case 'incomplet': return box('warn', 'anunțul nu a plecat încă pe OLX.' + det + dup);
+  }
+  return box('good', 'anunțul pleacă pe OLX.ro în câteva minute (după ce proprietatea ajunge online).' + msgs + dup);
 }
 function copyBlock(p){
   const num = v => (v == null || v === '') ? '' : String(v).replace('.', ',');
@@ -6754,6 +6827,21 @@ function act(name, el){
       el.disabled = true;
       api.retry(id).then(() => {
         toast('Anunțul se trimite din nou pe Storia.');
+        delete portalSt[id]; portalPoll = {id: id, n: 0}; portalNoteRefresh();
+      }, e => { el.disabled = false; toast((e && e.message) || 'Nu s-a putut trimite din nou. Încearcă mai târziu.'); });
+      break;
+    }
+    case 'open-olx': {
+      const c = S.drawer && S.drawer.kind === 'prop' ? portalSt[S.drawer.id] : null, u = c && c.o && c.o.a && c.o.a.url;
+      if (u && /^https:\/\//.test(u) && !ctOpenUrl(u)) toast('Nu s-a putut deschide. Copiază linkul și deschide-l în browser.');
+      break;
+    }
+    case 'olx-retry': {
+      const id = S.drawer && S.drawer.kind === 'prop' ? S.drawer.id : '', api = portalApi();
+      if (!id || !api) break;
+      el.disabled = true;
+      api.retry(id, 'olx').then(() => {
+        toast('Anunțul se trimite din nou pe OLX.ro.');
         delete portalSt[id]; portalPoll = {id: id, n: 0}; portalNoteRefresh();
       }, e => { el.disabled = false; toast((e && e.message) || 'Nu s-a putut trimite din nou. Încearcă mai târziu.'); });
       break;
