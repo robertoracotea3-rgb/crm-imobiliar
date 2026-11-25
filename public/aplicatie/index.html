@@ -538,6 +538,48 @@
     }
   };
 
+  /* ---------- offers on WhatsApp (version 11) ----------
+     A link with the properties ticked for a client (kiraimobiliare.ro/oferta/<token>); the database counts its openings. */
+  var OFFER_OLD = 'Baza online trebuie actualizată la versiunea 11 (Administrator CRM Kira › Setări › Baza online) pentru linkul ofertei.';
+  async function offerCall(fn, args){
+    if (!A) throw new Error(MSG.relogin);
+    if (!st) await load();
+    if (!st.session || !st.started) throw new Error('CRM-ul nu e conectat la datele online (butonul Online).');
+    if ((await serverVersion(+st.sv < 11)) < 11) throw new Error(OFFER_OLD);
+    try { return await (await request('POST', '/rest/v1/rpc/' + fn, {json: args})).json(); }
+    catch(e){
+      var msg = String((e && e.message) || '');
+      if (e && e.code === 'relogin'){ st.session = null; await save(); setStatus('relogin'); }
+      if (e && e.code === 'not_setup'){ st.sv = 0; st.svAt = 0; }
+      var x = new Error(/not_synced/.test(msg) ? 'Una dintre proprietăți nu a ajuns încă la datele online sau nu mai e disponibilă. Mai încearcă după ce se termină sincronizarea.' : e && e.code === 'not_setup' ? OFFER_OLD : explain(e));
+      x.code = /not_synced/.test(msg) ? 'not_synced' : (e && e.code) || 'http';
+      throw x;
+    }
+  }
+  var offers = {
+    // Without asking the database: 'off' (not connected), 'old', 'ok', or '' (not known yet).
+    state: function(){ return !A || !st || !st.session || !st.started ? 'off' : +st.sv >= 11 ? 'ok' : +st.sv ? 'old' : ''; },
+    // Asks the database's version again (at most every five minutes) while it is older.
+    check: async function(){
+      if (offers.state() === 'off' || +st.sv >= 11 || (+st.sv && Date.now() - (+st.svAt || 0) < 300000)) return;
+      try { await serverVersion(true); } catch(e){}
+    },
+    create: async function(client, props){
+      var r;
+      try { r = await offerCall('crm_oferta_noua', {p: {client: client, props: props}}); }
+      catch(e){
+        // A property just added: sent first, then once more.
+        if (e.code !== 'not_synced') throw e;
+        await cycle();
+        r = await offerCall('crm_oferta_noua', {p: {client: client, props: props}});
+      }
+      if (!r || !/^[0-9a-f]{24}$/.test(r.token || '')) throw new Error('Linkul ofertei nu s-a putut face. Mai încearcă o dată.');
+      return {token: r.token, expira: +r.expira || 0};
+    },
+    list: async function(){ var r = await offerCall('crm_oferte', {p_client: null}); return Array.isArray(r) ? r : []; },
+    stop: async function(token, off){ return !!(await offerCall('crm_oferta_opreste', {p_token: token, p_oprita: off !== false})); }
+  };
+
   // The agency's site (kiraimobiliare.ro) shows the properties ticked "Site Kira": the database needs version 4 for it.
   var site = {
     // Without asking the database: 'off' (not connected), 'old', 'ok', or '' (not known yet).
@@ -950,6 +992,7 @@
     who: function(){ return (st && st.started && st.email) || ''; },
     sign: sign,
     site: site,
+    offers: offers,
     portal: portal,
     _test: {cycle: cycle, state: function(){ return st; }, status: function(){ return status; }, hash: hash, canon: canon,
       patch: function(o){ return withLock(async function(){ await load(); Object.assign(st, o); await save(); }); }}
@@ -962,7 +1005,7 @@
    Copia de siguranță are aceeași structură ca folderul de date din Kira Imobiliare pentru Windows. */
 (function(){
   'use strict';
-  var VERSION = '1.11.0';
+  var VERSION = '1.12.0';
   var DB_NAME = 'crm-imobiliar', DB_VER = 1;
   var COLS = {properties: 'proprietati', clients: 'clienti', activities: 'activitati', contracts: 'contracte', meta: 'setari'};
   var EXT = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif'};
@@ -1749,7 +1792,7 @@
 
   <section class="kl-panel" id="kl-p-windows" role="tabpanel" aria-labelledby="kl-t-windows" hidden>
     <h2>Pe calculator (Windows 10 și 11)</h2>
-    <p class="kl-note">Versiunea 1.11.0 · arhivă .zip de 305 KB</p>
+    <p class="kl-note">Versiunea 1.12.0 · arhivă .zip de 323 KB</p>
     <a class="kl-btn" href="descarca/Kira-Imobiliare-Windows.zip" download>Descarcă pentru Windows</a>
     <ol>
       <li>Click dreapta pe arhiva descărcată › <b>Extrage tot</b>.</li>
@@ -1761,7 +1804,7 @@
   <div class="kl-foot">
     <p>Actualizări: pe telefon, aplicația îți arată singură „Versiune nouă” și butonul <b>Actualizează</b>. Datele rămân pe telefon.</p>
     <p>Dezinstalare pe calculator: Setări › Aplicații › Kira Imobiliare (sau meniul Start › Kira Imobiliare › Dezinstalare). Datele rămân în folderul lor.</p>
-    <p>Aplicația de telefon: versiunea 1.11.0 · <a href="?browser=1">deschide în browser</a></p>
+    <p>Aplicația de telefon: versiunea 1.12.0 · <a href="?browser=1">deschide în browser</a></p>
   </div>
 </div>
 </div></template>
@@ -1952,7 +1995,7 @@ input[type=range]{accent-color:var(--accent)}
 .s-warn{background:var(--warn-soft);color:var(--warn)}
 .s-low{background:var(--surface-2);color:var(--muted)}
 .crit{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
-.ck{font-size:11.5px;padding:1px 7px;border-radius:999px;white-space:nowrap;font-weight:500}
+.ck{font-size:11.5px;padding:1px 7px;border-radius:999px;line-height:1.45;font-weight:500}
 .ck.ok{background:var(--good-soft);color:var(--good)}
 .ck.part{background:var(--warn-soft);color:var(--warn)}
 .ck.no{background:var(--bad-soft);color:var(--bad)}
@@ -2191,6 +2234,17 @@ img.broken{visibility:hidden}
 .kind:hover{border-color:var(--accent);box-shadow:var(--shadow)}
 .kind b{font-family:var(--font-display);font-size:15.5px}
 .kind span{color:var(--muted);font-size:13px}
+.mpick{flex:none;display:grid;place-items:center;width:34px;height:34px;margin:-2px -6px -2px -6px;cursor:pointer;border-radius:8px}
+.mpick:hover{background:var(--accent-soft)}
+.mpick input{width:18px;height:18px;margin:0;accent-color:var(--accent);cursor:pointer}
+.ofbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--line)}
+.block .ofbar{padding:10px 4px 2px}
+.ofbadge{margin-top:6px}
+.ofitem{padding:10px 4px;border-top:1px solid var(--line)}
+.ofitem:first-child{border-top:0}
+.ofitem .pill{white-space:normal}
+.oflist{margin:6px 0 8px;padding-left:18px;font-size:13.5px;line-height:1.6}
+.fsec[hidden]{display:none}
 .fwrap{display:contents}
 .finfo{grid-column:1/-1;margin:0;color:var(--muted);font-size:13px;background:var(--surface-2);border-radius:8px;padding:8px 12px}
 .sendrow{display:flex;flex-wrap:wrap;gap:8px}
@@ -3734,6 +3788,168 @@ window.KiraContracts = {
 };
 })();
 </script>
+<script>/* Date and time fields the Romanian way, whatever the language of Windows, of the phone or of the browser:
+   the date as zz.ll.aaaa with a calendar whose week starts on Monday, the hour on 24 hours.
+   RoDate.date(id, name, iso) / RoDate.time(id, name, 'HH:MM') give the HTML; the value (YYYY-MM-DD, HH:MM or '') is in
+   a hidden input with that id and name. The label goes to id + '-t' (date) or id + '-h' (time). */
+window.RoDate = (function(){
+'use strict';
+var LUNI = ['ianuarie','februarie','martie','aprilie','mai','iunie','iulie','august','septembrie','octombrie','noiembrie','decembrie'];
+var ZILE = ['Lu','Ma','Mi','Jo','Vi','Sâ','Du'], ZILE_L = ['luni','marți','miercuri','joi','vineri','sâmbătă','duminică'];
+var CSS = '.dpick{display:flex;align-items:center;position:relative}.dpick .dp-t{flex:1;padding-right:40px}.dpick .dp-t.bad{border-color:var(--bad,#b3261e)}' +
+  '.dp-b{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:36px;height:34px;border:0;background:none;color:var(--muted);cursor:pointer;display:grid;place-items:center;border-radius:7px;padding:0}.dp-b:hover{color:var(--accent)}' +
+  '.dp-b svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}' +
+  '.tpick{display:flex;align-items:center;gap:6px}.tpick select{flex:1 1 0;min-width:0}.tpick>span{color:var(--muted);font-weight:700}' +
+  '#dp-pop{position:fixed;z-index:95;width:296px;max-width:calc(100vw - 16px);background:var(--surface);color:var(--ink);border:1px solid var(--line-strong,var(--line));border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);padding:10px;user-select:none;-webkit-user-select:none;touch-action:manipulation}' +
+  '#dp-pop[hidden]{display:none}#dp-pop .dp-h{display:flex;align-items:center;gap:2px;margin-bottom:6px}#dp-pop .dp-h b{flex:1;text-align:center;font-size:14.5px}' +
+  '#dp-pop button{border:0;background:none;color:inherit;font:inherit;cursor:pointer;border-radius:8px;min-height:36px;padding:0}' +
+  '#dp-pop .dp-h button{width:34px;font-size:18px;line-height:1;color:var(--muted)}#dp-pop button:hover{background:var(--surface-2)}' +
+  '#dp-pop .dp-g{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}#dp-pop .dp-g i{font-style:normal;font-size:12px;font-weight:700;color:var(--muted);text-align:center;padding:4px 0}' +
+  '#dp-pop .dp-d{font-variant-numeric:tabular-nums;font-size:14px}#dp-pop .dp-d.out{color:var(--muted);opacity:.55}#dp-pop .dp-d.we{color:var(--warn,var(--muted))}#dp-pop .dp-d.azi{box-shadow:inset 0 0 0 1.5px var(--accent);font-weight:700}' +
+  '#dp-pop .dp-d.cur{outline:2px solid var(--accent);outline-offset:-2px}#dp-pop .dp-d.sel{background:var(--accent);color:var(--accent-ink,#fff);font-weight:700;opacity:1}' +
+  '#dp-pop .dp-f{display:flex;gap:4px;margin-top:6px;border-top:1px solid var(--line);padding-top:6px}#dp-pop .dp-f button{flex:1;font-size:13px;font-weight:600;color:var(--accent)}#dp-pop .dp-f .x{color:var(--muted)}';
+var z = function(n){ return (n < 10 ? '0' : '') + n; };
+var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+var isoOf = function(d){ return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()); };
+var dateOf = function(iso){ var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+var ro = function(iso){ var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); return m ? m[3] + '.' + m[2] + '.' + m[1] : ''; };
+/* "5.12.2026", "05/12/26", "5 12", "05122026" -> ISO; '' for nothing; null when it is not a date. */
+function parse(s){
+  s = String(s || '').trim();
+  if (!s) return '';
+  var m = /^(\d{1,2})[.\/\-\s]+(\d{1,2})(?:[.\/\-\s]+(\d{4}|\d{2}))?[.\s]*$/.exec(s) || /^(\d{2})(\d{2})(\d{4})$/.exec(s);
+  if (!m){ m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s); if (!m) return null; m = [0, m[3], m[2], m[1]]; }
+  var y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : new Date().getFullYear(), d = new Date(y, +m[2] - 1, +m[1]);
+  return d.getFullYear() === y && d.getMonth() === +m[2] - 1 && d.getDate() === +m[1] && y > 1900 && y < 2200 ? isoOf(d) : null;
+}
+var ICO = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 2.8V7M16 2.8V7"/></svg>';
+function date(id, name, iso){
+  iso = /^\d{4}-\d{2}-\d{2}/.test(iso || '') ? String(iso).slice(0, 10) : '';
+  return '<div class="dpick"><input type="text" class="dp-t" id="' + id + '-t" value="' + ro(iso) + '" placeholder="zz.ll.aaaa" inputmode="numeric" maxlength="10" autocomplete="off" spellcheck="false">' +
+    '<button type="button" class="dp-b" aria-label="Deschide calendarul" tabindex="-1">' + ICO + '</button><input type="hidden" id="' + id + '"' + (name ? ' name="' + name + '"' : '') + ' value="' + iso + '"></div>';
+}
+function time(id, name, val){
+  var m = /^(\d{1,2}):(\d{2})/.exec(val || ''), h = m ? z(+m[1]) : '', mi = m ? m[2] : '', H = '<option value="">—</option>', M = '', mins = [], i;
+  for (i = 0; i < 24; i++) H += '<option' + (z(i) === h ? ' selected' : '') + '>' + z(i) + '</option>';
+  for (i = 0; i < 60; i += 5) mins.push(z(i));
+  if (mi && mins.indexOf(mi) < 0){ mins.push(mi); mins.sort(); }
+  M = mins.map(function(x){ return '<option' + (x === (mi || '00') ? ' selected' : '') + '>' + x + '</option>'; }).join('');
+  return '<div class="tpick"><select id="' + id + '-h" data-tp="h" aria-label="Ora (0–23)">' + H + '</select><span>:</span><select id="' + id + '-m" data-tp="m" aria-label="Minutul">' + M + '</select>' +
+    '<input type="hidden" id="' + id + '"' + (name ? ' name="' + name + '"' : '') + ' value="' + (m ? h + ':' + mi : '') + '"></div>';
+}
+var pop = null, box = null, shown = null, cur = null;
+var hid = function(b){ return b.querySelector('input[type="hidden"]'); }, txt = function(b){ return b.querySelector('.dp-t'); };
+function set(b, iso, quiet){
+  var h = hid(b), was = h.value;
+  h.value = iso; txt(b).classList.remove('bad'); txt(b).value = ro(iso);
+  if (was !== iso && !quiet){ h.dispatchEvent(new Event('input', {bubbles: true})); h.dispatchEvent(new Event('change', {bubbles: true})); }
+}
+/* The text follows a value set from code. */
+function refresh(root){
+  Array.prototype.forEach.call((root || document).querySelectorAll('.dpick'), function(b){ var t = txt(b); if (t !== document.activeElement) t.value = ro(hid(b).value); });
+  Array.prototype.forEach.call((root || document).querySelectorAll('.tpick'), function(b){
+    var m = /^(\d{1,2}):(\d{2})/.exec(hid(b).value), s = b.querySelectorAll('select');
+    s[0].value = m ? z(+m[1]) : '';
+    if (m && !Array.prototype.some.call(s[1].options, function(o){ return o.value === m[2]; })) s[1].add(new Option(m[2]));
+    s[1].value = m ? m[2] : '00';
+  });
+}
+function draw(){
+  var sel = hid(box).value, azi = isoOf(new Date()), y = shown.getFullYear(), mo = shown.getMonth();
+  var first = new Date(y, mo, 1), off = (first.getDay() + 6) % 7, h = '';
+  for (var i = 0; i < 42; i++){
+    var d = new Date(y, mo, 1 - off + i), iso = isoOf(d), wd = i % 7;
+    if (i === 35 && d.getMonth() !== mo) break;
+    h += '<button type="button" tabindex="-1" class="dp-d' + (d.getMonth() !== mo ? ' out' : '') + (wd > 4 ? ' we' : '') + (iso === azi ? ' azi' : '') + (iso === sel ? ' sel' : '') + (cur && iso === isoOf(cur) ? ' cur' : '') +
+      '" data-d="' + iso + '" aria-label="' + ZILE_L[wd] + ', ' + d.getDate() + ' ' + LUNI[d.getMonth()] + ' ' + d.getFullYear() + '">' + d.getDate() + '</button>';
+  }
+  pop.innerHTML = '<div class="dp-h"><button type="button" tabindex="-1" data-m="-12" aria-label="Anul trecut" title="Anul trecut">«</button><button type="button" tabindex="-1" data-m="-1" aria-label="Luna trecută" title="Luna trecută">‹</button><b aria-live="polite">' + LUNI[mo] + ' ' + y +
+    '</b><button type="button" tabindex="-1" data-m="1" aria-label="Luna următoare" title="Luna următoare">›</button><button type="button" tabindex="-1" data-m="12" aria-label="Anul următor" title="Anul următor">»</button></div>' +
+    '<div class="dp-g">' + ZILE.map(function(x){ return '<i>' + x + '</i>'; }).join('') + h + '</div>' +
+    '<div class="dp-f"><button type="button" tabindex="-1" data-q="0">Azi</button><button type="button" tabindex="-1" data-q="1">Mâine</button><button type="button" tabindex="-1" class="x" data-q="x">Șterge</button></div>';
+}
+function place(){
+  var r = box.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  if (r.bottom < 0 || r.top > innerHeight){ close(); return; }
+  var top = r.bottom + 4 + h <= innerHeight - 4 ? r.bottom + 4 : r.top - 4 - h >= 4 ? r.top - 4 - h : Math.max(4, innerHeight - h - 4);
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; pop.style.top = top + 'px';
+}
+function open(b){
+  if (box === b && pop && !pop.hidden) return;
+  if (!pop){
+    pop = document.createElement('div'); pop.id = 'dp-pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Calendar');
+    /* The field keeps the focus while the calendar is used. */
+    pop.addEventListener('mousedown', function(e){ e.preventDefault(); });
+    document.body.appendChild(pop);
+  }
+  box = b; cur = null; shown = dateOf(hid(b).value) || new Date();
+  pop.hidden = false; draw(); place();
+}
+function close(){ if (pop) pop.hidden = true; box = null; cur = null; }
+var isOpen = function(){ return !!(box && pop && !pop.hidden); };
+function typed(t, leave){
+  var b = t.closest('.dpick'), iso = parse(t.value);
+  if (iso == null){ if (leave) t.classList.add('bad'); return; }
+  if (!leave && t.value.trim().length < 8 && t.value.trim()) return;
+  if (leave) set(b, iso);
+  else { var h = hid(b); t.classList.remove('bad'); if (h.value !== iso){ h.value = iso; h.dispatchEvent(new Event('change', {bubbles: true})); if (isOpen() && box === b){ shown = dateOf(iso) || shown; draw(); } } }
+}
+function init(){
+  var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+  document.addEventListener('click', function(e){
+    var el = e.target;
+    if (pop && pop.contains(el)){
+      e.preventDefault(); e.stopPropagation();
+      var b = el.closest('button'); if (!b || !box) return;
+      if (b.dataset.m){ shown = new Date(shown.getFullYear(), shown.getMonth() + +b.dataset.m, 1); draw(); place(); return; }
+      var iso = b.dataset.d || '';
+      if (b.dataset.q && b.dataset.q !== 'x'){ var d = new Date(); d.setDate(d.getDate() + +b.dataset.q); iso = isoOf(d); }
+      var bx = box; close(); set(bx, iso);
+      return;
+    }
+    var p = el.closest && el.closest('.dpick');
+    if (p && el.closest('.dp-b')){ e.preventDefault(); if (isOpen() && box === p) close(); else { open(p); if (!matchMedia('(pointer:coarse)').matches) txt(p).focus(); } return; }
+    if (p && el.classList.contains('dp-t')){ open(p); return; }
+    if (isOpen()) close();
+  }, true);
+  document.addEventListener('focusin', function(e){
+    var t = e.target;
+    if (t.classList && t.classList.contains('dp-t')){ if (matchMedia('(pointer:coarse)').matches) t.readOnly = true; }
+    if (isOpen() && !pop.contains(t) && t.closest && t.closest('.dpick') !== box) close();
+  });
+  document.addEventListener('input', function(e){ if (e.target.classList && e.target.classList.contains('dp-t')) typed(e.target, false); }, true);
+  document.addEventListener('focusout', function(e){ if (e.target.classList && e.target.classList.contains('dp-t')) typed(e.target, true); });
+  document.addEventListener('change', function(e){
+    var k = e.target.dataset && e.target.dataset.tp;
+    if (!k) return;
+    var b = e.target.closest('.tpick'), s = b.querySelectorAll('select'), h = hid(b);
+    h.value = s[0].value ? s[0].value + ':' + s[1].value : '';
+    if (!s[0].value) s[1].value = '00';
+  }, true);
+  document.addEventListener('keydown', function(e){
+    var t = e.target, onT = t.classList && t.classList.contains('dp-t');
+    if (isOpen() && e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (!onT) return;
+    var b = t.closest('.dpick');
+    if (!isOpen()){ if (e.key === 'ArrowDown' || (e.key === 'ArrowUp')){ e.preventDefault(); open(b); } return; }
+    var step = {ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7}[e.key];
+    if (step && (cur || Math.abs(step) === 7)){
+      e.preventDefault();
+      cur = cur ? new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + step) : (dateOf(hid(b).value) || new Date());
+      shown = cur; draw();
+    } else if (e.key === 'PageUp' || e.key === 'PageDown'){ e.preventDefault(); shown = new Date(shown.getFullYear(), shown.getMonth() + (e.key === 'PageUp' ? -1 : 1), 1); cur = null; draw(); }
+    else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey){ e.preventDefault(); e.stopPropagation(); if (cur) set(b, isoOf(cur)); else typed(t, true); close(); }
+    else if (e.key === 'Tab') close();
+  }, true);
+  var follow = function(){ if (isOpen()){ if (!document.contains(box)) close(); else place(); } };
+  document.addEventListener('scroll', follow, true);
+  window.addEventListener('resize', follow);
+  try { new MutationObserver(function(){ if (isOpen() && !document.contains(box)) close(); }).observe(document.documentElement, {childList: true, subtree: true}); } catch(e){}
+}
+if (document.head) init(); else document.addEventListener('DOMContentLoaded', init);
+return {date: date, time: time, refresh: refresh, parse: parse};
+})();
+</script>
 <script>
 (function(){
 'use strict';
@@ -3745,9 +3961,11 @@ const INCALZIRE = ['Centrală proprie','Termoficare','Centrală de bloc','Încă
 const TIP_CONSTR = ['Bloc de apartamente','Complex rezidențial','Casă individuală','Vilă','Duplex','Casă înșiruită','Clădire de birouri','Altul'];
 const MATERIAL = ['Beton armat','Cărămidă','BCA','Panouri prefabricate','Lemn','Structură metalică','Mixt'];
 const GEAMURI = ['Termopan PVC','Termopan aluminiu','Termopan lemn stratificat','Lemn simplu','Mixt'];
-const PARTIC = ['Balcon','Terasă','Grădină','Pivniță / boxă','Loc de parcare','Garaj','Lift','Mobilat','Utilat','Aer condiționat','Animale permise','Bucătărie închisă'];
+const PARTIC = ['Balcon','Terasă','Grădină','Pivniță / boxă','Loc de parcare','Garaj','Lift','Decomandat','Semidecomandat','Mobilat','Parțial mobilat','Nemobilat','Utilat','Aer condiționat','Animale permise','Bucătărie închisă','Bucătărie open space','Dressing','Debara','Vedere deschisă'];
+const BAIE = ['Cadă','Cabină de duș','Baie cu geam','WC de serviciu','Baie la dormitor'];
+const CHIRIE = ['Studenți acceptați','Copii acceptați','Doar nefumători','Fumatul permis','Termen scurt','Contract înregistrat la ANAF','Sediu de firmă acceptat','Facturi incluse'];
 const MEDIA = ['Internet','Fibră optică','TV prin cablu','Telefon fix'];
-const FACIL = ['Mașină de spălat rufe','Mașină de spălat vase','Frigider','Aragaz / plită','Cuptor','Cuptor cu microunde','Televizor','Uscător de rufe'];
+const FACIL = ['Mașină de spălat rufe','Mașină de spălat vase','Frigider','Aragaz / plită','Cuptor','Cuptor cu microunde','Hotă','Televizor','Uscător de rufe'];
 const SIGUR = ['Interfon','Videointerfon','Ușă antiefracție','Sistem de alarmă','Supraveghere video','Pază','Rulouri exterioare','Complex închis'];
 const STATUS_P = ['Activă','Rezervată','Retrasă','Tranzacționată'];
 // The agency's own site shows by itself the properties ticked "Site Kira" while they are active (from the online data).
@@ -3769,7 +3987,10 @@ const TRANZ = [{v:'vanzare',l:'Vânzare'},{v:'inchiriere',l:'Închiriere'}];
 const TRANZ_C = [{v:'vanzare',l:'Cumpere'},{v:'inchiriere',l:'Închirieze'}];
 const ETAJ_OPTS = [{v:-1,l:'Demisol'},{v:0,l:'Parter'}].concat(Array.from({length:30},(_,i)=>({v:i+1,l:String(i+1)})),[{v:100,l:'Mansardă'}]);
 const ETAJ_OPTS_C = ETAJ_OPTS.filter(o=>o.v!==100);
-const GROUPS = [['particularitati','Particularități',PARTIC],['media','Media',MEDIA],['facilitati','Facilități',FACIL],['siguranta','Siguranță',SIGUR]];
+const GROUPS = [['particularitati','Particularități',PARTIC],['baie','Baie',BAIE],['facilitati','Facilități',FACIL],['media','Media',MEDIA],['siguranta','Siguranță',SIGUR],['inchiriere','Condiții de închiriere',CHIRIE]];
+// Those that only count for rentals.
+const isRent = r => !!r && r.tranzactie === 'inchiriere';
+const groupFields = () => GROUPS.map(([k,l,o]) => Object.assign({k, t:'chipN', label:l, opts:o, full:true}, k === 'inchiriere' ? {show: isRent} : {}));
 
 /* ---------------- form schemas ---------------- */
 const P_SCHEMA = [
@@ -3780,6 +4001,7 @@ const P_SCHEMA = [
     {k:'suprafata', t:'num', label:'Suprafață utilă', unit:'mp'},
     {k:'suprafataTeren', t:'num', label:'Suprafață teren', unit:'mp'},
     {k:'camere', t:'num', label:'Număr camere'},
+    {k:'bai', t:'num', label:'Număr băi'},
     {k:'status', t:'sel', label:'Status', opts:STATUS_P, noEmpty:true}
   ]},
   {id:'locatie', title:'Locație', open:true, fields:[
@@ -3806,7 +4028,7 @@ const P_SCHEMA = [
     {k:'titlu', t:'title', label:'Titlu anunț', full:true},
     {k:'descriere', t:'area', label:'Descriere anunț', full:true}
   ]},
-  {id:'dotari', title:'Particularități, media, facilități, siguranță', fields: GROUPS.map(([k,l,o])=>({k, t:'chipN', label:l, opts:o, full:true}))},
+  {id:'dotari', title:'Particularități, baie, facilități, siguranță', fields: groupFields()},
   {id:'promo', title:'Promovare', hint:'unde ai publicat anunțul', fields:[
     {k:'promovare', t:'bool', label:'Proprietate promovată', full:true},
     {k:'platforme', t:'chipN', label:'Publicată pe', opts:PLATFORME, full:true}
@@ -3829,7 +4051,8 @@ const C_SCHEMA = [
     {k:'tipuri', t:'chipN', label:'Tip proprietate', hint:'poți alege mai multe', opts:TIPURI, full:true},
     {t:'moneyrange', label:'Buget', kmin:'bugetMin', kmax:'bugetMax', w2:true},
     {t:'range', label:'Suprafață', unit:'mp', kmin:'suprafataMin', kmax:'suprafataMax'},
-    {t:'range', label:'Număr camere', kmin:'camereMin', kmax:'camereMax'}
+    {t:'range', label:'Număr camere', kmin:'camereMin', kmax:'camereMax'},
+    {k:'baiMin', t:'num', label:'Băi (cel puțin)'}
   ]},
   {id:'unde', title:'Unde caută', open:true, fields:[
     {k:'judet', t:'text', label:'Județ', list:'dl-judete'},
@@ -3851,19 +4074,42 @@ const C_SCHEMA = [
     {k:'materiale', t:'chipN', label:'Material de construcție', opts:MATERIAL, full:true},
     {k:'geamuriL', t:'chipN', label:'Tip geamuri', opts:GEAMURI, full:true}
   ]},
-  {id:'dotari', title:'Dotări dorite', hint:'bifează doar ce contează pentru client', fields: GROUPS.map(([k,l,o])=>({k, t:'chipN', label:l, opts:o, full:true}))},
+  {id:'dotari', title:'Dotări dorite', hint:'bifează doar ce contează pentru client', open:true, fields: groupFields()},
   {id:'note', title:'Note', fields:[{k:'note', t:'area', label:'Ce a mai spus clientul', full:true, small:true}]}
 ];
+// A Preluare: the owner and the property are not in the CRM yet, so it has its own fields for them.
+const isPre = r => !!r && r.tip === PRELUARE;
+const PRE_K = {pNume:'nume', pTelefon:'telefon', pEmail:'email', pTranz:'tranzactie', pTip:'tip', pJudet:'judet', pLocalitate:'localitate', pZona:'zona', pStrada:'strada', pNumar:'numar', pPret:'pret', pSuprafata:'suprafata', pTeren:'suprafataTeren', pCamere:'camere'};
 const A_SCHEMA = [
   {id:'act', title:'Activitate', open:true, fields:[
     {k:'tip', t:'chip1', label:'Tip activitate', opts:ACT_MANUAL, optsFor: r => r && r.tip === PUBLICA ? ACT_TIPURI : ACT_MANUAL, req:true, full:true},
     {k:'data', t:'date', label:'Data'},
     {k:'ora', t:'time', label:'Ora'},
-    {k:'status', t:'sel', label:'Status', opts:ACT_ST, noEmpty:true},
+    {k:'status', t:'sel', label:'Status', opts:ACT_ST, noEmpty:true}
+  ]},
+  {id:'preom', title:'Proprietarul', open:true, show:isPre, fields:[
+    {k:'pNume', t:'text', label:'Nume și prenume'},
+    {k:'pTelefon', t:'tel', label:'Număr telefon', ph:'07xx xxx xxx'},
+    {k:'pEmail', t:'email', label:'Email'}
+  ]},
+  {id:'preprop', title:'Proprietatea', hint:'ce știi până acum; trece singur în fișa proprietății', open:true, show:isPre, fields:[
+    {k:'pTranz', t:'seg', label:'Tip tranzacție', opts:TRANZ, full:true},
+    {k:'pTip', t:'chip1', label:'Tip proprietate', opts:TIPURI, full:true},
+    {k:'pJudet', t:'text', label:'Județ', list:'dl-judete'},
+    {k:'pLocalitate', t:'text', label:'Localitate', list:'dl-loc'},
+    {k:'pZona', t:'text', label:'Zonă / cartier', list:'dl-zone'},
+    {k:'pStrada', t:'text', label:'Stradă', ph:'ex. Str. Fabricii'},
+    {k:'pNumar', t:'text', label:'Număr', ph:'ex. 12, bl. A2, ap. 14'},
+    {k:'pPret', t:'money', label:'Preț cerut'},
+    {k:'pSuprafata', t:'num', label:'Suprafață utilă', unit:'mp'},
+    {k:'pTeren', t:'num', label:'Suprafață teren', unit:'mp'},
+    {k:'pCamere', t:'num', label:'Număr camere'}
+  ]},
+  {id:'leg', title:'Client și proprietate din CRM', open:true, fields:[
     {k:'clientId', t:'ref', label:'Client', ref:'client', w2:true},
-    {k:'propId', t:'ref', label:'Proprietate', ref:'prop', w2:true},
-    {k:'note', t:'area', label:'Note', full:true, small:true}
-  ]}
+    {k:'propId', t:'ref', label:'Proprietate', ref:'prop', w2:true}
+  ]},
+  {id:'note', title:'Note', open:true, fields:[{k:'note', t:'area', label:'Note', full:true, small:true}]}
 ];
 const SCHEMA = {prop: P_SCHEMA, client: C_SCHEMA, act: A_SCHEMA};
 
@@ -3997,6 +4243,16 @@ function actWhen(a){
 }
 const actClient = a => a.clientId ? findRec('client', a.clientId) : null;
 const actProp = a => a.propId ? findRec('prop', a.propId) : null;
+// What a Preluare knows about the owner and the property (its own fields, or the request sent from the site), or null.
+function preOf(a){
+  if (!a || a.tip !== PRELUARE) return null;
+  const s = a.site && typeof a.site === 'object' ? a.site : null, o = {};
+  if (s && !a.pre) Object.keys(PRE_K).forEach(k => { const v = s[PRE_K[k]]; if (has(v)) o[PRE_K[k]] = v; });
+  else Object.keys(PRE_K).forEach(k => { if (has(a[k])) o[PRE_K[k]] = a[k]; });
+  return Object.keys(o).length ? o : null;
+}
+const preWhat = x => [x.tip ? x.tip + (x.camere && !/Garsonier|Teren|Cameră/.test(x.tip) ? ' ' + camereTxt(x.camere) : '') : '', x.tranzactie ? trLabel(x.tranzactie) : '', x.suprafata ? fmtN(x.suprafata) + ' mp' : '', x.suprafataTeren ? 'teren ' + fmtN(x.suprafataTeren) + ' mp' : '', x.pret ? fmtMoney(x.pret) + (x.tranzactie === 'inchiriere' ? ' / lună' : '') : ''].filter(Boolean).join(' · ');
+const preTitle = x => [x.nume, addrLine(x)].filter(Boolean).join(' · ') || x.telefon || preWhat(x);
 const recLabel = (kind, r) => r ? (r.cod ? r.cod + ' · ' : '') + (kind === 'prop' ? propTitle(r) : clientName(r)) : '';
 // Where a "NU UITA SĂ PUBLICI PROPRIETATEA" came from: the Preluare finished successfully.
 function pubOrigin(a){
@@ -4009,11 +4265,14 @@ function actTitle(a){
   if (a.tip === PUBLICA){
     if (p) return propTitle(p);
     if (a.propLabel) return a.propLabel;
+    if (a.din && a.din.ctx) return a.din.ctx;
     return 'Proprietatea de la preluarea' + (a.din && a.din.data ? ' din ' + fmtDate(a.din.data) : ' finalizată');
   }
   if (c) return clientName(c);
   if (p) return propTitle(p);
   if (a.clientLabel || a.propLabel) return a.clientLabel || a.propLabel;
+  const pre = a.site && !a.pre ? null : preOf(a);
+  if (pre) return preTitle(pre);
   if (a.note) return String(a.note).split('\n')[0].slice(0, 90);
   return a.tip || 'Activitate';
 }
@@ -4061,6 +4320,7 @@ const S = {
   fc: {q:'', tr:'', st:'active', sort:'recent'},
   fa: {q:'', tip:'', st:'open'},
   fct: {q:'', tip:'', st:''},
+  offers: [], pick: {}, ofBusy: false,
   firma: {}, signInfo: {}, ov: null, ctAuto: {}, ctErr: null, firmaPad: null, ctUrlTried: false,
   minScore: +LS.get('minScore', 60) || 0,
   drawer: null, dstack: [], dirty: false, showWeak: false, saving: false,
@@ -4129,6 +4389,8 @@ function match(c, p){
     }
     add(e != null ? etajTxt(p) : 'Etaj ?', ok, 1);
   }
+  if (c.baiMin != null && p.tip !== 'Teren')
+    add(p.bai != null ? (p.bai === 1 ? '1 baie' : fmtN(p.bai) + ' băi') : 'Băi ?', p.bai == null ? null : p.bai >= c.baiMin ? 1 : 0, 1);
   if (c.etajeTotalMax != null && !isHouse(p.tip))
     add(p.etajeTotal != null ? 'Clădire ' + p.etajeTotal + ' etaje' : 'Nr. etaje ?', p.etajeTotal == null ? null : (p.etajeTotal <= c.etajeTotalMax ? 1 : 0), 0.75);
   const inList = (label, val, arr, w) => { if (arr && arr.length) add(val ? val : label + ' ?', val ? (arr.indexOf(val) >= 0 ? 1 : 0) : null, w); };
@@ -4141,8 +4403,10 @@ function match(c, p){
   if (c.disponibilPana) add(p.disponibilDe ? 'Liber din ' + fmtDate(p.disponibilDe) : 'Liber imediat', !p.disponibilDe ? 1 : (p.disponibilDe <= c.disponibilPana ? 1 : 0), 1);
   GROUPS.forEach(function(g){
     const req = c[g[0]] || [];
-    if (!req.length) return;
+    if (!req.length || (g[0] === 'inchiriere' && !isRent(c))) return;
     const have = p[g[0]] || [];
+    // Newer lists: on a property where nobody ticked anything yet, it is not known (not missing).
+    if (!have.length && (g[0] === 'baie' || g[0] === 'inchiriere')){ add(req.join(', ') + ' ?', null, Math.min(2, 0.5 + 0.25 * req.length)); return; }
     const miss = req.filter(x => have.indexOf(x) < 0);
     const n = req.length - miss.length;
     add(miss.length ? 'Lipsă: ' + miss.join(', ') : g[1] + ' ✓', n / req.length, Math.min(2, 0.5 + 0.25 * req.length));
@@ -4313,10 +4577,10 @@ function renderMatches(){
       '</div>' +
       top.map(x => {
         const p = x.o;
-        return '<div class="mitem" role="button" tabindex="0" data-open="prop" data-id="' + esc(p.id) + '"><span class="score ' + scoreCls(x.r.score) + '">' + x.r.score + '%</span>' + thumbHTML(p, 'thumb sm') +
+        return '<div class="mitem" role="button" tabindex="0" data-open="prop" data-id="' + esc(p.id) + '">' + ofPick(c.id, p) + '<span class="score ' + scoreCls(x.r.score) + '">' + x.r.score + '%</span>' + thumbHTML(p, 'thumb sm') +
           '<div class="row-main"><div class="row-top">' + codeTag(p) + '<span class="row-title">' + esc(propTitle(p)) + '</span>' + (p.status === 'Rezervată' ? '<span class="pill warn">Rezervată</span>' : '') + '</div>' +
-          '<div class="row-loc">' + esc([fmtMoney(p.pret), addrLine(p)].filter(Boolean).join(' · ')) + '</div>' + critChips(x.r.items, true) + '</div></div>';
-      }).join('') +
+          '<div class="row-loc">' + esc([fmtMoney(p.pret), addrLine(p)].filter(Boolean).join(' · ')) + '</div>' + critChips(x.r.items, true) + ofBadge(c.id, p.id) + '</div></div>';
+      }).join('') + ofBar(c.id) +
       (rest > 0 ? '<div class="more"><button type="button" class="btn sm ghost" data-open="client" data-id="' + esc(c.id) + '">Încă ' + rest + (rest === 1 ? ' proprietate' : ' proprietăți') + ' →</button></div>' : '') +
       '</div>';
   }).join('');
@@ -4333,11 +4597,13 @@ function actRow(a){
   if (pub){
     // Which Preluare it comes from, so it is clear which property has to be published.
     const who2 = c ? clientName(c) : (a.clientLabel || '');
-    lines.push('<div class="row-loc">' + esc(pubOrigin(a) + (who2 ? ' · ' + who2 : '') + (!p && a.din && a.din.ctx && !who2 ? ' · ' + a.din.ctx : '')) + '</div>');
+    lines.push('<div class="row-loc">' + esc(pubOrigin(a) + (who2 ? ' · ' + who2 : '') + (!p && a.din && a.din.ctx && !who2 && a.propLabel ? ' · ' + a.din.ctx : '')) + '</div>');
   } else if (c && p) lines.push('<div class="row-loc">' + esc(recLabel('prop', p)) + '</div>');
   const wants = a.tip === CERERE && c ? clientWants(c) : '';
   // (with no client or property, the note's first line is already the title)
-  const noteRest = c || p || a.clientLabel || a.propLabel || pub ? String(a.note || '') : String(a.note || '').split('\n').slice(1).join(' ').trim();
+  const pre = preOf(a), preT = pre && !(a.site && !a.pre) && !c && !p;
+  if (preT){ const t = preWhat(pre); if (t) lines.push('<div class="row-loc">' + esc(t) + '</div>'); }
+  const noteRest = c || p || a.clientLabel || a.propLabel || pub || preT ? String(a.note || '') : String(a.note || '').split('\n').slice(1).join(' ').trim();
   if (noteRest) lines.push('<div class="row-meta">' + esc(cut(noteRest)) + '</div>');
   else if (wants) lines.push('<div class="row-meta">Caută: ' + esc(wants) + '</div>');
   else if (pub && a.din && a.din.note) lines.push('<div class="row-meta">Notă la preluare: ' + esc(cut(String(a.din.note))) + '</div>');
@@ -4349,6 +4615,7 @@ function actRow(a){
     const n = countMatches('client', c.id);
     side += '<span class="mcount' + (n ? ' on' : '') + '">' + (n ? n + (n === 1 ? ' proprietate potrivită' : ' proprietăți potrivite') : 'fără potriviri') + '</span>';
   } else if (open && c && c.telefon) side += '<button type="button" class="phone" data-copy="' + esc(c.telefon) + '" data-copy-msg="Telefon copiat" title="Copiază numărul">' + esc(c.telefon) + '</button>';
+  else if (open && pre && pre.telefon) side += '<button type="button" class="phone" data-copy="' + esc(pre.telefon) + '" data-copy-msg="Telefon copiat" title="Copiază numărul">' + esc(pre.telefon) + '</button>';
   return '<div class="row' + (open ? '' : ' is-done') + '" role="button" tabindex="0" data-open="act" data-id="' + esc(a.id) + '">' + checkBtn(a) +
     '<div class="row-main"><div class="row-top">' + actTag(a) + (pub ? codeTag(p) : c ? codeTag(c) : p ? codeTag(p) : '') + '<span class="row-title">' + esc(actTitle(a)) + '</span></div>' + lines.join('') + '</div>' +
     '<div class="row-side">' + side + '</div></div>';
@@ -4359,9 +4626,9 @@ function actFiltered(){
   if (f.q){
     const q = norm(f.q), qd = isPhoneQ(f.q.trim()) ? digits(f.q) : '';
     list = list.filter(a => {
-      const c = actClient(a), p = actProp(a);
-      return norm([a.tip, a.note, a.clientLabel, a.propLabel, c && clientName(c), c && c.cod, p && propTitle(p), p && p.cod, p && addrLine(p)].join(' ')).indexOf(q) >= 0 ||
-        (qd && c && digits(c.telefon).indexOf(qd) >= 0);
+      const c = actClient(a), p = actProp(a), x = preOf(a);
+      return norm([a.tip, a.note, a.clientLabel, a.propLabel, c && clientName(c), c && c.cod, p && propTitle(p), p && p.cod, p && addrLine(p), x && [x.nume, x.email, x.tip, addrLine(x)].join(' ')].join(' ')).indexOf(q) >= 0 ||
+        (qd && c && digits(c.telefon).indexOf(qd) >= 0) || (qd && x && digits(x.telefon).indexOf(qd) >= 0);
     });
   }
   return list;
@@ -4437,17 +4704,149 @@ function matchesBlock(kind, id){
         return '<div class="mcard" role="button" tabindex="0" data-open="client" data-id="' + esc(o.id) + '"><span class="score ' + scoreCls(x.r.score) + '">' + x.r.score + '%</span><div class="row-main">' +
           '<div class="mc-title">' + codeTag(o) + esc(clientName(o)) + (o.exemplu ? ' <span class="pill ex">Exemplu</span>' : '') + '</div>' +
           '<div class="mc-sub">' + (o.telefon ? '<button type="button" class="phone" data-copy="' + esc(o.telefon) + '" data-copy-msg="Telefon copiat">' + esc(o.telefon) + '</button> · ' : '') + esc(clientWants(o) || trLabelC(o.tranzactie)) + '</div>' +
-          critChips(x.r.items, false) + '</div></div>';
+          critChips(x.r.items, false) + ofBadge(o.id, id) + '</div></div>';
       }
-      return '<div class="mcard" role="button" tabindex="0" data-open="prop" data-id="' + esc(o.id) + '"><span class="score ' + scoreCls(x.r.score) + '">' + x.r.score + '%</span>' + thumbHTML(o, 'thumb sm') + '<div class="row-main">' +
+      return '<div class="mcard" role="button" tabindex="0" data-open="prop" data-id="' + esc(o.id) + '">' + ofPick(id, o) + '<span class="score ' + scoreCls(x.r.score) + '">' + x.r.score + '%</span>' + thumbHTML(o, 'thumb sm') + '<div class="row-main">' +
         '<div class="mc-title">' + codeTag(o) + esc(propTitle(o)) + (o.exemplu ? ' <span class="pill ex">Exemplu</span>' : '') + '</div>' +
         '<div class="mc-sub">' + esc([fmtMoney(o.pret), addrLine(o)].filter(Boolean).join(' · ')) + '</div>' +
-        critChips(x.r.items, false) + '</div></div>';
-    }).join('') + '</div>';
+        critChips(x.r.items, false) + ofBadge(id, o.id) + '</div></div>';
+    }).join('') + '</div>' + (kind === 'client' ? ofBar(id) : '');
   }
   const toggle = weak.length ? '<button type="button" class="btn sm ghost" data-act="toggle-weak" style="margin-top:8px">' + (S.showWeak ? 'Ascunde potrivirile sub ' + S.minScore + '%' : 'Arată și potrivirile slabe (' + weak.length + ')') + '</button>' : '';
   return '<section class="block"><h3>' + title + ' <span class="count">' + strong.length + '</span></h3>' + body + toggle + '</section>';
 }
+/* ---------- offers on WhatsApp ----------
+   At a client's matches, the ticked properties go on WhatsApp as one link (kiraimobiliare.ro/oferta/…): the client sees
+   them with photos, and the online database (script version 11) counts how many times the offer was opened and which
+   properties were looked at. Without online data the same list goes as plain text, with nothing counted. */
+const ofApi = () => { try { return (window.CRMSync && window.CRMSync.offers) || null; } catch(e){ return null; } };
+const ofState = () => { const o = ofApi(); return o ? o.state() : 'off'; };
+const ofUrl = t => SITE_URL + '/oferta/' + t;
+const ofOf = cid => S.offers.filter(o => o.client === cid);
+const ofPicks = cid => (S.pick[cid] || []).filter(id => findRec('prop', id));
+const ofTimes = n => n === 1 ? 'o dată' : 'de ' + n + ' ori';
+const ofWhen = ms => KD ? KD.fmtWhen(ms) : fmtTs(ms);
+const ofLive = o => !o.oprita && o.expira > Date.now();
+const ofPick = (cid, p) => S.readOnly ? '' : '<label class="mpick" title="Bifează ca s-o trimiți clientului"><input type="checkbox" data-pick="' + esc(cid) + '" data-pid="' + esc(p.id) + '" aria-label="Trimite clientului: ' + esc(propTitle(p)) + '"' + (ofPicks(cid).indexOf(p.id) >= 0 ? ' checked' : '') + '></label>';
+// On a matched property (or client): was it sent, was it looked at?
+function ofBadge(cid, pid){
+  const list = ofOf(cid).filter(o => Array.isArray(o.props) && o.props.indexOf(pid) >= 0);
+  if (!list.length) return '';
+  let seen = 0, opens = 0;
+  list.forEach(o => { opens += +o.deschideri || 0; const v = o.vazute && o.vazute[pid]; if (v) seen += +v.n || 0; });
+  return '<div class="ofbadge"><span class="pill' + (seen || opens ? ' good' : '') + '">Trimisă ' + esc(fmtTs(list[0].creat)) + (seen ? ' · văzută ' + ofTimes(seen) : opens ? ' · oferta deschisă ' + ofTimes(opens) : ' · nedeschisă încă') + '</span></div>';
+}
+function ofBarIn(cid){
+  const n = ofPicks(cid).length, last = ofOf(cid)[0];
+  return (n ? '<button type="button" class="btn sm primary" data-act="of-send" data-c="' + esc(cid) + '">Trimite pe WhatsApp (' + n + ')</button>' +
+      '<button type="button" class="btn sm" data-act="of-copy" data-c="' + esc(cid) + '">Copiază mesajul</button><button type="button" class="btn sm ghost" data-act="of-none" data-c="' + esc(cid) + '">Debifează</button>'
+    : '<span class="mc-sub">Bifează proprietățile pe care vrei să i le trimiți pe WhatsApp.</span>') +
+    (last && !n ? '<span class="pill' + (+last.deschideri ? ' good' : '') + '">Ultima ofertă, ' + esc(fmtTs(last.creat)) + ': ' + (+last.deschideri ? 'deschisă ' + ofTimes(+last.deschideri) : 'nedeschisă încă') + '</span>' : '');
+}
+const ofBar = cid => S.readOnly ? '' : '<div class="ofbar" data-ofbar="' + esc(cid) + '">' + ofBarIn(cid) + '</div>';
+function ofBarRefresh(cid){ $$('[data-ofbar]').forEach(b => { if (b.dataset.ofbar === cid) b.innerHTML = ofBarIn(cid); }); }
+// The client's page: the offers sent so far.
+function ofBlock(c){
+  const list = ofOf(c.id);
+  if (!list.length) return '';
+  return '<section class="block"><h3>Oferte trimise <span class="count">' + list.length + '</span></h3><div class="mcards">' + list.slice(0, 20).map(o => {
+    const n = +o.deschideri || 0, live = ofLive(o);
+    const props = (o.props || []).map(id => {
+      const p = findRec('prop', id), v = o.vazute && o.vazute[id];
+      return '<li>' + (p ? codeTag(p) + ' ' + esc(propTitle(p)) : 'Proprietate ștearsă') + (v ? ' <span class="pill good">văzută ' + ofTimes(+v.n || 1) + ', ultima dată ' + esc(ofWhen(+v.la)) + '</span>' : '') + '</li>';
+    }).join('');
+    return '<div class="ofitem"><div class="a-head"><span class="pill ' + (n ? 'good' : 'warn') + '">' + (n ? 'Deschisă ' + ofTimes(n) : 'Nedeschisă încă') + '</span><span class="mc-title">' + esc(ofWhen(o.creat)) + '</span>' +
+      (live ? '' : '<span class="pill">' + (o.oprita ? 'Link oprit' : 'Link expirat') + '</span>') + '</div>' +
+      '<div class="mc-sub">' + (n ? 'prima dată ' + esc(ofWhen(o.prima)) + (n > 1 ? ' · ultima dată ' + esc(ofWhen(o.ultima)) : '') + ' · ' : '') + (o.email ? 'trimisă de ' + esc(o.email) + ' · ' : '') + 'linkul merge până la ' + esc(fmtTs(o.expira)) + '</div>' +
+      '<ul class="oflist">' + props + '</ul>' +
+      '<div class="d-actions">' + (live ? '<button type="button" class="btn sm" data-act="of-again" data-t="' + esc(o.token) + '">Trimite din nou</button>' +
+        '<button type="button" class="btn sm ghost" data-copy="' + esc(ofUrl(o.token)) + '" data-copy-msg="Linkul ofertei a fost copiat">Copiază linkul</button>' +
+        '<button type="button" class="btn sm ghost" data-act="of-see" data-t="' + esc(o.token) + '">Vezi ce primește</button>' : '') +
+        (S.readOnly || o.expira <= Date.now() ? '' : '<button type="button" class="btn sm ghost' + (o.oprita ? '' : ' danger') + '" data-act="of-stop" data-t="' + esc(o.token) + '">' + (o.oprita ? 'Pornește linkul' : 'Oprește linkul') + '</button>') + '</div></div>';
+  }).join('') + '</div></section>';
+}
+function ofText(c, ids, link){
+  const F = ctFirma ? ctFirma() : {}, list = ids.map(id => findRec('prop', id)).filter(Boolean), one = list.length === 1;
+  const lines = list.slice(0, 10).map((p, i) => (one ? '' : (i + 1) + '. ') + propTitle(p) + (p.pret != null ? ' – ' + fmtMoney(p.pret) + (isRent(p) ? ' / lună' : '') : '') + (p.cod ? ' (' + p.cod + ')' : '') +
+    (link ? '' : '\n' + [p.suprafata != null ? fmtN(p.suprafata) + ' mp' : '', isHouse(p.tip) ? '' : etajTxt(p), [p.zona, p.localitate].filter(Boolean).join(', ')].filter(Boolean).join(' · ') +
+      (platformsOf(p).indexOf(SITE) >= 0 && (!p.status || p.status === 'Activă') ? '\n' + siteLink(p) : '')));
+  if (list.length > 10) lines.push('… și încă ' + (list.length - 10));
+  return 'Bună ziua' + (c.prenume || c.nume ? ', ' + (c.prenume || c.nume) : '') + '!\n\nV-am pregătit ' + (one ? 'o proprietate care se potrivește' : list.length + ' proprietăți care se potrivesc') + ' cu ce căutați:\n\n' + lines.join('\n') +
+    (link ? '\n\nPoze și detalii aici:\n' + link : '') + '\n\nSpuneți-mi ce vă place și programăm vizionarea.\n\n' + [who() || F.rep, F.brand || 'Kira Imobiliare', F.tel].filter(Boolean).join('\n');
+}
+// The message for these properties, with the link when the online data can make one. null: the person changed their mind.
+async function ofMessage(c, ids){
+  let token = '', why = '';
+  const o = ofApi();
+  if (!o || ofState() === 'off') why = 'CRM-ul nu e conectat la datele online.';
+  else {
+    toast('Se pregătește linkul ofertei…');
+    try { token = (await o.create(c.id, ids)).token; } catch(e){ why = ctErrMsg(e); }
+  }
+  if (!token){
+    const v = await askConfirm({title: 'Trimit fără link?', text: why + ' Pot pune proprietățile direct în mesaj, ca text, dar atunci nu se vede dacă le-a deschis.', ok: 'Da, ca text', okCls: 'primary'});
+    if (v !== 'ok') return null;
+  }
+  return {text: ofText(c, ids, token ? ofUrl(token) : ''), token: token};
+}
+// Opens WhatsApp; where the browser blocks a window opened after a wait (some phones), a button does it.
+async function ofOpenWa(tel, text){
+  const url = 'https://wa.me/' + tel + '?text=' + encodeURIComponent(text);
+  if (ctOpenUrl(url)) return;
+  const v = await askConfirm({title: 'Mesajul e gata', text: 'Apasă ca să se deschidă WhatsApp, cu mesajul scris.', ok: 'Deschide WhatsApp', okCls: 'primary'});
+  if (v === 'ok' && !ctOpenUrl(url)) copyText(text, 'WhatsApp nu s-a deschis. Mesajul a fost copiat');
+}
+async function ofSend(cid, copy){
+  const c = findRec('client', cid), ids = ofPicks(cid);
+  if (!c || S.ofBusy) return;
+  if (!ids.length){ toast('Bifează întâi proprietățile de trimis.'); return; }
+  if (ids.length > 20){ toast('Cel mult 20 de proprietăți într-o ofertă.'); return; }
+  const tel = KD ? KD.waPhone(c.telefon) : '';
+  if (!copy && !tel){ toast('Clientul nu are un număr de telefon valid. Completează-l sau copiază mesajul.'); return; }
+  S.ofBusy = true;
+  let m = null;
+  try { m = await ofMessage(c, ids); } finally { S.ofBusy = false; }
+  if (!m) return;
+  S.pick[cid] = [];
+  if (copy) copyText(m.text, 'Mesajul cu oferta a fost copiat'); else await ofOpenWa(tel, m.text);
+  if (m.token) await ofLoad(true);
+  renderAll();
+}
+function ofAgain(token){
+  const o = S.offers.find(x => x.token === token), c = o && findRec('client', o.client), tel = c && KD ? KD.waPhone(c.telefon) : '';
+  if (!o || !c) return;
+  if (!tel){ toast('Clientul nu are un număr de telefon valid.'); return; }
+  ofOpenWa(tel, ofText(c, o.props || [], ofUrl(token)));
+}
+async function ofStop(token){
+  const o = S.offers.find(x => x.token === token);
+  if (!o) return;
+  try { await ofApi().stop(token, !o.oprita); toast(o.oprita ? 'Linkul merge din nou' : 'Linkul a fost oprit'); await ofLoad(true); renderAll(); }
+  catch(e){ toast(ctErrMsg(e)); }
+}
+// Which offers were opened: asked every minute while the app is on screen.
+let ofAt = 0, ofLoading = false;
+async function ofLoad(force){
+  const o = ofApi();
+  if (!o || ofLoading || (!force && Date.now() - ofAt < 45000)) return;
+  if (o.state() !== 'ok'){ if (o.state() !== 'off') o.check(); return; }
+  ofLoading = true; ofAt = Date.now();
+  let rows = null;
+  try { rows = await o.list(); } catch(e){}
+  ofLoading = false;
+  if (!Array.isArray(rows)) return;
+  rows = rows.filter(x => x && x.token && x.client);
+  // Opened since this device last looked: say so.
+  const seen = LS.get('ofSeen', null), now = {}, news = [];
+  rows.forEach(r => { now[r.token] = +r.deschideri || 0; if (seen && now[r.token] > (seen[r.token] || 0)) news.push(r); });
+  const changed = JSON.stringify(rows) !== JSON.stringify(S.offers);
+  S.offers = rows;
+  LS.set('ofSeen', now);
+  if (changed && !(S.drawer && S.drawer.mode !== 'view')) renderAll();
+  const names = news.map(r => { const c = findRec('client', r.client); return c ? clientName(c) + (+r.deschideri > 1 ? ' (a ' + r.deschideri + '-a oară)' : '') : ''; }).filter(Boolean);
+  if (names.length) toast((names.length === 1 ? names[0] + ' a deschis oferta' : 'Au deschis oferta: ' + names.join(', ')));
+}
+
 // The old tick "Storia/OLX" (before version 8 of the online script) means both "Storia" and "OLX" now.
 const platformsOf = p => {
   const out = [];
@@ -4522,7 +4921,7 @@ function siteNote(p){
 }
 /* ---------- Storia (and from there OLX.ro) ----------
    The site (kiraimobiliare.ro) publishes by itself on Storia the active properties ticked "Storia": the same fields the
-   site shows, plus the land area. Those also ticked "OLX" are exported from Storia to OLX.ro (olxNote). Buyers' messages
+   site shows. Those also ticked "OLX" are exported from Storia to OLX.ro (olxNote). Buyers' messages
    come back as clients with a "Cerere nouă". The online database (script version 9) keeps each advert's state; nothing
    of it is kept on the device. One taken off Storia while it is still in the CRM is stopped there, not deleted: ticked
    again (or extended once expired, "Prelungește pe Storia"), the same advert starts again. */
@@ -4685,6 +5084,7 @@ function copyBlock(p){
     ['Suprafață utilă (mp)', num(p.suprafata)],
     ['Suprafață teren (mp)', num(p.suprafataTeren)],
     ['Număr camere', num(p.camere)],
+    ['Număr băi', num(p.bai)],
     ['Etaj', p.etaj == null ? '' : (p.etaj > 0 && p.etaj < 100 ? String(p.etaj) : etajLabel(p.etaj))],
     ['Număr total de etaje', num(p.etajeTotal)],
     ['An construcție', num(p.an)],
@@ -4743,7 +5143,7 @@ function propDetail(p){
   let sub = '';
   if (p.tranzactie === 'vanzare' && p.pret && p.suprafata) sub = nf0.format(p.pret / p.suprafata) + ' €/mp';
   else if (p.tranzactie === 'inchiriere' && p.pret) sub = 'chirie lunară';
-  const meta = [(p.camere != null && !/Garsonier|Teren/.test(p.tip || '')) ? camereTxt(p.camere) : '', p.suprafata != null ? fmtN(p.suprafata) + ' mp' : '', p.suprafataTeren != null ? 'teren ' + fmtN(p.suprafataTeren) + ' mp' : '', isHouse(p.tip) ? '' : etajTxt(p), p.an ? 'an ' + p.an : ''].filter(Boolean).join(' · ');
+  const meta = [(p.camere != null && !/Garsonier|Teren/.test(p.tip || '')) ? camereTxt(p.camere) : '', p.bai ? (p.bai === 1 ? '1 baie' : fmtN(p.bai) + ' băi') : '', p.suprafata != null ? fmtN(p.suprafata) + ' mp' : '', p.suprafataTeren != null ? 'teren ' + fmtN(p.suprafataTeren) + ' mp' : '', isHouse(p.tip) ? '' : etajTxt(p), p.an ? 'an ' + p.an : ''].filter(Boolean).join(' · ');
   return dhead((p.cod ? p.cod + ' · ' : '') + (p.tip ? p.tip + (p.tranzactie ? ' · ' + trLabel(p.tranzactie) : '') : 'Proprietate')) +
     '<div class="dbody">' +
     '<div class="d-actions"><button type="button" class="btn sm" data-act="copy-listing">' + ICON.copy + ' Copiază tot anunțul</button>' + w + del + '</div>' +
@@ -4771,6 +5171,7 @@ function clientDetail(c){
     ['Buget' + (c.tranzactie === 'inchiriere' ? ' lunar' : ''), budgetTxt(c)],
     ['Suprafață', rangeTxt(c.suprafataMin, c.suprafataMax) ? rangeTxt(c.suprafataMin, c.suprafataMax) + ' mp' : ''],
     ['Camere', rangeTxt(c.camereMin, c.camereMax)],
+    ['Băi', c.baiMin != null ? 'cel puțin ' + fmtN(c.baiMin) : ''],
     ['Unde caută', clientArea(c)],
     ['Etaj', etajPrefTxt(c)],
     ['Bloc', c.etajeTotalMax != null ? 'maxim ' + c.etajeTotalMax + ' etaje' : ''],
@@ -4796,6 +5197,7 @@ function clientDetail(c){
     actsBlock('client', c.id) +
     ctBlock('client', c.id) +
     matchesBlock('client', c.id) +
+    ofBlock(c) +
     (facts ? '<section class="block"><h3>Ce caută</h3>' + facts + '</section>' : '') +
     (feat ? '<section class="block"><h3>Dotări dorite</h3>' + feat + '</section>' : '') +
     (c.note ? '<section class="block"><h3>Note</h3><p class="desc">' + esc(c.note) + '</p></section>' : '') +
@@ -4823,18 +5225,20 @@ function linkRow(kind, r, label, gone){
   return '<div class="linkrow" role="button" tabindex="0" data-open="' + kind + '" data-id="' + esc(r.id) + '"><span class="k">' + label + '</span><span class="v">' + codeTag(r) + ' ' + esc(kind === 'prop' ? propTitle(r) : clientName(r)) +
     '<small>' + esc(sub.filter(Boolean).join(' · ')) + '</small></span>' + (kind === 'client' && r.telefon ? cpyBtn(r.telefon, 'telefonul') : '') + '</div>';
 }
-// A request sent from the site's "Adaugă anunț" form: the owner's details, and a button that starts the property from them.
+// A Preluare: the owner's details (typed in, or sent from the site's "Adaugă anunț" form), and a button that starts the
+// property from them.
 function siteBlock(a){
-  const s = a.site;
-  if (a.sursa !== 'site' || !s || typeof s !== 'object') return '';
-  const rows = [['Proprietar', s.nume], ['Telefon', s.telefon], ['Email', s.email],
-    ['Proprietate', [s.tip, trLabel(s.tranzactie)].filter(Boolean).join(' · ')], ['Locație', [s.zona, s.localitate].filter(Boolean).join(', ')],
-    ['Suprafață', s.suprafata ? fmtN(s.suprafata) + ' mp' : ''], ['Camere', s.camere], ['Preț dorit', s.pret ? fmtMoney(s.pret) + (s.tranzactie === 'inchiriere' ? ' / lună' : '') : ''],
-    ['Detalii', s.detalii]].filter(x => x[1] != null && x[1] !== '');
-  const tel = String(s.telefon || '').replace(/[^\d+]/g, '');
-  const btns = S.readOnly ? '' : (a.propId ? '' : '<button type="button" class="btn sm primary" data-act="site-prop" data-id="' + esc(a.id) + '">Adaugă proprietatea în CRM</button>') +
-    (tel ? '<a class="btn sm" href="tel:' + esc(tel) + '">Sună proprietarul</a>' : '');
-  return '<section class="block"><h3>Cererea de pe site</h3><div class="cprows">' +
+  const site = a.sursa === 'site' && a.site && typeof a.site === 'object' ? a.site : null, s = preOf(a);
+  if (!s && !site) return '';
+  const x = s || {};
+  const rows = [['Proprietar', x.nume], ['Telefon', x.telefon], ['Email', x.email],
+    ['Proprietate', [x.tip, x.tranzactie ? trLabel(x.tranzactie) : ''].filter(Boolean).join(' · ')], ['Adresă', addrLine(x)],
+    ['Suprafață', x.suprafata ? fmtN(x.suprafata) + ' mp' : ''], ['Teren', x.suprafataTeren ? fmtN(x.suprafataTeren) + ' mp' : ''], ['Camere', x.camere], ['Preț cerut', x.pret ? fmtMoney(x.pret) + (x.tranzactie === 'inchiriere' ? ' / lună' : '') : ''],
+    ['Detalii', site && site.detalii]].filter(y => y[1] != null && y[1] !== '');
+  const tel = String(x.telefon || '').replace(/[^\d+]/g, '');
+  const btns = (S.readOnly || a.propId ? '' : '<button type="button" class="btn sm primary" data-act="site-prop" data-id="' + esc(a.id) + '">Adaugă proprietatea în CRM</button>') +
+    (tel ? '<a class="btn sm" href="tel:' + esc(tel) + '">Sună proprietarul</a>' + (KD && KD.waPhone(tel) ? '<button type="button" class="btn sm" data-act="wa" data-tel="' + esc(KD.waPhone(tel)) + '">WhatsApp</button>' : '') : '');
+  return '<section class="block"><h3>' + (site ? 'Cererea de pe site' : 'Proprietarul și proprietatea') + '</h3><div class="cprows">' +
     rows.map(x => '<div class="cprow"><span class="k">' + esc(x[0]) + '</span><span class="v' + (x[0] === 'Detalii' ? ' pre' : '') + '">' + esc(String(x[1])) + '</span>' +
       (x[0] === 'Telefon' || x[0] === 'Email' ? cpyBtn(String(x[1]), x[0] === 'Telefon' ? 'telefonul' : 'emailul') : '') + '</div>').join('') + '</div>' +
     (btns ? '<div class="d-actions" style="margin-top:10px">' + btns + '</div>' : '') + '</section>';
@@ -4880,7 +5284,7 @@ function pubBlocks(a, p){
       '<div class="d-actions"><button type="button" class="btn sm" data-open="prop" data-id="' + esc(p.id) + '">Deschide proprietatea</button></div>';
   } else {
     pubH = '<p class="mc-sub" style="margin:0 0 8px">' + (a.propId ? 'Proprietatea legată a fost ștearsă din CRM.' : 'Preluarea nu are o proprietate legată în CRM.') + ' Adaug-o, apoi publică anunțul.</p>' +
-      (S.readOnly ? '' : '<div class="d-actions"><button type="button" class="btn sm" data-act="new-prop">+ Adaugă proprietatea</button></div>');
+      (S.readOnly ? '' : '<div class="d-actions"><button type="button" class="btn sm" ' + (pre && preOf(pre) ? 'data-act="site-prop" data-id="' + esc(pre.id) + '"' : 'data-act="new-prop"') + '>+ Adaugă proprietatea</button></div>');
   }
   return '<section class="block"><h3>Proprietatea de publicat vine din</h3>' + ref + '</section>' +
     '<section class="block"><h3>Publicare</h3>' + pubH + '</section>';
@@ -5026,9 +5430,9 @@ function F(d, r){
     case 'bool':
       return '<div class="' + cls + '"><label class="check"><input type="checkbox" id="f-' + d.k + '" name="' + d.k + '"' + (v(d.k) ? ' checked' : '') + '><span>' + esc(d.label) + '</span></label></div>';
     case 'date':
-      return '<div class="' + cls + '"><label class="lbl" for="f-' + d.k + '">' + esc(d.label) + '</label><input type="date" id="f-' + d.k + '" name="' + d.k + '" value="' + sv(d.k) + '"></div>';
+      return '<div class="' + cls + '"><label class="lbl" for="f-' + d.k + '-t">' + esc(d.label) + '</label>' + RoDate.date('f-' + d.k, d.k, v(d.k)) + '</div>';
     case 'time':
-      return '<div class="' + cls + '"><label class="lbl" for="f-' + d.k + '">' + esc(d.label) + '<span class="lhint">opțional</span></label><input type="time" id="f-' + d.k + '" name="' + d.k + '" value="' + sv(d.k) + '"></div>';
+      return '<div class="' + cls + '"><label class="lbl" for="f-' + d.k + '-h">' + esc(d.label) + '<span class="lhint">opțional</span></label>' + RoDate.time('f-' + d.k, d.k, v(d.k)) + '</div>';
     case 'ref': {
       const cur = v(d.k) || '', isP = d.ref === 'prop';
       const arr = isP ? S.props.slice().sort((a, b) => (codeNum('prop', b.cod) || 0) - (codeNum('prop', a.cod) || 0) || (b.createdAt || 0) - (a.createdAt || 0))
@@ -5065,8 +5469,17 @@ function secHasData(sec, r){
 function formHTML(kind, r){
   const schema = SCHEMA[kind];
   return '<form id="rec-form" class="dbody" novalidate autocomplete="off"><div id="form-err" class="form-err" role="alert" hidden></div>' +
-    schema.map(sec => '<details class="fsec" data-sec="' + sec.id + '"' + (sec.open || secHasData(sec, r) ? ' open' : '') + '><summary>' + esc(sec.title) + (sec.hint ? '<span class="shint">' + esc(sec.hint) + '</span>' : '') + '</summary><div class="fgrid">' + sec.fields.map(d => F(d, r)).join('') + '</div></details>').join('') +
+    schema.map((sec, si) => '<details class="fsec" data-sec="' + sec.id + '"' + ((sec.id === 'leg' && isPre(r) ? false : sec.open) || secHasData(sec, r) ? ' open' : '') + (sec.show && !sec.show(r) ? ' hidden' : '') + '><summary>' + esc(sec.title) + (sec.hint ? '<span class="shint">' + esc(sec.hint) + '</span>' : '') + '</summary><div class="fgrid">' +
+      sec.fields.map((d, fi) => d.show ? '<div class="fwrap" data-fw="' + si + '-' + fi + '"' + (d.show(r) ? '' : ' hidden') + '>' + F(d, r) + '</div>' : F(d, r)).join('') + '</div></details>').join('') +
     '</form>';
+}
+// Sections and fields shown only for some answers (a Preluare, a rental).
+function formSync(form, kind){
+  const schema = SCHEMA[kind], o = readForm(form, schema);
+  schema.forEach(sec => { if (sec.show){ const el = $('[data-sec="' + sec.id + '"]', form); if (el) el.hidden = !sec.show(o); } });
+  $$('[data-fw]', form).forEach(w => { const p = w.dataset.fw.split('-'); w.hidden = !schema[+p[0]].fields[+p[1]].show(o); });
+  const leg = $('[data-sec="leg"]', form);
+  if (leg && kind === 'act') leg.open = !isPre(o) || !!(o.clientId || o.propId);
 }
 function readForm(form, schema){
   const o = {};
@@ -5099,6 +5512,11 @@ function readForm(form, schema){
 function validate(kind, o){
   if (kind === 'act'){
     if (!o.tip) return {f:'tip', m:'Alege tipul activității: vizionare, preluare, de contactat, tranzacție sau cerere nouă.'};
+    if (isPre(o)){
+      if (!o.clientId && !o.propId && !o.note && ![o.pNume, o.pTelefon, o.pStrada, o.pZona, o.pLocalitate].some(Boolean)) return {f:'pNume', m:'Scrie numele, telefonul sau adresa, ca să știi unde e preluarea.'};
+      if (o.pEmail && !/^\S+@\S+\.\S+$/.test(o.pEmail)) return {f:'pEmail', m:'Adresa de email nu pare corectă. Verifică să aibă forma nume@domeniu.ro.'};
+      return null;
+    }
     if (!o.clientId && !o.propId && !o.note) return {f:'clientId', m:'Alege clientul sau proprietatea, ori scrie o notă, ca să știi despre ce e activitatea.'};
     return null;
   }
@@ -5178,6 +5596,8 @@ function renderDrawer(){
   }
   let r = d.mode === 'edit' ? findRec(d.kind, d.id) : (d.preset || defaults(d.kind));
   if (!r){ closeDrawer(); return; }
+  // A request from the site, edited: its details are in the Preluare's own fields.
+  if (d.kind === 'act' && isPre(r) && !r.pre){ const x = preOf(r); if (x){ r = Object.assign({}, r); Object.keys(PRE_K).forEach(k => { if (has(x[PRE_K[k]])) r[k] = x[PRE_K[k]]; }); } }
   r = Object.assign({}, r, {status: d.kind === 'act' ? (actOpen(r) ? 'De făcut' : 'Făcută') : stOf(d.kind, r)});
   const isNew = d.mode === 'new';
   const title = (d.kind === 'prop' ? (isNew ? 'Proprietate nouă' : 'Editează proprietatea') : d.kind === 'act' ? (isNew ? 'Activitate nouă' : 'Editează activitatea') : (isNew ? 'Client nou' : 'Editează clientul')) + (!isNew && r.cod ? ' ' + r.cod : '');
@@ -5198,6 +5618,7 @@ function renderDrawer(){
   form.addEventListener('change', e => {
     S.dirty = true;
     if (e.target.name === 'platforme') pairStoria(e.target, 'input[name="platforme"]', form);
+    if (e.target.name === 'tip' || e.target.name === 'tranzactie') formSync(form, d.kind);
     if (e.target.name === 'tranzactie'){
       const v = e.target.value;
       const lp = $('#lbl-pret', drawer); if (lp) lp.textContent = v === 'inchiriere' ? 'Chirie lunară' : 'Preț vânzare';
@@ -5273,6 +5694,7 @@ async function submitForm(andNew){
   if (d.kind === 'prop') data.poze = S.fphotos.slice();
   const err = validate(d.kind, data);
   if (err){ showFormErr(err); return; }
+  if (d.kind !== 'act' && !isRent(data)) data.inchiriere = [];
   if (!S.db){ toast('Salvarea nu e disponibilă aici. Deschide pagina în Claude, autentificat.'); return; }
   if (d.kind === 'act') return submitAct(d, data, andNew);
   if (d.kind === 'prop' && !data.titlu) data.titlu = autoTitle(data);
@@ -5303,11 +5725,14 @@ async function submitForm(andNew){
   LS.set('lastLoc', {judet: data.judet, localitate: data.localitate});
   let msg = (d.kind === 'prop' ? 'Proprietate salvată' : 'Client salvat') + (body.cod && !(prev && prev.cod) ? ' cu ID ' + body.cod : '');
   if (d.kind === 'prop' && !prev && d.fromAct){
-    const a = findRec('act', d.fromAct);
-    if (a && !a.propId){
+    // The Preluare it came from, and the "NU UITA SĂ PUBLICI PROPRIETATEA" that Preluare left.
+    let linked = false;
+    for (const a of [findRec('act', d.fromAct), findRec('act', 'pub-' + d.fromAct)]){
+      if (!a || a.propId) continue;
       const upd = {propId: ref.id, propLabel: recLabel('prop', Object.assign({}, body, {id: ref.id})), updatedAt: Date.now()};
-      try { await withRetry(() => S.db.collection('activities').doc(a.id).update(upd)); upsertLocal('act', Object.assign({}, a, upd)); msg += ' · legată de cererea de pe site'; } catch(e){}
+      try { await withRetry(() => S.db.collection('activities').doc(a.id).update(upd)); upsertLocal('act', Object.assign({}, a, upd)); linked = linked || a; } catch(e){}
     }
+    if (linked) msg += linked.sursa === 'site' ? ' · legată de cererea de pe site' : ' · legată de preluare';
   }
   // Every new client gets a "Cerere nouă" in Activități.
   if (d.kind === 'client' && !prev){
@@ -5377,6 +5802,9 @@ async function submitAct(d, data, andNew){
   const now = Date.now();
   const body = Object.assign({}, prev || {}, data, {createdAt: prev && prev.createdAt ? prev.createdAt : now, updatedAt: now});
   delete body.id;
+  const isP = isPre(body);
+  Object.keys(PRE_K).forEach(k => { if (!isP || !has(body[k])) delete body[k]; });
+  if (isP) body.pre = true; else delete body.pre;
   if (!prev){ const w = who(); if (w) body.agent = w; }
   if (body.status === 'Făcută'){ if (!(prev && !actOpen(prev) && prev.doneAt)) body.doneAt = now; }
   else delete body.doneAt;
@@ -5385,7 +5813,8 @@ async function submitAct(d, data, andNew){
   const c = body.clientId ? findRec('client', body.clientId) : null, p = body.propId ? findRec('prop', body.propId) : null;
   if (body.clientId) body.clientLabel = c ? recLabel('client', c) : (prev && prev.clientLabel) || ''; else delete body.clientLabel;
   if (body.propId) body.propLabel = p ? recLabel('prop', p) : (prev && prev.propLabel) || ''; else delete body.propLabel;
-  body.ctx = [body.clientLabel, body.propLabel].filter(Boolean).join(' · ');
+  const preD = preOf(body);
+  body.ctx = [body.clientLabel, body.propLabel].filter(Boolean).join(' · ') || (preD ? preTitle(preD).slice(0, 160) : '');
   const ref = prev ? S.db.collection('activities').doc(prev.id) : S.db.collection('activities').doc();
   setSaving(true);
   try { await withRetry(() => ref.set(body)); }
@@ -5404,7 +5833,7 @@ async function submitAct(d, data, andNew){
   if (andNew){
     S.drawer = {kind: 'act', mode: 'new', id: null, preset: Object.assign(defaults('act'), {tip: body.tip, data: body.data || todayISO()})};
     renderDrawer();
-    const f = $('#f-clientId', drawer); if (f) f.focus();
+    const f = $(isP ? '#f-pNume' : '#f-clientId', drawer); if (f) f.focus();
   } else {
     S.drawer = {kind: 'act', mode: 'view', id: ref.id};
     renderDrawer();
@@ -5482,11 +5911,11 @@ async function addPublica(pre){
   const now = Date.now();
   const p = pre.propId ? findRec('prop', pre.propId) : null, c = pre.clientId ? findRec('client', pre.clientId) : null;
   const body = {tip: PUBLICA, data: todayISO(), ora: '', status: 'De făcut', clientId: pre.clientId || '', propId: pre.propId || '', note: '', auto: true,
-    din: {id: pre.id, data: pre.data || '', ora: pre.ora || '', doneAt: pre.doneAt || now, ctx: pre.ctx || '', note: String(pre.note || '').slice(0, 600), agent: pre.agent || ''},
+    din: {id: pre.id, data: pre.data || '', ora: pre.ora || '', doneAt: pre.doneAt || now, ctx: pre.ctx || (preOf(pre) ? preTitle(preOf(pre)).slice(0, 160) : ''), note: String(pre.note || '').slice(0, 600), agent: pre.agent || ''},
     createdAt: now, updatedAt: now};
   if (body.clientId) body.clientLabel = c ? recLabel('client', c) : (pre.clientLabel || '');
   if (body.propId) body.propLabel = p ? recLabel('prop', p) : (pre.propLabel || '');
-  body.ctx = [body.propLabel, body.clientLabel].filter(Boolean).join(' · ') || 'din preluarea ' + (pre.data ? 'din ' + fmtDate(pre.data) : 'finalizată');
+  body.ctx = [body.propLabel, body.clientLabel].filter(Boolean).join(' · ') || body.din.ctx || 'din preluarea ' + (pre.data ? 'din ' + fmtDate(pre.data) : 'finalizată');
   const w = who(); if (w) body.agent = w;
   await withRetry(() => S.db.collection('activities').doc(id).set(body));
   upsertLocal('act', Object.assign({}, body, {id: id}));
@@ -5841,8 +6270,8 @@ function ctFld(d, f){
       return '<div class="' + cls + '">' + lab + '<div class="inwrap"><input type="text" inputmode="decimal" id="' + id + '" name="' + d.k + '" value="' + (v == null ? '' : esc(String(v).replace('.', ','))) + '"' + ph + ' autocomplete="off">' +
         (unit ? '<span class="unit"' + (d.monUnit ? ' data-mon' : '') + '>' + esc(unit) + '</span>' : '') + '</div></div>';
     }
-    case 'date': return '<div class="' + cls + '">' + lab + '<input type="date" id="' + id + '" name="' + d.k + '" value="' + sv + '"></div>';
-    case 'time': return '<div class="' + cls + '">' + lab + '<input type="time" id="' + id + '" name="' + d.k + '" value="' + sv + '"></div>';
+    case 'date': return '<div class="' + cls + '">' + lab.replace('for="' + id + '"', 'for="' + id + '-t"') + RoDate.date(id, d.k, v) + '</div>';
+    case 'time': return '<div class="' + cls + '">' + lab.replace('for="' + id + '"', 'for="' + id + '-h"') + RoDate.time(id, d.k, v) + '</div>';
     case 'area': return '<div class="' + cls + '">' + lab + '<textarea id="' + id + '" name="' + d.k + '" rows="' + (d.small ? 3 : 6) + '"' + ph + '>' + sv + '</textarea></div>';
     case 'cref': {
       const arr = S.contracts.filter(x => x.tip === 'cumparator' && (ctSt(x) !== 'Anulat' || x.id === v)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
@@ -5929,6 +6358,7 @@ function ctSetField(form, k, v){
   const el = form.elements.namedItem(k);
   if (!el) return false;
   el.value = typeof v === 'number' ? String(v).replace('.', ',') : String(v);
+  if (el.type === 'hidden') RoDate.refresh(form);
   return true;
 }
 // Fills what is empty or was filled in by itself before; what was typed by hand stays.
@@ -6688,7 +7118,7 @@ function listingText(p){
   const price = fmtMoney(p.pret);
   if (price) L.push(p.tranzactie === 'inchiriere' ? 'Chirie: ' + price + ' / lună' : 'Preț: ' + price);
   L.push('');
-  const facts = [p.tip, p.camere != null && !/Garsonier|Teren/.test(p.tip || '') ? camereTxt(p.camere) : '', p.suprafata != null ? fmtN(p.suprafata) + ' mp utili' : '', isHouse(p.tip) ? '' : etajTxt(p), p.an ? 'an construcție ' + p.an : ''].filter(Boolean);
+  const facts = [p.tip, p.camere != null && !/Garsonier|Teren/.test(p.tip || '') ? camereTxt(p.camere) : '', p.bai ? (p.bai === 1 ? '1 baie' : fmtN(p.bai) + ' băi') : '', p.suprafata != null ? fmtN(p.suprafata) + ' mp utili' : '', isHouse(p.tip) ? '' : etajTxt(p), p.an ? 'an construcție ' + p.an : ''].filter(Boolean);
   if (facts.length) L.push(facts.join(' · '));
   const loc = [p.zona, p.localitate, p.judet].filter(Boolean).join(', ');
   if (loc) L.push('Zona: ' + loc);
@@ -6701,11 +7131,11 @@ function listingText(p){
 }
 const P_COLS = [
   ['ID', p => p.cod], ['Tranzacție', p => trLabel(p.tranzactie)], ['Tip', p => p.tip], ['Status', p => stOf('prop', p)], ['Status din', p => fmtTs(p.statusAt)], ['Titlu anunț', p => p.titlu],
-  ['Preț (EUR)', p => p.pret], ['Suprafață (mp)', p => p.suprafata], ['Suprafață teren (mp)', p => p.suprafataTeren], ['Camere', p => p.camere],
+  ['Preț (EUR)', p => p.pret], ['Suprafață (mp)', p => p.suprafata], ['Suprafață teren (mp)', p => p.suprafataTeren], ['Camere', p => p.camere], ['Băi', p => p.bai],
   ['Județ', p => p.judet], ['Localitate', p => p.localitate], ['Zonă', p => p.zona], ['Stradă', p => p.strada], ['Număr', p => p.numar],
   ['Etaj', p => etajLabel(p.etaj)], ['Total etaje', p => p.etajeTotal], ['An construcție', p => p.an], ['Tip construcție', p => p.tipConstructie],
   ['Material', p => p.material], ['Stare', p => p.stare], ['Încălzire', p => p.incalzire], ['Geamuri', p => p.geamuri], ['Disponibil de la', p => fmtDate(p.disponibilDe)],
-  ['Particularități', p => (p.particularitati || []).join(', ')], ['Media', p => (p.media || []).join(', ')], ['Facilități', p => (p.facilitati || []).join(', ')], ['Siguranță', p => (p.siguranta || []).join(', ')],
+  ['Particularități', p => (p.particularitati || []).join(', ')], ['Media', p => (p.media || []).join(', ')], ['Facilități', p => (p.facilitati || []).join(', ')], ['Siguranță', p => (p.siguranta || []).join(', ')], ['Baie', p => (p.baie || []).join(', ')], ['Condiții de închiriere', p => (p.inchiriere || []).join(', ')],
   ['Descriere anunț', p => p.descriere], ['Număr poze', p => validIds(p.poze).length], ['Promovată', p => p.promovare ? 'Da' : 'Nu'], ['Publicată pe', p => platformsOf(p).join(', ')], ['Proprietar', p => p.proprietar], ['Note', p => p.note], ['Adăugată', p => fmtTs(p.createdAt)]
 ];
 const A_COLS = [
@@ -6713,6 +7143,8 @@ const A_COLS = [
   ['Client', a => { const c = actClient(a); return c ? clientName(c) : (a.clientLabel || ''); }], ['ID client', a => { const c = actClient(a); return c ? c.cod : ''; }],
   ['Telefon client', a => { const c = actClient(a); return c ? c.telefon : ''; }],
   ['Proprietate', a => { const p = actProp(a); return p ? propTitle(p) : (a.propLabel || ''); }], ['ID proprietate', a => { const p = actProp(a); return p ? p.cod : ''; }],
+  ['Proprietar (preluare)', a => { const x = preOf(a); return x ? x.nume : ''; }], ['Telefon proprietar', a => { const x = preOf(a); return x ? x.telefon : ''; }],
+  ['Adresă (preluare)', a => { const x = preOf(a); return x ? addrLine(x) : ''; }], ['Detalii (preluare)', a => { const x = preOf(a); return x ? preWhat(x) : ''; }],
   ['Note', a => a.note], ['Adăugată', a => fmtTs(a.createdAt)], ['Făcută', a => fmtTs(a.doneAt)], ['Adăugată de', a => a.agent], ['Automată', a => a.auto ? 'Da' : ''],
   ['Rezultat preluare', a => a.tip === PRELUARE && !actOpen(a) ? (a.rezultat === 'reusita' ? 'Reușită' : a.rezultat === 'nereusita' ? 'Nereușită' : '') : ''],
   ['Din preluarea', a => a.tip === PUBLICA && a.din ? [fmtDate(a.din.data), a.din.ctx].filter(Boolean).join(' · ') : '']
@@ -6721,11 +7153,11 @@ const C_COLS = [
   ['ID', c => c.cod], ['Nume', c => c.nume], ['Prenume', c => c.prenume], ['Telefon', c => c.telefon], ['Email', c => c.email], ['Status', c => stOf('client', c)], ['Status din', c => fmtTs(c.statusAt)],
   ['Vrea să', c => c.tranzactie === 'vanzare' ? 'Cumpere' : c.tranzactie === 'inchiriere' ? 'Închirieze' : ''], ['Tip proprietate', c => (c.tipuri || []).join(', ')],
   ['Buget min (EUR)', c => c.bugetMin], ['Buget max (EUR)', c => c.bugetMax], ['Suprafață min', c => c.suprafataMin], ['Suprafață max', c => c.suprafataMax],
-  ['Camere min', c => c.camereMin], ['Camere max', c => c.camereMax], ['Județ', c => c.judet], ['Localitate', c => c.localitate], ['Zonă', c => c.zona], ['Stradă', c => c.strada], ['Număr', c => c.numar],
+  ['Camere min', c => c.camereMin], ['Camere max', c => c.camereMax], ['Băi min', c => c.baiMin], ['Județ', c => c.judet], ['Localitate', c => c.localitate], ['Zonă', c => c.zona], ['Stradă', c => c.strada], ['Număr', c => c.numar],
   ['Etaj', c => etajPrefTxt(c)], ['Bloc max etaje', c => c.etajeTotalMax], ['An construcție minim', c => c.anMin], ['Stare acceptată', c => (c.stari || []).join(', ')],
   ['Încălzire', c => (c.incalziri || []).join(', ')], ['Tip construcție', c => (c.tipConstructii || []).join(', ')], ['Material', c => (c.materiale || []).join(', ')], ['Geamuri', c => (c.geamuriL || []).join(', ')],
   ['Are nevoie până la', c => fmtDate(c.disponibilPana)], ['Particularități', c => (c.particularitati || []).join(', ')], ['Media', c => (c.media || []).join(', ')],
-  ['Facilități', c => (c.facilitati || []).join(', ')], ['Siguranță', c => (c.siguranta || []).join(', ')], ['Note', c => c.note], ['Adăugat', c => fmtTs(c.createdAt)]
+  ['Facilități', c => (c.facilitati || []).join(', ')], ['Siguranță', c => (c.siguranta || []).join(', ')], ['Baie', c => (c.baie || []).join(', ')], ['Condiții de închiriere', c => (c.inchiriere || []).join(', ')], ['Note', c => c.note], ['Adăugat', c => fmtTs(c.createdAt)]
 ];
 function toCSV(rows, cols){
   const q = v => {
@@ -6788,18 +7220,29 @@ function act(name, el){
     }
     case 'map-clear': if (PM.clear) PM.clear(); break;
     case 'site-prop': {
-      const a = findRec('act', el.dataset.id), x = a && a.site;
+      const a = findRec('act', el.dataset.id), site = a && a.sursa === 'site' && a.site, x = preOf(a) || (site ? {} : null);
       if (!x) break;
-      const preset = Object.assign(defaults('prop'), {
-        tranzactie: x.tranzactie === 'inchiriere' ? 'inchiriere' : 'vanzare', tip: TIPURI.indexOf(x.tip) >= 0 ? x.tip : '',
-        localitate: x.localitate || '', zona: x.zona || '', suprafata: x.suprafata || null, camere: x.camere || null, pret: x.pret || null,
+      const base = defaults('prop');
+      const preset = Object.assign(base, {
+        tranzactie: x.tranzactie || (site ? 'vanzare' : ''), tip: TIPURI.indexOf(x.tip) >= 0 ? x.tip : '', judet: x.judet || base.judet,
+        localitate: x.localitate || '', zona: x.zona || '', strada: x.strada || '', numar: x.numar || '',
+        suprafata: x.tip === 'Teren' && site && !a.pre ? null : x.suprafata || null, suprafataTeren: x.suprafataTeren || (x.tip === 'Teren' ? x.suprafata : null) || null,
+        camere: x.camere || null, pret: x.pret || null,
         proprietar: [x.nume, x.telefon, x.email].filter(Boolean).join(', '),
-        note: 'Din cererea de pe site din ' + fmtTs(x.trimisa || a.createdAt) + (x.detalii ? ':\n' + x.detalii : '.')
+        note: site ? 'Din cererea de pe site din ' + fmtTs(site.trimisa || a.createdAt) + (site.detalii ? ':\n' + site.detalii : '.')
+          : 'Din preluarea din ' + (fmtDate(a.data) || fmtTs(a.createdAt)) + (a.note ? ':\n' + a.note : '.')
       });
       openForm('prop', 'new', null, preset);
       if (S.drawer) S.drawer.fromAct = a.id;
       break;
     }
+    case 'wa': if (el.dataset.tel && !ctOpenUrl('https://wa.me/' + el.dataset.tel)) toast('WhatsApp nu s-a putut deschide.'); break;
+    case 'of-send': ofSend(el.dataset.c); break;
+    case 'of-copy': ofSend(el.dataset.c, true); break;
+    case 'of-none': S.pick[el.dataset.c] = []; $$('[data-pick]').forEach(x => { if (x.dataset.pick === el.dataset.c) x.checked = false; }); ofBarRefresh(el.dataset.c); break;
+    case 'of-again': ofAgain(el.dataset.t); break;
+    case 'of-see': if (!ctOpenUrl(ofUrl(el.dataset.t) + '?previzualizare=1')) toast('Nu s-a putut deschide. Copiază linkul.'); break;
+    case 'of-stop': ofStop(el.dataset.t); break;
     case 'copy-listing': { const r = d && findRec('prop', d.id); if (r) copyText(listingText(r), 'Textul anunțului a fost copiat'); break; }
     case 'save': submitForm(false); break;
     case 'save-new': submitForm(true); break;
@@ -7193,6 +7636,7 @@ function bindStatic(){
     }
     if (!e.target.closest('.gsearch')) gsClose();
     if (e.target.id === 'lb'){ lbClose(); return; }
+    if (e.target.closest('.mpick')) return;
     const cp = e.target.closest('[data-copy]');
     if (cp){ e.preventDefault(); e.stopPropagation(); copyText(cp.dataset.copy, cp.dataset.copyMsg, cp); return; }
     const a = e.target.closest('[data-act]');
@@ -7227,6 +7671,15 @@ function bindStatic(){
     if (e.key === 'Escape' && S.drawer){ e.preventDefault(); requestClose(); return; }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && $('#rec-form')){ e.preventDefault(); submitForm(false); return; }
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role="button"][data-open]')){ e.preventDefault(); e.target.click(); }
+  });
+  document.addEventListener('change', e => {
+    const c = e.target && e.target.dataset && e.target.dataset.pick;
+    if (!c) return;
+    const id = e.target.dataset.pid, list = (S.pick[c] || []).filter(x => x !== id);
+    if (e.target.checked) list.push(id);
+    S.pick[c] = list;
+    $$('[data-pick]').forEach(x => { if (x.dataset.pick === c && x.dataset.pid === id) x.checked = e.target.checked; });
+    ofBarRefresh(c);
   });
   window.addEventListener('hashchange', () => setView(location.hash.slice(1)));
   document.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG') t.classList.add('broken'); }, true);
@@ -7323,9 +7776,9 @@ async function init(){
   subscribe();
   renderAll();
   // Contracts waiting for a signature: checked every minute while the app is on screen.
-  setInterval(() => { if (document.visibilityState === 'visible') ctPoll(false); }, 60000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') ctPoll(false); });
-  setTimeout(() => ctPoll(true), 4000);
+  setInterval(() => { if (document.visibilityState === 'visible'){ ctPoll(false); ofLoad(false); } }, 60000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible'){ ctPoll(false); ofLoad(false); } });
+  setTimeout(() => { ctPoll(true); ofLoad(true); }, 4000);
 }
 init();
 })();

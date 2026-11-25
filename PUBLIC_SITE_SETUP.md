@@ -20,7 +20,8 @@ clients, activities or contracts. A storage policy lets visitors read only the p
 - `app/poze/[id]/route.ts` serves a published photo at `/poze/<id>` from the private `crm-poze` bucket, with the Kira logo,
   transparent, in the middle (`lib/watermark.ts`, from `public/images/kira-logo-gold.png`; at most 2560 px, JPEG, without
   EXIF/GPS). The CRM keeps the originals. The site and Storia link `/poze/<id>?v=<PHOTO_VERSION>` (`lib/public-properties.ts`):
-  change `PHOTO_VERSION` when the look changes, so browsers and Storia take the photos again. If the logo cannot be added,
+  change `PHOTO_VERSION` when the look changes, so browsers and Storia take the photos again. (Storia: the live adverts are
+  sent again once, through `ADVERT_FORMAT` and `crm_portal_format`, database version 11.) If the logo cannot be added,
   the photo is served as it is.
 - Property pages live at `/proprietati/<title>-<code>` (e.g. `/proprietati/apartament-3-camere-de-vanzare-galaxiei-p101`).
   The code decides: an older link (a changed title) redirects permanently to the current one. The CRM builds the same link.
@@ -62,7 +63,20 @@ and push. Phones pick the new version up by themselves and show "Versiune nouă 
 design: the data needs an account the administrator added (`crm_is_member`). `crmConfig()` refuses a secret or service_role
 key, so one is never handed out. Change the database or the key only in Vercel (then Redeploy); the apps follow.
 
+## Offers sent on WhatsApp (lib/offers.ts, app/oferta/[token], app/api/site/oferta)
+
+The CRM (Potriviri, or the client's page) makes a link `/oferta/<24 hex>` with the ticked properties (`crm_oferta_noua`,
+database version 11) and opens WhatsApp with the message. The page shows only what the public site may show (no street,
+owner or notes), is not indexed, works 60 days and can be stopped from the CRM. An opening is counted by the page itself,
+once it is really on screen (so WhatsApp's link preview does not count); a reload within a minute does not count, nor
+does the browser in which the agent opened the preview (`?previzualizare=1`).
+
 ## Storia and OLX.ro (lib/storia.ts, app/api/portaluri/storia/)
+
+All the details filled in in the CRM go to Storia: `lib/storia-details.ts` maps them to Storia's own fields
+(`lib/storia-taxonomy.ts`, from OLX Group's taxonomy), and what Storia has no field for is listed under "Alte detalii" at
+the end of the description. If Storia refuses a value, the advert is sent again with the mandatory fields only.
+Change `ADVERT_FORMAT` when the mapping changes: the live adverts are then sent again once.
 
 Properties ticked "Storia" in the CRM and active are published on Storia through the OLX Group Real Estate Partner API,
 and buyers' messages come back into the CRM as clients with a "Cerere nouă". Properties also ticked "OLX" go on to OLX.ro

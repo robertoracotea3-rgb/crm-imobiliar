@@ -35,7 +35,7 @@ export type PublicProperty = {
   geo: GeoPoint | null;
 };
 
-type CrmSiteRow = Record<string, unknown> & { id: string };
+export type CrmSiteRow = Record<string, unknown> & { id: string };
 
 /**
  * Where the site and Storia take a published photo from. PHOTO_VERSION changes when the look of the public copy
@@ -153,11 +153,13 @@ function futureDate(v: unknown): string | null {
   return m[0] > today ? `${m[3]}.${m[2]}.${m[1]}` : null;
 }
 
-function toPublic(r: CrmSiteRow): PublicProperty {
+export function toPublic(r: CrmSiteRow): PublicProperty {
   const tip = str(r.tip, 40), tranzactie = r.tranzactie === 'inchiriere' ? 'inchiriere' : r.tranzactie === 'vanzare' ? 'vanzare' : null;
-  const pret = num(r.pret), suprafata = num(r.suprafata), camere = num(r.camere), etaj = num(r.etaj), etajeTotal = num(r.etajeTotal), an = num(r.an);
+  const pret = num(r.pret), teren = num(r.suprafataTeren), bai = num(r.bai), camere = num(r.camere), etaj = num(r.etaj), etajeTotal = num(r.etajeTotal), an = num(r.an);
   const localitate = str(r.localitate, 80), zona = str(r.zona, 80), judet = str(r.judet, 40);
   const isLand = tip === 'Teren', isHouse = tip === 'Casă / Vilă' || isLand;
+  // For land the CRM may have the area in either of its two fields.
+  const suprafata = isLand ? teren ?? num(r.suprafata) : num(r.suprafata);
   const showRooms = camere != null && !/Garsonier|Teren|Cameră/.test(tip || '');
   const photos = list(r.poze).filter((id) => /^[A-Za-z0-9_-]{6,128}$/.test(id)).map((id) => photoPath(id));
   const facts: PublicFact[] = [];
@@ -165,8 +167,10 @@ function toPublic(r: CrmSiteRow): PublicProperty {
   add('Tip proprietate', tip);
   add('Tranzacție', tranzactie === 'inchiriere' ? 'Închiriere' : tranzactie === 'vanzare' ? 'Vânzare' : null);
   add(isLand ? 'Suprafață teren' : 'Suprafață utilă', suprafata != null ? `${fmtN(suprafata)} m²` : null);
+  if (!isLand) add('Suprafață teren', teren != null && teren > 0 ? `${fmtN(teren)} m²` : null);
   if (tranzactie === 'vanzare' && pret && suprafata) add('Preț pe m²', `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 0 }).format(pret / suprafata)} €/m²`);
   add('Camere', showRooms ? fmtN(camere as number) : null);
+  if (!isLand) add('Băi', bai != null && bai > 0 ? fmtN(bai) : null);
   if (isHouse) add('Niveluri', etajeTotal != null && !isLand ? fmtN(etajeTotal) : null);
   else { add('Etaj', etaj != null ? etajLabel(etaj) : null); add('Etaje în clădire', etajeTotal != null ? fmtN(etajeTotal) : null); }
   add('An construcție', an != null ? String(an) : null);
@@ -179,7 +183,10 @@ function toPublic(r: CrmSiteRow): PublicProperty {
   add('Localitate', localitate);
   add('Zonă', zona);
   add('Județ', judet);
-  const features = Array.from(new Set([...list(r.particularitati), ...list(r.media), ...list(r.facilitati), ...list(r.siguranta)]));
+  const features = Array.from(new Set([
+    ...list(r.particularitati), ...list(r.baie), ...list(r.media), ...list(r.facilitati), ...list(r.siguranta),
+    ...(tranzactie === 'inchiriere' ? list(r.inchiriere) : []),
+  ]));
   const attributes: Record<string, unknown> = { photos };
   if (showRooms) attributes.camere = camere;
   if (!isHouse && etaj != null) attributes.etaj = etajLabel(etaj);
@@ -194,7 +201,7 @@ function toPublic(r: CrmSiteRow): PublicProperty {
     category: tip ? CATEGORY[tip] || tip : null,
     transaction: tranzactie,
     city: localitate, county: judet, zone: zona,
-    surface_useful: isLand ? null : suprafata, surface_built: null, surface_land: isLand ? suprafata : null,
+    surface_useful: isLand ? null : suprafata, surface_built: null, surface_land: isLand ? suprafata : teren,
     attributes, type_label: tip, facts, features,
     updated_at: num(r.m),
     geo: geoPoint(r.geo),

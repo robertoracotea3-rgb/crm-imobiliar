@@ -1,7 +1,8 @@
 import 'server-only';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { autoTitle, crmConfig, crmHeaders, photoPath } from '@/lib/public-properties';
+import { autoTitle, crmConfig, crmHeaders, photoPath, PHOTO_VERSION } from '@/lib/public-properties';
 import { canonicalHost } from '@/lib/site-host';
+import { storiaDetails, type Details, type Family } from '@/lib/storia-details';
 
 /*
  * Storia (and OLX.ro, through Storia's export) for the Kira Imobiliare CRM, over the OLX Group Real Estate Partner API.
@@ -18,6 +19,9 @@ import { canonicalHost } from '@/lib/site-host';
  *   Storia: their messages come in like any other Storia message.
  * - OLX notifications (advert and export states, messages from buyers) arrive at /api/portaluri/storia/notificari; a
  *   message becomes a client and an activity in the CRM (crm_portal_mesaj in crm-online.sql, version 9).
+ *
+ * The advert carries everything the CRM knows about the property (lib/storia-details.ts). When what is sent, or how, is
+ * changed here, change ADVERT_FORMAT: the adverts already on Storia are then sent again, by themselves.
  *
  * The site reaches the CRM's database only through the crm_portal_* functions, with KIRA_PORTAL_KEY, its only Storia
  * setting in Vercel. The OLX Group app's keys (Client ID, Client secret, API key, Notification secret) are put in from
@@ -214,18 +218,19 @@ async function accessToken(k: AppKeys, force = false): Promise<string | null> {
 
 /* ---------- a CRM property as a Storia advert ---------- */
 
-export type Listing = {
-  id?: string; cod?: string; titlu?: string; descriere?: string; tranzactie?: string; tip?: string;
-  pret?: number; suprafata?: number; suprafataTeren?: number; camere?: number;
+export type Listing = Details & {
+  id?: string; cod?: string; titlu?: string; pret?: number; camere?: number;
   judet?: string; localitate?: string; zona?: string;
   geo?: { lat: number; lng: number; aprox?: boolean } | null; poze?: string[];
 };
 
 // CRM type → Storia category family (URNs checked against GET /taxonomy/v1/categories/partner/urn:site:storiaro).
-const FAMILY: Record<string, 'apartments' | 'houses' | 'lots' | 'stores' | 'warehouses'> = {
+const FAMILY: Record<string, Family> = {
   'Apartament': 'apartments', 'Garsonieră': 'apartments', 'Casă / Vilă': 'houses', 'Teren': 'lots',
   'Spațiu comercial': 'stores', 'Birou': 'stores', 'Spațiu industrial': 'warehouses',
 };
+/** What the adverts on Storia were made with: a new value sends them all again (crm_portal_format, version 11). */
+export const ADVERT_FORMAT = `2-${PHOTO_VERSION}`;
 const pos = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
 const roomsOf = (l: Listing) => pos(l.camere) ?? (l.tip === 'Garsonieră' ? 1 : null);
 
@@ -266,23 +271,34 @@ function htmlUpTo(s: string, n: number): string {
  * three of the same sign (!!!!, ----), and not all in capitals (then it is written in sentence case).
  */
 export function olxText(s: string): string {
-  let t = s
+  const t = s
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, ' ')
     .replace(/(?:https?:\/\/|www\.)\S+/gi, ' ')
     .replace(/\b[\w-]+(?:\.[\w-]+)*\.(?:ro|com|net|org|eu|info|biz|io)\b(?:\/\S*)?/g, ' ')
     .replace(/([!?.,\-=+#%&@*_><:()|])\1{3,}/g, (_m, c: string) => c.repeat(3))
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/ +([,.;:!?])/g, (_m, c: string) => c);
+  return calm(t).trim();
+}
+
+/** Not all in capitals: such a text is written in sentence case. */
+function calm(t: string): string {
   const letters = t.match(/\p{L}/gu) || [];
   const capitals = t.match(/\p{Lu}/gu) || [];
-  if (letters.length >= 10 && capitals.length / letters.length > 0.7) {
-    t = t.toLowerCase().replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
-  }
-  return t.trim();
+  if (letters.length < 10 || capitals.length / letters.length <= 0.7) return t;
+  return t.toLowerCase().replace(/(^\s*|[.!?]\s+|\n\s*)(\p{L})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
+}
+
+const EMOJI = '(?:(?![©®™])\\p{Extended_Pictographic}|[\\u{1F1E6}-\\u{1F1FF}\\u{1F3FB}-\\u{1F3FF}\\u{FE0F}\\u{200D}\\u{20E3}])+';
+/** Without emojis, which Storia does not take; one at the start of a line becomes a dash. */
+export function noEmoji(s: string): string {
+  return s
+    .replace(new RegExp(`^([ \\t]*)(?:${EMOJI}[ \\t]*)+(?:- )?(?=\\S)`, 'gmu'), '$1- ')
+    .replace(new RegExp(`[ \\t]?${EMOJI}`, 'gu'), '');
 }
 
 export function advertTitle(l: Listing, forOlx = false): string {
-  let t = (l.titlu || '').trim();
+  let t = calm(noEmoji(l.titlu || '').replace(/^\s*-\s+/, '').trim());
   if (forOlx) t = olxText(t);
   if (!t || (forOlx && t.length < 5)) {
     t = autoTitle({
@@ -296,8 +312,9 @@ export function advertTitle(l: Listing, forOlx = false): string {
 /**
  * The advert for POST/PUT /advert/v1. Only the listing: never the street, the number, the owner or the notes.
  * forOlx: the property is also ticked "OLX", so the text and the areas follow OLX.ro's rules for the export too.
+ * basic: only the attributes Storia cannot do without (when it refuses one of the others).
  */
-export function buildAdvert(propId: string, l: Listing, forOlx = false): Record<string, unknown> {
+export function buildAdvert(propId: string, l: Listing, forOlx = false, basic = false): Record<string, unknown> {
   const fam = FAMILY[l.tip || ''];
   const sale = l.tranzactie !== 'inchiriere';
   const cat = { apartments: 'apartments', houses: 'houses', lots: 'lots', stores: 'stores', warehouses: 'warehouses' }[fam];
@@ -312,17 +329,21 @@ export function buildAdvert(propId: string, l: Listing, forOlx = false): Record<
   else add('net-area-m2', area(pos(l.suprafata)));
   if (fam === 'houses') add('terrain-area-m2', area(pos(l.suprafataTeren)));
   if (sale && fam !== 'lots') add('market', 'urn:concept:secondary');
-  const text = (l.descriere || '').trim();
+  const details = storiaDetails(l, fam);
+  if (!basic) attributes.push(...details.attributes);
+  const text = noEmoji(l.descriere || '').trim();
+  const more = details.lines.map((x) => `- ${x}`).join('\n');
+  const tail = more ? html(`\n\nAlte detalii:\n${forOlx ? olxText(more) : more}`) : '';
   const advert: Record<string, unknown> = {
     site_urn: SITE_URN,
     title: advertTitle(l, forOlx),
-    description: htmlUpTo(forOlx ? olxText(text) : text, 9000),
+    description: htmlUpTo(forOlx ? olxText(text) : text, Math.max(6000, 9000 - tail.length)) + tail,
     category_urn: `urn:concept:${cat}-for-${sale ? 'sale' : 'rent'}`,
     price: { value: Math.round(l.pret || 0), currency: 'EUR' },
     attributes,
     // With the Kira logo in the middle (lib/watermark.ts); a new PHOTO_VERSION makes Storia take them again.
     images: (l.poze || []).slice(0, 24).map((id) => ({ url: `${canonicalHost()}${photoPath(id)}` })),
-    custom_fields: { id: propId },
+    custom_fields: { id: propId, ...(l.cod ? { reference_id: l.cod } : {}) },
   };
   if (l.geo) advert.location = { lat: l.geo.lat, lon: l.geo.lng, exact: !l.geo.aprox };
   return advert;
@@ -399,6 +420,10 @@ export async function runStoria(): Promise<RunResult> {
   if (problem) return { ...out, ok: false, mesaj: problem };
   const k = (await loadKeys()).keys as AppKeys;
   const deadline = Date.now() + 45_000;
+  // Adverts made with an older format (fewer details, photos without the logo) go out again. Not before version 11.
+  await portalDb('crm_portal_format', { p_format: ADVERT_FORMAT }).catch((e) => {
+    if (!(e instanceof DbError && e.code === 'old_sql')) throw e;
+  });
   for (let round = 0; round < 6 && Date.now() < deadline; round++) {
     const w = await portalDb<Work>('crm_portal_lucru');
     if (w?.ocupat) return { ...out, mesaj: out.mesaj || 'altă trecere e în lucru' };
@@ -486,21 +511,38 @@ async function publishOne(job: Job, call: Call): Promise<boolean> {
     return !!job.olx && job.stare === 'activ';
   }
 
-  let a = live ? await call('PUT', `/advert/v1/${encodeURIComponent(job.uuid!)}`, advert) : await call('POST', '/advert/v1', advert);
   let created = !live;
-  if (live && a.status === 404) {
-    // Gone from Storia (deleted there by hand): publish it again.
-    a = await call('POST', '/advert/v1', advert);
-    created = true;
+  const send = async (body: Record<string, unknown>) => {
+    if (!created) {
+      const r = await call('PUT', `/advert/v1/${encodeURIComponent(job.uuid!)}`, body);
+      if (r.status !== 404) return r;
+      // Gone from Storia (deleted there by hand): publish it again.
+      created = true;
+    }
+    return call('POST', '/advert/v1', body);
+  };
+  const notPosted = (r: Answer) => String(obj(r.json.data).last_action_status || '').toUpperCase() === 'NOT_POSTED';
+  let a = await send(advert);
+  let note: string | null = null;
+  // Storia did not like the advert: perhaps only one of the optional details. Once more, with just what it requires.
+  if ([400, 409, 422].includes(a.status)) {
+    const basic = buildAdvert(job.prop_id, l, !!job.olx, true);
+    if (advertHash(basic) !== hash) {
+      const b = await send(basic);
+      if (b.status >= 200 && b.status < 300 && !notPosted(b)) {
+        note = `Anunțul a plecat fără câmpurile suplimentare (etaj, an, dotări), pe care Storia nu le-a primit: ${reason(a)}`;
+        a = b;
+      }
+    }
   }
-  const data = (a.json.data && typeof a.json.data === 'object' ? a.json.data : {}) as Record<string, unknown>;
-  const refused = String(data.last_action_status || '').toUpperCase() === 'NOT_POSTED';
+  const data = obj(a.json.data);
+  const refused = notPosted(a);
   if (a.status >= 200 && a.status < 300 && !refused) {
     if (created) {
       const uuid = typeof data.uuid === 'string' ? data.uuid : null;
-      await result(job.prop_id, { uuid, url: null, stare: 'se_publica', hash, rev: job.rev, detalii: null });
+      await result(job.prop_id, { uuid, url: null, stare: 'se_publica', hash, rev: job.rev, detalii: note });
     } else {
-      await result(job.prop_id, { stare: 'se_actualizeaza', hash, rev: job.rev, detalii: null });
+      await result(job.prop_id, { stare: 'se_actualizeaza', hash, rev: job.rev, detalii: note });
     }
   } else if ((a.status >= 400 && a.status < 500) || refused) {
     const why = reason(a);
@@ -638,7 +680,7 @@ async function checkOlx(job: OlxCheck, call: Call, promo: Promo | null | undefin
 /** What a database error means for the person setting things up (never repeats a key). */
 export function dbMessage(code: string): string {
   if (code === 'bad_key') return 'KIRA_PORTAL_KEY din Vercel nu se potrivește cu baza: copiaz-o din nou din Administrator CRM Kira › Setări › Storia / OLX, apoi Redeploy.';
-  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: actualizeaz-o la versiunea 10 (Administrator CRM Kira › Setări › Baza online, sau crm-online.sql în Supabase › SQL Editor).';
+  if (code === 'old_sql') return 'Baza nu are încă tot ce trebuie pentru Storia și OLX: actualizeaz-o la versiunea 11 (Administrator CRM Kira › Setări › Baza online, sau crm-online.sql în Supabase › SQL Editor).';
   if (code === 'no_db') return 'Lipsesc KIRA_CRM_URL / KIRA_CRM_PUBLISHABLE_KEY din Vercel.';
   return 'Baza de date nu răspunde acum. Încearcă din nou peste un minut.';
 }
